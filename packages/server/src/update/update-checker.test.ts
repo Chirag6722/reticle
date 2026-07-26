@@ -59,4 +59,13 @@ describe('checkForUpdate', () => {
     expect(result.latestVersion).toBe('2.0.0');
     expect(saved()?.latestVersion).toBe('2.0.0');
   });
+
+  it('rejects an implausible version from the registry and never persists it', async () => {
+    const { ports, saved } = makePorts(null, () =>
+      Promise.resolve({ version: '../../etc/passwd' } as never),
+    );
+    const result = await checkForUpdate('1.0.0', () => 0, ports);
+    expect(result.updateAvailable).toBe(false); // fell back to the safe no-update default
+    expect(saved()).toBeNull(); // the malformed response never reached disk
+  });
 });

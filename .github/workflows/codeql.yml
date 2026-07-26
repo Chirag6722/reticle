@@ -26,12 +26,21 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@4187e74d05793876e9989daffde9c3e66b4acd07 # v3
+        uses: github/codeql-action/init@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
         with:
           languages: ${{ matrix.language }}
           # Broader query set than the default — worth it for a security-adjacent tool.
           queries: security-and-quality
+          # Scan the code we SHIP. Test fixtures, benchmarks, and one-off scripts are not published;
+          # their unused-var / quality notes are noise on the Security tab, not user-facing risk.
+          config: |
+            paths-ignore:
+              - apps
+              - bench
+              - scripts
+              - '**/*.test.ts'
+              - '**/*.test.mjs'
       - name: Autobuild
-        uses: github/codeql-action/autobuild@4187e74d05793876e9989daffde9c3e66b4acd07 # v3
+        uses: github/codeql-action/autobuild@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3
       - name: Analyze
-        uses: github/codeql-action/analyze@4187e74d05793876e9989daffde9c3e66b4acd07 # v3
+        uses: github/codeql-action/analyze@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v4.37.3

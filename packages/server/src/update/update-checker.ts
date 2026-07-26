@@ -31,6 +31,34 @@ interface NpmPackageInfo {
   };
 }
 
+// npm's registry is trusted, but this response is persisted to disk AND echoed into the agent's
+// context, so validate its shape before it flows anywhere: a plausible semver, bounded free-text.
+const VERSION_RE = /^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$/;
+const MAX_MANIFEST_TEXT = 20_000;
+
+/** Reject an implausible version (throws → caller falls back to cache) and bound the free-text
+ * fields, so a malformed or oversized registry response can neither corrupt nor bloat the manifest. */
+function validateNpmInfo(info: NpmPackageInfo): NpmPackageInfo {
+  if (typeof info.version !== 'string' || !VERSION_RE.test(info.version)) {
+    throw new Error('npm registry returned an implausible version');
+  }
+  const changelog =
+    typeof info.reticle?.changelog === 'string'
+      ? info.reticle.changelog.slice(0, MAX_MANIFEST_TEXT)
+      : undefined;
+  const breakingChanges = Array.isArray(info.reticle?.breakingChanges)
+    ? info.reticle.breakingChanges
+        .filter((x): x is string => typeof x === 'string')
+        .slice(0, 100)
+        .map((s) => s.slice(0, MAX_MANIFEST_TEXT))
+    : undefined;
+  const reticle: NpmPackageInfo['reticle'] = {
+    ...(changelog !== undefined ? { changelog } : {}),
+    ...(breakingChanges !== undefined ? { breakingChanges } : {}),
+  };
+  return { version: info.version, reticle };
+}
+
 export function loadManifest(): UpdateManifest | null {
   if (!fs.existsSync(MANIFEST_PATH)) return null;
   try {
@@ -101,7 +129,7 @@ export async function checkForUpdate(
   }
 
   try {
-    const info = await ports.fetchInfo();
+    const info = validateNpmInfo(await ports.fetchInfo());
     const updateAvailable = info.version !== currentVersion;
     const manifest: UpdateManifest = {
       currentVersion,

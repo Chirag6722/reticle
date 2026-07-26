@@ -18,7 +18,7 @@ export function countCrossOriginFrames(): number {
   const frames: Array<{ sameOrigin: boolean; hasSrc: boolean }> = [];
   for (const frame of document.querySelectorAll('iframe')) {
     const hasSrc = frame.getAttribute('src') !== null && frame.getAttribute('src') !== '';
-    let sameOrigin = true;
+    let sameOrigin: boolean;
     try {
       // Reaching contentDocument throws (or yields null) for a cross-origin frame.
       sameOrigin = frame.contentDocument !== null;
