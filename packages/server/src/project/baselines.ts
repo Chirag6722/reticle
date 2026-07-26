@@ -11,10 +11,14 @@ interface DiffResult {
 
 /** Strip volatile ref ids so snapshots compare by semantics, not by ref number. */
 export function normalizeLines(tree: string): string[] {
-  return tree
-    .split('\n')
-    .map((line) => line.replace(/\s*\(ref=e\d+\)/, '').trim())
-    .filter((line) => line.length > 0);
+  return (
+    tree
+      .split('\n')
+      // The separator before a ref marker is a single space; a bounded quantifier keeps this linear
+      // (an unbounded `\s*` here backtracks polynomially on a long whitespace run — a needless ReDoS).
+      .map((line) => line.replace(/\s?\(ref=e\d+\)/, '').trim())
+      .filter((line) => line.length > 0)
+  );
 }
 
 function frequency(lines: string[]): Map<string, number> {
