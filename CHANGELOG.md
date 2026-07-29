@@ -4,6 +4,15 @@ All notable changes to the **`@reticlehq/*`** packages are documented here (each
 
 ## [Unreleased]
 
+## [2.2.1] — 2026-07-29
+
+Patch release: two contributor-reported reliability fixes — one to the daemon spawn lifecycle, one to the browser SDK's console hygiene. No breaking changes.
+
+### Fixed
+
+- **`spawnDaemon` no longer leaks a file descriptor or leaves a ghost daemon.** The parent's copy of the log fd is now closed after `spawn` duplicates it into the child (a leaked descriptor per spawn, accumulating across restarts); a silent spawn failure (`child.pid === undefined`) returns `false` and unlinks the empty pidfile instead of reporting success, so discovery never sees a ghost and the next spawn can't hit `EEXIST`; and a synchronous `openSync`/`spawn` throw cleans up the lock fd + pidfile rather than leaving them behind. Thanks [@DevChiniwala](https://github.com/DevChiniwala) ([#58](https://github.com/reticlehq/reticle/pull/58)). (`@reticlehq/server`)
+- **SDK-internal warnings no longer pollute the agent's `CONSOLE_WARN` stream.** After `installConsole` patches `console.warn` to observe the app, three SDK diagnostics — the bridge policy-violation close, the unreachable-bridge callback, and the silent-store registration warning — were emitting spurious `CONSOLE_WARN` events into the observation stream, indistinguishable from the app's own warnings. They now call a native `console.warn` captured at module load (mirroring the existing native-timers pattern), so they reach the developer console without entering the agent's event stream. Thanks [@DevChiniwala](https://github.com/DevChiniwala) ([#59](https://github.com/reticlehq/reticle/pull/59)). (`@reticlehq/browser`)
+
 ## [2.2.0] — 2026-07-26
 
 The causal-evidence release: every verdict now carries _why_, verification becomes part of "done", and the layer stops trusting evidence it doesn't have. Faster on long sessions and big DOMs, and the published packages are brought to OSS-library standard (licensing, packaging, CI security). No breaking changes — schema additions stay back-compatible and on-disk flow files remain version 1.
