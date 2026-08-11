@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { RETICLE_PROTOCOL_VERSION, MessageKind, type HelloMessage } from '@reticlehq/core';
 import { Transport } from './transport.js';
 
@@ -19,7 +19,15 @@ class FakeWebSocket {
     FakeWebSocket.instances.push(this);
   }
   send(): void {}
+  /**
+   * Idempotent, like the real thing: a WebSocket fires `onclose` ONCE.
+   *
+   * It did not, and that is what hid the vacuity. `failNTimes` re-closed the same socket ten times
+   * and collected ten failures without a single retry running, so the spec passed against a
+   * reconnect loop that had been deleted outright.
+   */
   close(): void {
+    if (3 === this.readyState) return;
     this.readyState = 3;
     this.onclose?.({ code: 1006, reason: '' });
   }
@@ -41,17 +49,35 @@ const hello = (): HelloMessage => ({
 
 beforeEach(() => {
   FakeWebSocket.instances = [];
-  vi.useFakeTimers();
   (globalThis as unknown as { WebSocket: unknown }).WebSocket = FakeWebSocket;
 });
-afterEach(() => {
-  vi.useRealTimers();
+
+/**
+ * Retries are RUN, not waited for.
+ *
+ * This spec used to call `vi.useFakeTimers()` and `advanceTimersByTime(1000)`, which drove nothing:
+ * the transport schedules through `nativeSetTimeout`, bound to the real timer at module load so a
+ * frozen `reticle_clock` cannot deadlock the SDK. So the clock never advanced anything, no retry
+ * ever ran, and `failNTimes` was re-closing the SAME socket — a sequence a real WebSocket cannot
+ * produce, since `onclose` fires once.
+ *
+ * Proven vacuous by mutation: disabling reconnect entirely (`#scheduleReopen` returning immediately)
+ * left all three tests GREEN. They asserted the failure COUNTER, never the retry loop it counts.
+ *
+ * The injected `schedule` seam records each pending retry so it can be run deliberately, which also
+ * makes each failure a genuinely new socket.
+ */
+const pending: (() => void)[] = [];
+beforeEach(() => {
+  pending.length = 0;
 });
 
 function failNTimes(n: number): void {
   for (let i = 0; i < n; i += 1) {
     FakeWebSocket.instances.at(-1)?.close();
-    vi.advanceTimersByTime(1000);
+    // Run the retry the transport scheduled. Without this the next iteration re-closes a socket
+    // that is already closed, which is what made this spec pass against a broken retry loop.
+    pending.shift()?.();
   }
 }
 
@@ -63,6 +89,7 @@ describe('transport unreachable (first-connect) warning', () => {
       hello,
       handleCommand: () => Promise.resolve({ ok: true }),
       onUnreachable: (d) => calls.push(d),
+      schedule: (fn) => void pending.push(fn),
     });
     t.connect();
 
@@ -80,11 +107,12 @@ describe('transport unreachable (first-connect) warning', () => {
       hello,
       handleCommand: () => Promise.resolve({ ok: true }),
       onUnreachable: (d) => calls.push(d),
+      schedule: (fn) => void pending.push(fn),
     });
     t.connect();
 
     FakeWebSocket.instances.at(-1)?.close(); // 1 blip
-    vi.advanceTimersByTime(1000);
+    pending.shift()?.(); // the retry runs and opens a NEW socket
     FakeWebSocket.instances.at(-1)?.open(); // connected before the 3rd failure
 
     expect(calls).toHaveLength(0);
@@ -97,6 +125,7 @@ describe('transport unreachable (first-connect) warning', () => {
       hello,
       handleCommand: () => Promise.resolve({ ok: true }),
       onUnreachable: (d) => calls.push(d),
+      schedule: (fn) => void pending.push(fn),
     });
     t.connect();
 
