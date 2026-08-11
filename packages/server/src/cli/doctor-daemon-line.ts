@@ -29,8 +29,17 @@ export interface DaemonLine {
   skew?: string;
 }
 
+/**
+ * `reticle stop`, not `reticle kill`.
+ *
+ * The first version of this said `reticle kill`, which this CLI does not dispatch — it is a proposal
+ * (#114), described as a gap in docs/system-map.md, and I read it there as if it shipped. A remedy
+ * naming a command that errors is a second dead end handed to someone already stuck, on the one
+ * command they run when they are confused.
+ */
 const FIX =
-  'Restart it so both ends are the same build: `reticle stop`, then let your agent reconnect.';
+  'Restart it so both ends are the same build: `reticle stop`, then let your agent reconnect (it ' +
+  'spawns a fresh daemon on the next tool call).';
 
 /**
  * Build the daemon line for a port that answered `/status`.
