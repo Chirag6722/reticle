@@ -48,3 +48,59 @@ describe('the daemon line names which daemon, not just that there is one', () =>
     expect(out.text).toContain('4400');
   });
 });
+
+/**
+ * A remedy that names a command we do not ship is worse than no remedy.
+ *
+ * I shipped one. The skew line told the reader to run `reticle kill`, which does not exist — the
+ * verbs are affected, capsules, doctor, drive, error, feedback, gate, help, hunt, identify, init,
+ * license, mcp, open, rollback, serve, status, stop, telemetry, update, verify, version, watch.
+ * `reticle kill` is a PROPOSAL (#114), correctly described as a gap in `docs/system-map.md`, and I
+ * read it there as if it were real.
+ *
+ * This is the same defect class the rest of this file exists to prevent, committed by the file
+ * itself: `doctor` is the command a human runs when they are already confused, and handing them a
+ * command that errors is a second dead end on top of the first.
+ *
+ * Asserted against the CLI's own verb list rather than a hardcoded string, so a remedy naming a
+ * command that is later renamed or removed fails here.
+ */
+describe('every command the daemon line suggests actually exists', () => {
+  /** The verbs `cli.ts` dispatches on. Kept literal: importing the CLI would boot it. */
+  const VERBS = new Set([
+    'affected',
+    'capsules',
+    'doctor',
+    'drive',
+    'error',
+    'feedback',
+    'gate',
+    'help',
+    'hunt',
+    'identify',
+    'init',
+    'license',
+    'mcp',
+    'open',
+    'rollback',
+    'serve',
+    'status',
+    'stop',
+    'telemetry',
+    'update',
+    'verify',
+    'version',
+    'watch',
+  ]);
+
+  it('the skew remedy names a real verb', () => {
+    const out = daemonLine(4400, 1, { version: '2.5.0', contract: 'oldfp' }, SELF);
+    const suggested = [...String(out.skew).matchAll(/`reticle ([a-z-]+)/g)].map((m) => m[1] ?? '');
+    expect(suggested.length, 'the remedy suggests no command at all').toBeGreaterThan(0);
+    for (const verb of suggested) {
+      expect(VERBS.has(verb), `\`reticle ${verb}\` is not a command this CLI dispatches`).toBe(
+        true,
+      );
+    }
+  });
+});
