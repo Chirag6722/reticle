@@ -284,6 +284,20 @@ Both are fully supported, not experimental: Reticle observes the renderer **and*
 
 Both are driven by `pnpm test:e2e:desktop`; the Rust side is compiled by CI's `rust` / `rust-macos` jobs. See [Desktop apps](docs/desktop-apps.md).
 
+### Agents — who `reticle init` wires up for you
+
+Reticle is an MCP server, so anything that speaks MCP can drive it. `init` writes the config for these seven without being asked:
+
+**Claude Code** · **Cursor** · **Windsurf** · **Gemini CLI** · **VS Code (Copilot)** · **OpenCode** · **Codex CLI**
+
+Any other MCP client works too — point it at `reticle mcp` and it gets the same tools. `init --no-mcp` skips this half entirely if you already have it configured.
+
+### Browsers
+
+The SDK runs **inside your app**, in whatever browser you already have open — Reticle launches nothing by default, so there is no browser to be compatible with. It observes the DOM, network, console, routing, storage and animations through standard web APIs, and works anywhere those do: **Chrome, Edge, Arc, Dia, Brave, Opera, Firefox and Safari**, plus the Electron and Tauri webviews.
+
+A **driven** browser (`reticle drive`, CDP) is the exception and is **Chromium-only** — that is what powers native input, network mocking, viewport control and visual capture. Everything else works identically in every browser above.
+
 ### Operating systems
 
 **macOS, Linux and Windows are all supported and all first-class.** CI runs a dedicated `windows` job on every commit.
