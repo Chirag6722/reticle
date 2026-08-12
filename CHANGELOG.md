@@ -4,9 +4,40 @@ All notable changes to the **`@reticlehq/*`** packages are documented here (each
 
 ## [Unreleased]
 
+## [2.6.1] — 2026-08-13
+
+**A fifth of every verdict was Reticle refusing to answer.** 2.6.0 shipped the field that finally said _why_ a verdict came out the way it did; the first export using it found the answer in one day, and it was us. No breaking changes.
+
+### Verification actually completes
+
+- **`@reticlehq/server` — a verdict is unclean only when THIS window lost evidence.** `act_and_wait` decided the capture was dirty by watching the ring buffer's _session-wide_ drop counter move across the call — and two of the buffer's three eviction paths have nothing to do with the window being observed: age retires everything past 60 s on **every push**, and the churn floor is sacrificed on purpose so scarce evidence survives. So on any page that had been open for a minute the flag was close to always-on, and the verdict came back `verified: "unknown" / unclean_capture`. **Measured: 57 of 289 field verdicts — 20% of everything verified, and 80% of every `unknown`.** Reticle drove the app, saw the whole window intact, and refused to say what it saw. The buffer now tracks the newest non-churn event it has evicted and answers the only honest question: did _this_ window lose anything.
+
+  > Independent corroboration, from the same export: a dirty capture took a median of **490 ms** and a clean `proved` took **487 ms**. A window that genuinely overflowed a 2000-event buffer inside half a second would be an extraordinary flood, and it would not cost the same as a quiet one.
+
+- **`@reticlehq/server` — four guidance channels were spliced onto tool results and declared on none of them.** A schema-strict MCP client validates `structuredContent` against the tool's `outputSchema` and drops what is not declared, so each of these was built, fired, and thrown away before any agent saw it: **`verify_next`** (the verdict nudge — the largest measured lever on this product's headline metric, since 137 of 140 verdict-less sessions never called a verdict tool once), **`feedback_invite`**, **`version_skew`**, and **`feedback_undelivered`**. The second time this class has shipped; the envelope shape is now _derived_ from a closed `EnvelopeKey` and a mutation-tested guard reads the splice sites, so the two cannot drift again.
+
+- **`@reticlehq/server` — the rule `reticle init` writes into your project no longer leads the agent to the tool that proves nothing.** 2.6.0 fixed this in `SKILL.md` and the MCP handshake and it worked — `act_and_wait` went from 88 calls against 319 to **83% of every verdict produced**. It missed the block written into your own `CLAUDE.md` / `AGENTS.md` / cursor rule, which the agent re-reads every session and which still said "drive the actual flow (`reticle_act` / `reticle_act_and_wait`)". It now leads with `act_and_wait`, names `act_sequence` for multi-step flows, says plainly that `verified: "unknown"` is not a pass, and tells the agent to act on `verify_next`. Same correction in `docs/agent-cheatsheet.md`.
+
+### The instrument can name its own blind spot
+
+- **`@reticlehq/core` / `@reticlehq/server` — `verification.uncleanLoss` says WHAT was lost.** `unclean_capture` covers three losses with three different owners — our server buffer, our browser transport, and a boundary in the page nobody can see through — and they arrived as one bar. Diagnosing the 20% above meant reading the eviction policy, because the data could not say. Now a closed `CaptureLoss` (`buffer_loss` | `transport_gap` | `blind_spot` | `other`) rides every unclean verdict, and is absent whenever the capture was clean.
+
+### It said things that were not true
+
+- **`@reticlehq/server` — the version-skew remedy names a command we actually ship.** _(`reticle doctor`)_
+
 ### Security
 
-- **`@reticlehq/electron` / `reticle-tauri` — desktop captures are written into a private per-process directory (mode `0700`) instead of straight into the shared OS temp directory.** The old filename was guessable by construction — a public constant prefix, a readable pid, and a counter starting at 0 — so on a multi-user machine a screenshot of your app window (customer records, a token on screen, an authenticated session) was readable by any other local user until the sweep removed it, and a symlink pre-placed at that name would be followed by the write. Fixes the CodeQL `js/insecure-temporary-file` alert on `packages/electron/main.cjs`, and the same pattern in the Tauri crate, which CodeQL does not scan. Both writes now also use `O_CREAT|O_EXCL`, which refuses an existing path rather than writing through it. `@reticlehq/server` accepts the new layout **and** the old flat one, so an app on an older shell package keeps getting screenshots against a newer daemon, and removes consumed private capture directories during shutdown so they do not accumulate in the OS temp directory.
+- **`@reticlehq/electron` / `reticle-tauri` — desktop captures are written into a private per-process directory (mode `0700`) instead of straight into the shared OS temp directory.** The old filename was guessable by construction — a public constant prefix, a readable pid, and a counter starting at 0 — so on a multi-user machine a screenshot of your app window (customer records, a token on screen, an authenticated session) was readable by any other local user until the sweep removed it, and a symlink pre-placed at that name would be followed by the write. Fixes the CodeQL `js/insecure-temporary-file` alert on `packages/electron/main.cjs`, and the same pattern in the Tauri crate, which CodeQL does not scan. Both writes now also use `O_CREAT|O_EXCL`, which refuses an existing path rather than writing through it. `@reticlehq/server` accepts the new layout **and** the old flat one, so an app on an older shell package keeps getting screenshots against a newer daemon, and removes consumed private capture directories during shutdown so they do not accumulate in the OS temp directory. _(**[DivyamTalwar](https://github.com/DivyamTalwar)**, [#245](https://github.com/reticlehq/reticle/pull/245), closing [#135](https://github.com/reticlehq/reticle/issues/135))_
+
+### Tests that were asleep
+
+- **`@reticlehq/vite-plugin` — a regression guard for the Vite 8 `define` warning.** [#165](https://github.com/reticlehq/reticle/issues/165) was fixed in 2.6.0 with nothing pinning it; this boots a real Vite 8 dev server and fails if the config hook ever returns a key Vite rejects again. _(**[DevChiniwala](https://github.com/DevChiniwala)**, [#241](https://github.com/reticlehq/reticle/pull/241))_
+- **`@reticlehq/browser` — two transport specs passed against deleted code.** One asserted a retry loop that had been removed and went green anyway; generalising the check found a second doing the same thing. A spec that cannot fail is not coverage, it is a claim of coverage.
+
+### Backlog
+
+Eight issues fixed in 2.6.0 and never closed have been verified and closed — including two, [#115](https://github.com/reticlehq/reticle/issues/115) and [#112](https://github.com/reticlehq/reticle/issues/112), reproduced live against a stranger holding the port before closing. The open-bug list overstated what was actually broken by roughly a third.
 
 ## [2.6.0] — 2026-08-12
 
