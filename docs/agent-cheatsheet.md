@@ -11,7 +11,7 @@ One screen to get fluent. Reticle is the **proof layer for AI agents** — no sc
 | **observe** | `reticle_observe` / `reticle_wait_for` | Everything the app did after `since` / block until true. |
 | **assert** | `reticle_assert` | Evaluate a predicate → `{ pass, evidence, failureReason? }`. The end of every loop. |
 
-> **Only `reticle_act_and_wait` and `reticle_assert` produce a verdict.** Everything else moves or reads the app and proves nothing, so a drive ending without one of those two has no result however many tools it used. Measured over two days of real sessions: `reticle_act` made **319 calls and caught nothing**; `act_and_wait` made 88 and caught **17 of the 28 defects found**. And `verified: "unknown"` is not a pass — it means Reticle drove the app and could not tell what happened. Report it as unknown.
+> **Only `reticle_act_and_wait` and `reticle_assert` produce a verdict.** Everything else moves or reads the app and proves nothing, so a drive ending without one of those two has no result however many tools it used. `reticle_act` is the tool agents reach for by habit and it catches nothing; `act_and_wait` is where defects actually surface. And `verified: "unknown"` is not a pass — it means Reticle drove the app and could not tell what happened. Report it as unknown.
 
 `reticle_act` returns a `since` cursor — pass it to `reticle_observe({ since })` to scope the window. Elements are addressed by stable refs (`e7`) from `snapshot`/`query`; they re-resolve across re-renders.
 

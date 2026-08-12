@@ -522,9 +522,9 @@ export const ACT_TOOLS: ToolDef[] = [
           // Did the buffer lose scarce evidence FROM THIS WINDOW — not "did it evict anything while
           // the action ran", which was the previous rule and which is true on essentially every live
           // page. Age eviction retires everything past 60s on every push, and the churn floor is
-          // sacrificed on purpose; neither costs this verdict a single event it needed. Measured on
-          // 2.6.0: 57 of 289 field verdicts (20%, and 80% of all `unknown`s) reported
-          // `unclean_capture` for evictions that happened outside the window they impeached.
+          // sacrificed on purpose; neither costs this verdict a single event it needed. In the
+          // field this made `unclean_capture` the dominant cause of `unknown`, reported for
+          // evictions that happened outside the window they impeached.
           truncated: bufferLost,
           coveragePartial: Coverage.PARTIAL === coverage.coverage,
           ...(0 === impeachingNotes.length ? {} : { blindSpots: impeachingNotes }),

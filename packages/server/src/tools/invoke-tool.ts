@@ -310,7 +310,7 @@ export async function runTool(
   if (lease !== undefined) envelope[EnvelopeKey.SESSION_LEASE] = lease;
   const warning = resolved.ageWarning();
   if (warning !== undefined) envelope[EnvelopeKey.SESSION_AGE_WARNING] = warning;
-  // Ask for a verdict when the agent has driven the page and not asked for one. 137 of the 140
+  // Ask for a verdict when the agent has driven the page and not asked for one. Almost every
   // verdict-less sessions measured over 2026-08-10/11 never called a verdict-producing tool ONCE;
   // the counter behind this already existed and was reported only to us. One-shot per abandoned
   // run, same discipline as the pool lease — a hint on every call is noise that gets tuned out.

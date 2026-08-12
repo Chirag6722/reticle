@@ -31,7 +31,7 @@ function fakeProc(): ProcessLike & { fire: (event: string, arg: unknown) => void
  * refused connect, which was the right example when it was written — 65 such crashes in a day, one
  * fingerprint, no location on any of them. In the same release, `ECONNREFUSED` stopped being a
  * crash at all: it is a daemon that has not booted yet, the proxy is built to tolerate it, and all
- * 84 crash events over two days were that one non-crash. It is now absorbed as
+ * every crash event over two days was that one non-crash. It is now absorbed as
  * `*_peer_unreachable` before it ever reaches `reportCrash`.
  *
  * So the enrichment this file tests still matters, for exactly the crashes that ARE crashes and

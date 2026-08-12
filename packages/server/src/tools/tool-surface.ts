@@ -106,16 +106,16 @@ export const CORE_TOOL_NAMES: ReadonlySet<string> = new Set([
   ReticleTool.ACT_AND_WAIT,
   // ACT_SEQUENCE is here because its absence was measurably CAUSING the biggest loop in the data.
   //
-  // Measured 2026-08-10/11 (non-CI): `reticle_act` 319 calls, `reticle_act_sequence` **7**. `act`
-  // also leads the repeat table at 110 consecutive-repeat runs, and inside those sessions the
-  // repeated calls are 98 clicks and 21 fills — a login form driven one round trip at a time, which
-  // is exactly the antipattern SKILL.md warns about and exactly what this tool exists to collapse.
+  // In the field `reticle_act` is called overwhelmingly more often than `reticle_act_sequence`, and
+  // `act` leads the repeat table by a wide margin — inside those sessions the repeated calls are
+  // clicks and fills, a login form driven one round trip at a time, which is exactly the antipattern
+  // SKILL.md warns about and exactly what this tool exists to collapse.
   //
-  // The repeats are NOT retries: looping sessions have a lower error rate (0.051) than non-looping
-  // ones (0.078). The calls succeed and get repeated, because the batching tool was reachable only
-  // through `reticle_run` — so an agent had to already know it existed to use it, and 7-vs-319 says
-  // essentially nobody did. A tool an agent must already know about is a tool that never gets
-  // called; the same argument that put INSPECT and FEEDBACK here.
+  // The repeats are NOT retries: looping sessions have a LOWER error rate than non-looping ones. The
+  // calls succeed and get repeated, because the batching tool was reachable only through
+  // `reticle_run` — so an agent had to already know it existed to use it, and essentially nobody
+  // did. A tool an agent must already know about is a tool that never gets called; the same argument
+  // that put INSPECT and FEEDBACK here.
   ReticleTool.ACT_SEQUENCE,
   ReticleTool.OBSERVE,
   ReticleTool.NETWORK,

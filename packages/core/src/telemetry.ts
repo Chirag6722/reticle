@@ -206,7 +206,7 @@ export type TelemetryActor = (typeof TelemetryActor)[keyof typeof TelemetryActor
  * property the funnel actually needs: `init` runs in the app directory and the daemon is spawned from
  * wherever the agent's client happens to sit, so an id that changes with the working directory
  * severs the two halves of the funnel. Only `cwd` has that defect, and it is now the last resort
- * rather than the first fallback — measured 2026-08-11 at 1131 ids for 243 users.
+ * rather than the first fallback — the field showed many ids minted for a single project.
  */
 export const ProjectIdSource = {
   /** Hash of the shared git origin — the same on every clone, so cross-machine counting is valid. */
@@ -287,8 +287,8 @@ export const VerificationSchema = z.object({
    * WHAT was lost, when `reason` is `unclean_capture` — see `CaptureLoss`.
    *
    * The three causes belong to three different owners and need three different fixes, and without
-   * this they are one bar. The one time we had to answer it — 57 of 289 verdicts on 2.6.0 — the data
-   * could not, and the answer turned out to be that our own eviction counter was miscounting.
+   * this they are one bar. The one time we had to answer it the data could not, and the answer
+   * turned out to be that our own eviction counter was miscounting.
    *
    * ONE value, not a list: `losses` can hold several and a multi-value property is not something a
    * dashboard can group by, so the FIRST is sent and the order in the producers is the order of
@@ -567,7 +567,7 @@ export const McpOutageSchema = z.object({
   /**
    * In-flight tool calls this drop actually killed — the only part an agent can FEEL.
    *
-   * Without it every drop looks equally bad. Measured 2026-08-10/11: **320 of 321 outages were
+   * Without it every drop looks equally bad. In the field almost every outage was
    * `stage: first` with `attempts: 1`** — the stream ended once and the proxy reconnected, which for
    * an agent with nothing in flight is invisible. Reading that 321 as "the agent lost its tools 321
    * times" overstates the problem by roughly the whole number, and buries the one drop that mattered.

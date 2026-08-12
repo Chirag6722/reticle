@@ -126,8 +126,8 @@ export const EnvelopeKey = {
   /**
    * "You have driven this page N times without asking for a verdict."
    *
-   * The largest measured lever on the metric this product is judged by — 137 of 140 verdict-less
-   * sessions never called a verdict-producing tool once — and it was spliced undeclared, so on a
+   * The largest known lever on the metric this product is judged by: verdict-less sessions
+   * overwhelmingly never call a verdict-producing tool at all. It was spliced undeclared, so on a
    * validating client the nudge was built, fired, and thrown away before any agent saw it.
    */
   VERIFY_NEXT: 'verify_next',

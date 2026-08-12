@@ -156,9 +156,9 @@ describe('the verdict carries the clause that decided it', () => {
  *
  * The reason field says a capture was dirty. It does not say whether that was our server buffer, our
  * browser transport, or a boundary in the page nobody can see through — three owners, three fixes.
- * Measured on 2.6.0: `unclean_capture` was 57 of 289 verdicts, 20% of everything verified and 80% of
- * every `unknown`, and answering "which one?" meant reading the eviction policy because the data
- * could not. (It was the buffer, and it was miscounting.)
+ * In the field `unclean_capture` became the dominant cause of `unknown`, and answering "which one?"
+ * meant reading the eviction policy because the data could not. (It was the buffer, and it was
+ * miscounting.)
  */
 describe('an unclean capture says which loss made it unclean', () => {
   const unclean = (losses?: unknown): Record<string, unknown> => ({

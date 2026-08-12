@@ -155,7 +155,7 @@ describe('one surface, plus a verification switch', () => {
 /**
  * The advertised surface must contain the tool that prevents the biggest loop in the data.
  *
- * Measured 2026-08-10/11 (non-CI): `reticle_act` was called **319 times** and
+ * In the field `reticle_act` is called overwhelmingly more often than
  * `reticle_act_sequence` **7 times**. `act` also leads the repeat table — **110 consecutive-repeat
  * runs**, and inside those sessions the repeated calls are **98 clicks and 21 fills**, i.e. a login
  * form driven one round trip at a time. 23 of the 30 looping sessions recorded abandoned actions.
@@ -169,12 +169,12 @@ describe('the surface advertises the tools that prevent looping and produce verd
   it('advertises reticle_act_sequence, not just reticle_act', () => {
     expect(
       CORE_TOOL_NAMES.has(ReticleTool.ACT_SEQUENCE),
-      'act:319 vs act_sequence:7 — the batching tool was invisible',
+      'act dominates act_sequence — the batching tool was invisible',
     ).toBe(true);
   });
 
   it('advertises both verdict-producing tools', () => {
-    // 137 of 140 verdict-less sessions never called either of these once.
+    // Verdict-less sessions overwhelmingly never call either of these once.
     expect(CORE_TOOL_NAMES.has(ReticleTool.ACT_AND_WAIT)).toBe(true);
     expect(CORE_TOOL_NAMES.has(ReticleTool.ASSERT)).toBe(true);
   });

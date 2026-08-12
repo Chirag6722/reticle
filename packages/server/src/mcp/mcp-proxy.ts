@@ -562,7 +562,7 @@ export function startMcpProxy(
       attempts++;
       // Once per process: this session has now lost its tools at least once, which is the number
       // that says whether the transport work actually landed for real users. `pendingLost` is the
-      // part an agent can FEEL — 320 of 321 measured drops killed nothing in flight.
+      // part an agent can FEEL — almost every measured drop killed nothing in flight.
       reportMcpOutage(OutageStage.FIRST, { reason, attempts, pendingLost });
       // The severe stage: we are about to stop retrying. Reported so the share of sessions where
       // MCP never came back on its own is a number rather than an anecdote.

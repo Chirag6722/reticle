@@ -18,9 +18,9 @@ import { EnvelopeKey, sessionEnvelopeShape } from './tool-kit.js';
  *
  * Then 2.6.0 added four more channels and declared none of them:
  *
- *   - `verify_next` — the verdict nudge, the largest measured lever on the metric this product is
- *     judged by (137 of 140 verdict-less sessions never called a verdict tool once);
- *   - `feedback_invite` — the contextual feedback channel that produced ~11 of that release's fixes;
+ *   - `verify_next` — the verdict nudge, the largest known lever on whether a session produces a
+ *     verdict at all;
+ *   - `feedback_invite` — the contextual feedback channel that drives much of the fix backlog;
  *   - `version_skew` — often the single fact that explains everything else in a session;
  *   - `feedback_undelivered` — a report accepted and then lost, which only the reporter can act on.
  *

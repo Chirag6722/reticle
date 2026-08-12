@@ -84,9 +84,9 @@ export type VerifiedReason = (typeof VerifiedReason)[keyof typeof VerifiedReason
  * can see through. Until this existed they arrived as one value on a dashboard and as one sentence
  * of free prose in `integrity.issues`, which is not something a query can group by.
  *
- * That cost real time. `unclean_capture` was 57 of 289 field verdicts on 2.6.0 — 20% of everything
- * verified, and 80% of every `unknown` — and answering "which of the three?" took reading the
- * eviction policy, because the data could not say. It was the first one, and it was a false alarm.
+ * That cost real time. `unclean_capture` became a large share of all `unknown` verdicts in the
+ * field, and answering "which of the three?" took reading the eviction policy, because the data
+ * could not say. It was the first one, and it was a false alarm.
  */
 export const CaptureLoss = {
   /** The server ring buffer evicted scarce evidence that belonged to the observation window. */

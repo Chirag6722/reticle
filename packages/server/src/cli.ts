@@ -525,7 +525,7 @@ function handleDaemonInner(parsed: {
           // The reason rides out on the session summary, which is the only event that fires at this
           // exact moment. The proxy emits the matching `mcp_connection_lost` and cannot know it —
           // it sees a socket end and nothing more, which is how a scheduled idle exit came to make up
-          // 299 of 321 "outages". See SessionSummary.exit.
+          // the large majority of "outages". See SessionSummary.exit.
           .shutdown(reason)
           .then(() => server.close())
           .then(() => {

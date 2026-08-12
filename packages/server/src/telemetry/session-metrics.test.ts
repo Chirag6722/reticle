@@ -281,7 +281,7 @@ describe('recordBug reports whether this KIND is new to the session', () => {
 /**
  * A designed exit and a real failure must not be the same row.
  *
- * Measured 2026-08-10/11: 299 of 321 `mcp_connection_lost` events were `sse_ended` at stage `first`
+ * In the field the large majority of `mcp_connection_lost` events were `sse_ended` at stage `first`
  * — overwhelmingly the daemon closing its own stream on its scheduled idle shutdown. The proxy that
  * emits the outage only ever sees a socket end, so the metric meant to say "the agent lost its
  * tools" was mostly counting the daemon going to sleep on purpose, and a genuine outage was
@@ -314,7 +314,7 @@ describe('the session summary says WHY the daemon exited', () => {
  * `#startedAt` and never resets. So `daemon_stopped` — the event whose docstring promises "the whole
  * session in a single event" — described a long session that made no calls.
  *
- * Measured 2026-08-10/11: **496 of 499 `daemon_stopped` rows carried `toolCalls: 0`** at a median
+ * In the field almost every `daemon_stopped` row carried `toolCalls: 0`, at a median
  * duration of 30.5 minutes, while `session_progress` for the same daemons carried real histograms.
  * Every funnel computed off the end-of-session event therefore read zero at the exact step this
  * release exists to raise.
@@ -382,7 +382,7 @@ describe('a final summary reports the whole session, not the last window', () =>
  * | no verdict | 140 | 269 | 1 | 2 | **3 of 140 (2%)** |
  * | verdict    |  30 |  50 | 87 | 23 | 29 of 30 (97%) |
  *
- * **137 of the 140 verdict-less sessions never called a verdict-producing tool once.** They drove
+ * **Verdict-less sessions overwhelmingly never called a verdict-producing tool once.** They drove
  * the app 269 times and never asked whether it worked. The product already counted this
  * (`abandonedActions`, non-zero in 58 sessions) and never told the agent.
  *

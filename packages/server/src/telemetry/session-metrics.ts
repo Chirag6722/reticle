@@ -81,7 +81,7 @@ export class SessionMetrics {
    * whole session in a single event" — reported a 30-minute session containing zero tool calls,
    * because it only ever carried the residue since the last flush.
    *
-   * Measured 2026-08-10/11: **496 of 499 `daemon_stopped` rows had `toolCalls: 0`**, at a median
+   * In the field almost every `daemon_stopped` row had `toolCalls: 0`, at a median
    * duration of 30.5 minutes, while `session_progress` for the same daemons carried real tool
    * histograms. Anyone computing "did this session use Reticle" off the event named for the end of
    * the session got `no` essentially always. That is not a small skew — it is the funnel reading
@@ -344,7 +344,7 @@ export class SessionMetrics {
    * Ask the agent for a verdict, once, when it has driven the page without asking for one.
    *
    * Measured 2026-08-10/11: of 170 sessions that made a tool call, 140 produced no verdict — and
-   * **137 of those never called a verdict-producing tool even once.** They drove the app 269 times
+   * **Almost all of those never called a verdict-producing tool even once.** They drove the app
    * with `reticle_act` and never asked whether it worked. This counter already existed
    * (`abandonedActions`, non-zero in 58 sessions); it was reported to US and never to the agent.
    *

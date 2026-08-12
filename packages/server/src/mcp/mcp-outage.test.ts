@@ -89,7 +89,7 @@ describe('the reason stays a closed vocabulary', () => {
 /**
  * An outage nobody could feel is not the same as one that killed a call.
  *
- * Measured 2026-08-10/11: **320 of 321 `mcp_connection_lost` events were `stage: first` with
+ * In the field almost every `mcp_connection_lost` event was `stage: first` with
  * `attempts: 1`** — the SSE stream ended once and the proxy reconnected. For an agent with nothing
  * in flight that is invisible. Reading 321 as "the agent lost its tools 321 times" overstates the
  * problem by nearly the whole number and buries the ONE drop that mattered (61 attempts, budget

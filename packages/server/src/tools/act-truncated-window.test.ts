@@ -24,11 +24,11 @@ import type { Session, SessionManager } from '../session/session.js';
  * window the server buffer had evicted during would have come back `proved`, with no trace that
  * part of the window was never seen.
  *
- * The flag stuck ON is the opposite failure and, measured, the more expensive one: it read the
- * cumulative drop counter, which moves on every push once a session is a minute old, so **57 of 289
- * field verdicts on 2.6.0 (20%) came back `unknown` over windows that were completely intact**. The
- * cursor is asserted below for that reason — the whole defect was a consumer asking the buffer a
- * question about the session when it meant to ask one about the window.
+ * The flag stuck ON is the opposite failure and, in the field, the more expensive one: it read the
+ * cumulative drop counter, which moves on every push once a session is a minute old, so verdicts
+ * came back `unknown` over windows that were completely intact. The cursor is asserted below for
+ * that reason — the whole defect was a consumer asking the buffer a question about the session when
+ * it meant to ask one about the window.
  *
  * Distinct from the Session-level gap (`Session.lostSince` delegating to the ring buffer, covered
  * separately): this is act_and_wait's USE of it, and it had its own hole.
