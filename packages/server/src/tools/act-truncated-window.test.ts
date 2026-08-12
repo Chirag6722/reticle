@@ -13,24 +13,27 @@ import { AnnotationStore } from '../flows/annotation-store.js';
 import type { Session, SessionManager } from '../session/session.js';
 
 /**
- * A verdict whose window LOST events must not grade `proved`.
+ * A verdict whose window LOST events must not grade `proved` — and one whose window lost nothing
+ * must not be caveated for evictions that happened elsewhere.
  *
- * `act_and_wait` marks its window truncated with
- * `truncated: session.bufferHealth().dropped > droppedBefore` — the delta across this one action.
- * That feeds `integrity.issues`, and `!integrity.clean` is what makes `decideVerified` answer
- * UNCLEAN_CAPTURE: "a green here would only describe what was observed".
+ * `act_and_wait` marks its window truncated with `session.lostSince(since)`. That feeds
+ * `integrity.issues`, and `!integrity.clean` is what makes `decideVerified` answer UNCLEAN_CAPTURE:
+ * "a green here would only describe what was observed".
  *
  * Found by mutation: hardcoding that flag to `false` failed ZERO tests. So a verdict reached over a
  * window the server buffer had evicted during would have come back `proved`, with no trace that
  * part of the window was never seen.
  *
- * Distinct from the Session-level gap (`Session.bufferHealth` delegating to the ring buffer, covered
- * separately): this is act_and_wait's USE of it — the per-action delta — and it had its own hole.
+ * The flag stuck ON is the opposite failure and, measured, the more expensive one: it read the
+ * cumulative drop counter, which moves on every push once a session is a minute old, so **57 of 289
+ * field verdicts on 2.6.0 (20%) came back `unknown` over windows that were completely intact**. The
+ * cursor is asserted below for that reason — the whole defect was a consumer asking the buffer a
+ * question about the session when it meant to ask one about the window.
  *
- * Fourth instance of one pattern: a well-tested producer, consumers that stub it, and nothing on the
- * delegation between them.
+ * Distinct from the Session-level gap (`Session.lostSince` delegating to the ring buffer, covered
+ * separately): this is act_and_wait's USE of it, and it had its own hole.
  */
-function fakeSession(drops: number[]): Session {
+function fakeSession(lost: boolean, cursors: number[] = []): Session {
   const command = (): Promise<CommandResult> =>
     Promise.resolve({
       kind: 'command_result',
@@ -38,9 +41,6 @@ function fakeSession(drops: number[]): Session {
       ok: true,
       result: { dispatched: true, settled: true, effect: { domMutatedWithin: 1 } },
     });
-  // Successive reads walk the list, so the SECOND read (after the act) can exceed the first —
-  // which is exactly the "the buffer evicted while this action ran" condition.
-  let read = 0;
   const noEvents: ReticleEvent[] = [];
   const stub: Partial<Session> = {
     id: 'demo',
@@ -52,7 +52,11 @@ function fakeSession(drops: number[]): Session {
     command,
     queryEvents: () => Promise.resolve(noEvents),
     eventsSince: () => noEvents,
-    bufferHealth: () => ({ total: 10, dropped: drops[Math.min(read++, drops.length - 1)] ?? 0 }),
+    bufferHealth: () => ({ total: 10, dropped: 9 }),
+    lostSince: (cursor: number) => {
+      cursors.push(cursor);
+      return lost;
+    },
     blindSpots: () => ({}),
     health: () => ({ lastSeenMs: 0, throttled: false, focused: true }),
     throttled: () => false,
@@ -97,28 +101,28 @@ interface Verdict {
 }
 
 describe('act_and_wait declares a window that lost events', () => {
-  it('does not grade proved when the buffer evicted DURING the action', async () => {
-    // 0 dropped before the act, 12 after: the window this verdict covers has a hole in it.
-    const deps = fakeDeps(fakeSession([0, 12]));
+  it('does not grade proved when scarce evidence was lost from THIS window', async () => {
+    const deps = fakeDeps(fakeSession(true));
     const r = (await tool(ReticleTool.ACT_AND_WAIT).handler(deps, ACT)) as Verdict;
     expect(r.verified).toBe(Verified.UNKNOWN);
     expect(r.verifiedReason).toBe(VerifiedReason.UNCLEAN_CAPTURE);
   });
 
-  it('still grades proved when nothing was evicted — the ordinary window is untouched', async () => {
-    // The control. A flag stuck ON would caveat every verdict, which is the opposite failure and
-    // just as damaging: a warning that is always present is one nobody reads.
-    const deps = fakeDeps(fakeSession([3, 3]));
+  it('still grades proved when the window lost nothing, however much the session evicted', async () => {
+    // The control, and the field defect: `dropped` reads 9 here. A verdict that consults the
+    // session-wide counter caveats every window on any page that has been open for a minute.
+    const deps = fakeDeps(fakeSession(false));
     const r = (await tool(ReticleTool.ACT_AND_WAIT).handler(deps, ACT)) as Verdict;
     expect(r.verifiedReason).toBe(VerifiedReason.PROVED);
   });
 
-  it('reads the DELTA, not the total — a buffer that evicted BEFORE this act is not its problem', async () => {
-    // 9 already dropped before the action and none during it. Marking that window unclean would
-    // blame this verdict for a gap that predates it, and every later act in a long session would
-    // inherit a caveat it did not earn.
-    const deps = fakeDeps(fakeSession([9, 9]));
-    const r = (await tool(ReticleTool.ACT_AND_WAIT).handler(deps, ACT)) as Verdict;
-    expect(r.verifiedReason).toBe(VerifiedReason.PROVED);
+  it('asks about the window, not the session — the cursor is where the observation opened', async () => {
+    // Pins the ARGUMENT, not just the answer. `lostSince(0)` would be true for the whole session and
+    // is exactly how this regresses: same call, same shape, silently back to a session-wide claim.
+    const cursors: number[] = [];
+    const deps = fakeDeps(fakeSession(false, cursors));
+    await tool(ReticleTool.ACT_AND_WAIT).handler(deps, ACT);
+    expect(cursors).toContain(1000); // the fake's `elapsed()` — the moment the window opened
+    expect(cursors).not.toContain(0);
   });
 });

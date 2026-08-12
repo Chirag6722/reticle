@@ -6,6 +6,8 @@
  * assessment — all five components already exist individually; wiring it onto results is a later step.
  */
 
+import type { CaptureLoss } from '@reticlehq/core';
+
 /** Assertion grade, strongest first — the tier the verdict actually proved. */
 export const HonestyGrade = {
   SIGNAL: 'signal',
@@ -39,6 +41,15 @@ interface HonestyInputs {
   coveragePartial?: boolean;
   truncated?: boolean;
   blindSpots?: readonly string[];
+  /**
+   * The machine-readable half of `issues` — WHICH kind of loss, from core's closed `CaptureLoss`.
+   *
+   * `issues` is prose built for an agent to read, and prose is not something a dashboard can group
+   * by: `unclean_capture` was a fifth of all field verdicts with no way to ask which of its three
+   * causes produced them. Passed by the caller rather than derived here, because only the caller
+   * knows whether a blind-spot note came from the browser transport or from a boundary in the page.
+   */
+  losses?: readonly CaptureLoss[];
 }
 
 export interface HonestyBlock {
@@ -48,7 +59,7 @@ export interface HonestyBlock {
   envelope?: { samples: number; sufficient: boolean };
   /** `pct` is present only when it was measured (or provably full); `partial` is always known. */
   coverage: { pct?: number; partial: boolean };
-  integrity: { clean: boolean; issues: string[] };
+  integrity: { clean: boolean; issues: string[]; losses?: CaptureLoss[] };
 }
 
 export function buildHonestyBlock(inputs: HonestyInputs): HonestyBlock {
@@ -73,7 +84,15 @@ export function buildHonestyBlock(inputs: HonestyInputs): HonestyBlock {
       ? {}
       : { envelope: { samples, sufficient: samples >= MIN_ENVELOPE_SAMPLES } }),
     coverage: { ...(pct === undefined ? {} : { pct }), partial },
-    integrity: { clean: 0 === issues.length, issues },
+    integrity: {
+      clean: 0 === issues.length,
+      issues,
+      // Only when something was actually lost. An empty array beside `clean: true` would be a field
+      // that is always present and always says nothing, which is how a signal gets tuned out.
+      ...(0 === issues.length || undefined === inputs.losses || 0 === inputs.losses.length
+        ? {}
+        : { losses: [...new Set(inputs.losses)] }),
+    },
   };
 }
 

@@ -31,6 +31,16 @@ export class RingBuffer {
   #head = 0;
   #totalBytes = 0;
   #droppedCount = 0;
+  /**
+   * The timestamp of the newest NON-CHURN event this buffer has ever evicted, or `undefined` if it
+   * has never lost one. This — not the drop counter — is what impeaches an observation window.
+   *
+   * The counter cannot answer the question. It moves for age eviction (everything past 60s, on every
+   * push) and for churn eviction (the low-signal floor, sacrificed on purpose so scarce evidence
+   * survives), neither of which is evidence lost from the window an agent just observed. See
+   * `lostSince` and `ring-buffer-window-loss.test.ts`.
+   */
+  #lastScarceLossT: number | undefined;
 
   constructor(options: RingBufferOptions = {}) {
     this.#maxEvents = options.maxEvents ?? RING_BUFFER_DEFAULTS.MAX_EVENTS;
@@ -96,7 +106,10 @@ export class RingBuffer {
       }
       const victim = this.#findChurnAfterHead();
       if (-1 === victim) {
-        // Buffer genuinely full of high-signal events — fall back to FIFO so it stays bounded.
+        // Buffer genuinely full of high-signal events — fall back to FIFO so it stays bounded. This
+        // is the one eviction path that destroys scarce evidence, and the only one that should ever
+        // make a verdict say it could not see.
+        this.#noteScarceLoss(this.#head);
         this.#totalBytes -= this.#eventBytes[this.#head] ?? 0;
         this.#head += 1;
         continue;
@@ -106,6 +119,7 @@ export class RingBuffer {
       this.#eventBytes.splice(victim, 1);
     }
     while (this.#liveCount() > 0 && (this.#events[this.#head]?.t ?? cutoff) < cutoff) {
+      this.#noteScarceLoss(this.#head);
       this.#totalBytes -= this.#eventBytes[this.#head] ?? 0;
       this.#head += 1;
     }
@@ -116,6 +130,26 @@ export class RingBuffer {
       this.#eventBytes = this.#eventBytes.slice(this.#head);
       this.#head = 0;
     }
+  }
+
+  /** Record an eviction at `index` as scarce loss, unless it was the churn floor being sacrificed. */
+  #noteScarceLoss(index: number): void {
+    const victim = this.#events[index];
+    if (victim === undefined || CHURN_TYPES.has(victim.type)) return;
+    if (this.#lastScarceLossT === undefined || victim.t > this.#lastScarceLossT) {
+      this.#lastScarceLossT = victim.t;
+    }
+  }
+
+  /**
+   * Did this buffer evict scarce evidence that belonged to a window opened at `cursor`?
+   *
+   * The one honest input to "was the capture clean". A `false` here means every non-churn event in
+   * the window is still held, whatever the drop counter says — and the drop counter says a great
+   * deal, because age eviction runs on every push.
+   */
+  lostSince(cursor: number): boolean {
+    return this.#lastScarceLossT !== undefined && this.#lastScarceLossT >= cursor;
   }
 
   /** First churn event after the head, or -1 if none within the bounded scan (keeps eviction cheap). */

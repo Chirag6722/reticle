@@ -17,7 +17,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { BrowserBrand, VerifiedReason } from '@reticlehq/core';
+import { BrowserBrand, CaptureLoss, Verified, VerifiedReason } from '@reticlehq/core';
 import { decideVerified } from '../honesty/verified.js';
 import { HonestyGrade } from '../honesty/honesty.js';
 import { verificationOf } from './verification-of.js';
@@ -25,6 +25,7 @@ import { ReticleTool } from '../tools/tool-names.js';
 import { BrowserMode, setBrowserMode, resetBrowserMode } from './browser-mode.js';
 
 const VERIFY = ReticleTool.FLOW_VERIFY;
+const ASSERT = ReticleTool.ASSERT;
 
 describe('verificationOf', () => {
   it('a PASSING suite is a verification', () => {
@@ -147,5 +148,62 @@ describe('the verdict carries the clause that decided it', () => {
     // The result is an untyped record here; a string nobody can group by is worse than a gap.
     const verification = verificationOf(VERIFY, { pass: false, verifiedReason: 'made-up' }, 1);
     expect(verification !== undefined && 'reason' in verification).toBe(false);
+  });
+});
+
+/**
+ * WHAT was lost, when the reason was `unclean_capture`.
+ *
+ * The reason field says a capture was dirty. It does not say whether that was our server buffer, our
+ * browser transport, or a boundary in the page nobody can see through — three owners, three fixes.
+ * Measured on 2.6.0: `unclean_capture` was 57 of 289 verdicts, 20% of everything verified and 80% of
+ * every `unknown`, and answering "which one?" meant reading the eviction policy because the data
+ * could not. (It was the buffer, and it was miscounting.)
+ */
+describe('an unclean capture says which loss made it unclean', () => {
+  const unclean = (losses?: unknown): Record<string, unknown> => ({
+    pass: true,
+    verified: Verified.UNKNOWN,
+    verifiedReason: VerifiedReason.UNCLEAN_CAPTURE,
+    honesty: {
+      integrity: {
+        clean: false,
+        issues: ['capture truncated'],
+        ...(losses === undefined ? {} : { losses }),
+      },
+    },
+  });
+
+  it('carries the kind the honesty block named', () => {
+    expect(verificationOf(ASSERT, unclean([CaptureLoss.BUFFER_LOSS]), 1)?.uncleanLoss).toBe(
+      CaptureLoss.BUFFER_LOSS,
+    );
+    expect(verificationOf(ASSERT, unclean([CaptureLoss.TRANSPORT_GAP]), 1)?.uncleanLoss).toBe(
+      CaptureLoss.TRANSPORT_GAP,
+    );
+  });
+
+  it('sends the FIRST of several — a multi-value property is not something a dashboard groups by', () => {
+    const both = unclean([CaptureLoss.BUFFER_LOSS, CaptureLoss.BLIND_SPOT]);
+    expect(verificationOf(ASSERT, both, 1)?.uncleanLoss).toBe(CaptureLoss.BUFFER_LOSS);
+  });
+
+  it('reports `other` when the capture was dirty and named no kind, never nothing', () => {
+    // An older sender, or a producer that forgot. The loss is real either way, and a gap here would
+    // read on a dashboard as "no unclean verdicts happened" — the opposite of the truth.
+    expect(verificationOf(ASSERT, unclean(), 1)?.uncleanLoss).toBe(CaptureLoss.OTHER);
+    expect(verificationOf(ASSERT, unclean(['not-a-member']), 1)?.uncleanLoss).toBe(
+      CaptureLoss.OTHER,
+    );
+  });
+
+  it('is absent on every verdict whose capture was clean', () => {
+    const proved = verificationOf(
+      ASSERT,
+      { pass: true, verified: Verified.YES, verifiedReason: VerifiedReason.PROVED },
+      1,
+    );
+    expect(proved).toBeDefined();
+    expect(proved !== undefined && 'uncleanLoss' in proved).toBe(false);
   });
 });

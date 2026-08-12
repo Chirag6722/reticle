@@ -62,6 +62,7 @@ function fakeSession(options: Options): Session {
     queryEvents: () => Promise.resolve(noEvents),
     eventsSince: () => noEvents,
     bufferHealth: () => ({ total: 0, dropped: 0 }),
+    lostSince: () => false,
     blindSpots: () => ({}),
     health: () => ({ lastSeenMs: 0, throttled: false, focused: true }),
     throttled: () => false,

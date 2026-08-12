@@ -12,7 +12,7 @@
  * Extracted because a rule this easy to get wrong, feeding the one number shown to investors, should
  * be readable and testable on its own rather than inferred from a ternary inside a dispatcher.
  */
-import { type BrowserBrand, type Verification, VerifiedReason } from '@reticlehq/core';
+import { type BrowserBrand, CaptureLoss, type Verification, VerifiedReason } from '@reticlehq/core';
 import { VERIFICATION_TOOLS } from '../tools/feedback-tools.js';
 import { getBrowserMode } from './browser-mode.js';
 
@@ -27,6 +27,31 @@ const REASONS: ReadonlySet<string> = new Set(Object.values(VerifiedReason));
 function reasonOf(result: Record<string, unknown>): VerifiedReason | undefined {
   const raw = result['verifiedReason'];
   return 'string' === typeof raw && REASONS.has(raw) ? (raw as VerifiedReason) : undefined;
+}
+
+/**
+ * WHICH loss made the capture unclean, read off the honesty block the verdict already carries.
+ *
+ * Narrowed against core's own list for the same reason `reasonOf` is: a value that is not a member
+ * is not an answer. Reported as `OTHER` rather than dropped when the block says the capture was
+ * dirty and names no kind — the loss is real either way, and a silent absence there would read as
+ * "no unclean verdicts happened", which is the opposite of the truth.
+ */
+const LOSSES: ReadonlySet<string> = new Set(Object.values(CaptureLoss));
+function uncleanLossOf(
+  result: Record<string, unknown>,
+  reason: VerifiedReason | undefined,
+): CaptureLoss | undefined {
+  if (VerifiedReason.UNCLEAN_CAPTURE !== reason) return undefined;
+  const honesty = result['honesty'];
+  const integrity =
+    null !== honesty && 'object' === typeof honesty
+      ? (honesty as { integrity?: { losses?: unknown } }).integrity
+      : undefined;
+  const first = Array.isArray(integrity?.losses) ? (integrity.losses as unknown[])[0] : undefined;
+  return 'string' === typeof first && LOSSES.has(first)
+    ? (first as CaptureLoss)
+    : CaptureLoss.OTHER;
 }
 
 /** Suite statuses. `unverifiable` is a suite that ran but proved nothing — including an empty one. */
@@ -68,6 +93,7 @@ export function verificationOf(
           : undefined;
   if (verified === undefined && passed === undefined) return undefined;
   const reason = reasonOf(result);
+  const uncleanLoss = uncleanLossOf(result, reason);
   return {
     via: toolName,
     verified: verified ?? (true === passed ? 'yes' : 'no'),
@@ -86,5 +112,8 @@ export function verificationOf(
     // belonging to three different owners — the agent, the app, and Reticle's own blind spots — and
     // they need opposite responses. A suite verdict has no clause behind it and reports none.
     ...(reason === undefined ? {} : { reason }),
+    // WHAT was lost, when the reason was that something was. Three owners, three fixes, one bar
+    // until now.
+    ...(uncleanLoss === undefined ? {} : { uncleanLoss }),
   };
 }

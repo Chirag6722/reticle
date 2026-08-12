@@ -22,7 +22,7 @@ import {
   SessionSummarySchema,
 } from './telemetry-session.js';
 import { BrowserBrand, FeedbackSchema } from './telemetry-feedback.js';
-import { VerifiedReason } from './verified-constants.js';
+import { CaptureLoss, VerifiedReason } from './verified-constants.js';
 import { IdentitySchema } from './telemetry-feedback.js';
 
 /** Bump when the event shape changes so the analytics side can segment old senders. */
@@ -283,6 +283,18 @@ export const VerificationSchema = z.object({
    * no clause behind it, and an older SDK reports none. Absent means unclassified, never guessed.
    */
   reason: z.nativeEnum(VerifiedReason).optional(),
+  /**
+   * WHAT was lost, when `reason` is `unclean_capture` — see `CaptureLoss`.
+   *
+   * The three causes belong to three different owners and need three different fixes, and without
+   * this they are one bar. The one time we had to answer it — 57 of 289 verdicts on 2.6.0 — the data
+   * could not, and the answer turned out to be that our own eviction counter was miscounting.
+   *
+   * ONE value, not a list: `losses` can hold several and a multi-value property is not something a
+   * dashboard can group by, so the FIRST is sent and the order in the producers is the order of
+   * ownership — ours before the page's. Absent on every verdict whose capture was clean.
+   */
+  uncleanLoss: z.nativeEnum(CaptureLoss).optional(),
 });
 export type Verification = z.infer<typeof VerificationSchema>;
 

@@ -77,6 +77,30 @@ export const VerifiedReason = {
 export type VerifiedReason = (typeof VerifiedReason)[keyof typeof VerifiedReason];
 
 /**
+ * WHAT made a capture unclean — the closed vocabulary behind `UNCLEAN_CAPTURE`.
+ *
+ * `unclean_capture` names three losses that belong to three different owners and need three
+ * different fixes: our server buffer, our browser transport, and a boundary in the page that nobody
+ * can see through. Until this existed they arrived as one value on a dashboard and as one sentence
+ * of free prose in `integrity.issues`, which is not something a query can group by.
+ *
+ * That cost real time. `unclean_capture` was 57 of 289 field verdicts on 2.6.0 — 20% of everything
+ * verified, and 80% of every `unknown` — and answering "which of the three?" took reading the
+ * eviction policy, because the data could not say. It was the first one, and it was a false alarm.
+ */
+export const CaptureLoss = {
+  /** The server ring buffer evicted scarce evidence that belonged to the observation window. */
+  BUFFER_LOSS: 'buffer_loss',
+  /** The browser-side queue overflowed, so part of the window never reached the daemon at all. */
+  TRANSPORT_GAP: 'transport_gap',
+  /** A region the SDK cannot see through — a cross-origin frame, a closed shadow root. */
+  BLIND_SPOT: 'blind_spot',
+  /** A loss we have not classified. A classifier that cannot say "I don't know" lies instead. */
+  OTHER: 'other',
+} as const;
+export type CaptureLoss = (typeof CaptureLoss)[keyof typeof CaptureLoss];
+
+/**
  * Actionable companion to NO_PROVIDER for the tools that genuinely intercept or capture through CDP
  * — network mocking and viewport control — which is NOT "visual capture".
  *

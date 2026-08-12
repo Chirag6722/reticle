@@ -50,6 +50,7 @@ function fakeSession(opts: { state?: SessionState; inbox?: string[] }): FakeSess
     beginAction: () => 'a1',
     finishAction: () => undefined,
     bufferHealth: () => ({ total: 0, dropped: 0 }),
+    lostSince: () => false,
     // Coverage is asked of the session now, not inferred from a window of events.
     blindSpots: () => ({}),
     // A failing verdict can now name the last acted control's file.

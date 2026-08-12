@@ -444,6 +444,15 @@ export class Session {
     return this.#buffer.bufferHealth();
   }
 
+  /**
+   * Did the buffer lose scarce evidence from a window opened at `cursor`? The input to whether a
+   * verdict's capture was clean — see `RingBuffer.lostSince`, and never the raw drop counter, which
+   * moves for the age and churn evictions that every live page produces continuously.
+   */
+  lostSince(cursor: number): boolean {
+    return this.#buffer.lostSince(cursor);
+  }
+
   onEvent(listener: (event: ReticleEvent) => void): () => void {
     this.#listeners.add(listener);
     return () => this.#listeners.delete(listener);

@@ -1,3 +1,4 @@
+import { CaptureLoss } from '@reticlehq/core';
 import type { Predicate } from '../events/predicate.js';
 import type { Session } from '../session/session.js';
 import { findContradictions, type Contradiction } from '../events/contradictions.js';
@@ -88,6 +89,12 @@ export async function assertVerdict(
       attribution: 'window',
       coveragePartial: Coverage.PARTIAL === statement.coverage,
       ...(0 === impeachingNotes.length ? {} : { blindSpots: impeachingNotes }),
+      // Which loss, as an enum, beside the prose. `assert` observes an already-open window and never
+      // consults the ring buffer's health, so `buffer_loss` is not one of its answers.
+      losses: [
+        ...(gap === undefined ? [] : [CaptureLoss.TRANSPORT_GAP]),
+        ...(impeaching.note === undefined ? [] : [CaptureLoss.BLIND_SPOT]),
+      ],
     }),
     contradictions,
     ...(outcomePending ? { outcomePending } : {}),
