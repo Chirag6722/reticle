@@ -25,7 +25,7 @@ Thirteen kinds of events, each a single small JSON object:
 | `cli_command_run` | You run a `reticle` command | Which subcommand (`verify`, `status`, …) and which flags were present, by name |
 | `daemon_started` | The local daemon starts | — |
 | `daemon_stopped` | The local daemon stops | A summary of the session — see below |
-| `verification_completed` | A verification produces a verdict | Whether it passed, and whether Reticle refused to call a passing check verified |
+| `verification_completed` | A verification produces a verdict | Whether it passed, whether Reticle refused to call a passing check verified, and **why** the verdict came out that way — see below |
 | `project_profiled` | Once per daemon start | The shape of the project — see below |
 | `version_changed` | You update or roll back | The two version numbers, and which direction |
 | `runtime_crashed` | The daemon hits an uncaught error | The error's type, **Reticle's own** stack frames, and the message with variables stripped — see below |
@@ -43,6 +43,14 @@ Thirteen kinds of events, each a single small JSON object:
 `daemon_stopped` carries: how long the session ran, how many tool calls and of which tools, how long each tool took (total and worst case), how many failed, how many verifications ran, browser/lease connection attempts with their failure causes, and which MCP clients connected (`claude-code`, `cursor`).
 
 It also carries a snapshot of the **machine's** state — our own process's memory, free and total system RAM, load average and CPU count — taken at shutdown and again on any crash. This is what separates "your machine ran out of memory" from "Reticle has a bug", which otherwise produce identical-looking failures. No hostname, no username, no paths, no process list.
+
+### Why a verdict came out that way
+
+`verification_completed` carries the **clause** that decided the verdict, from a fixed list we define: `proved`, `contradicted`, `assertion_failed`, `already_true`, `unclean_capture`, `vacuous_grade`, `outcome_pending`, `outcome_unread`, `unsettled`, `observation_lost`, `inconclusive`.
+
+It exists because `verified: "unknown"` covered seven different situations belonging to three different owners — your app, your agent, and Reticle's own blind spots — and they arrived as one value. It is a **name from our own vocabulary**, never a description of your app: `contradicted` says two channels disagreed, not which ones, about what, or on which page.
+
+When the clause is `unclean_capture`, one further name says which of our three losses caused it — `buffer_loss` (our server's event buffer), `transport_gap` (our browser-side queue), `blind_spot` (a boundary in the page, such as a cross-origin frame), or `other`. All four are facts about **Reticle's** ability to observe, not about what it observed. This field is how we found that a fifth of all verdicts were Reticle refusing to answer over windows that were completely intact.
 
 ### Bugs Reticle finds
 
