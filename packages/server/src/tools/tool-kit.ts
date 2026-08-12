@@ -94,32 +94,67 @@ export const sessionIdShape = {
 };
 
 /**
- * Fields that `runTool` / `withControl` splice onto EVERY session-bound tool result at runtime
- * (health, pool lease reminder, age cleanup nudge, and the delivered-once human-control envelope).
- * They are declared here and merged into each session-bound tool's outputSchema so a schema-strict
- * client (structuredContent validation) keeps them instead of silently dropping them — the `control`
- * envelope is the human-in-the-loop guidance channel, so losing it is a safety failure, not cosmetic.
+ * Every key `runTool` splices onto a session-bound result, as a closed list.
+ *
+ * These are wire strings and were inlined at the splice sites, which is exactly how four of them
+ * came to be spliced and never declared. `sessionEnvelopeShape` is derived from this object and
+ * `envelope-keys-declared.test.ts` fails if a member is missing from it, so the two cannot drift.
+ *
+ * Each of these is a channel that exists BECAUSE the agent had no other way to learn the fact.
+ * Undeclared, a schema-strict client validating `structuredContent` drops it, and the channel is
+ * indistinguishable from never having been built.
  */
-export const sessionEnvelopeShape: z.ZodRawShape = {
-  session: z.unknown().optional(),
-  session_lease: z.unknown().optional(),
-  session_age_warning: z.unknown().optional(),
-  control: z.unknown().optional(),
-  // `warning` rides alongside `session` whenever the tab is THROTTLED (healthEnvelope splices both).
-  // It was declared on reticle_act's schema but nowhere else, so on a validating profile every other
-  // session-bound tool (observe, assert, wait_for, act_sequence, act_and_wait, snapshot, query, …)
-  // silently dropped it — a throttled tab, where drives can no-op, returned a healthy-looking result.
-  // That is exactly what invoke-tool.ts's health splice exists to prevent, so it belongs in the shared
-  // envelope, not per-tool.
-  warning: z.string().optional(),
-  // The one-shot "ask the human how this went" envelope. Undeclared, a validating profile would strip
-  // it — and a feedback prompt that never reaches the agent is a feedback prompt that never reaches
-  // the person, which is the entire failure mode this channel exists to fix.
-  feedback_prompt: z.unknown().optional(),
-  // One-shot "a newer Reticle exists" notice. Undeclared, a validating profile would strip it and the
-  // agent would never learn an update was waiting.
-  update_available: z.unknown().optional(),
-};
+export const EnvelopeKey = {
+  /** Session health — which tab, how fresh. */
+  SESSION: 'session',
+  /** One-shot pool-lease reminder. */
+  SESSION_LEASE: 'session_lease',
+  /** One-shot "these sessions are old, clean them up". */
+  SESSION_AGE_WARNING: 'session_age_warning',
+  /** The delivered-once human-in-the-loop guidance envelope. Losing it is a safety failure. */
+  CONTROL: 'control',
+  /**
+   * Rides alongside `session` whenever the tab is THROTTLED. It was declared on `reticle_act`'s
+   * schema and nowhere else, so on a validating profile every other session-bound tool silently
+   * dropped it — a throttled tab, where drives can no-op, returned a healthy-looking result.
+   */
+  WARNING: 'warning',
+  /** One-shot "ask the human how this went". */
+  FEEDBACK_PROMPT: 'feedback_prompt',
+  /** One-shot "a newer Reticle exists". */
+  UPDATE_AVAILABLE: 'update_available',
+  /**
+   * "You have driven this page N times without asking for a verdict."
+   *
+   * The largest measured lever on the metric this product is judged by — 137 of 140 verdict-less
+   * sessions never called a verdict-producing tool once — and it was spliced undeclared, so on a
+   * validating client the nudge was built, fired, and thrown away before any agent saw it.
+   */
+  VERIFY_NEXT: 'verify_next',
+  /** The contextual "tell us what just went wrong" invitation. Same story, same release. */
+  FEEDBACK_INVITE: 'feedback_invite',
+  /** SDK/daemon version skew — often the one fact that explains everything else in the session. */
+  VERSION_SKEW: 'version_skew',
+  /** A feedback report that was accepted and then failed to send. Only the reporter can act on it. */
+  FEEDBACK_UNDELIVERED: 'feedback_undelivered',
+} as const;
+export type EnvelopeKey = (typeof EnvelopeKey)[keyof typeof EnvelopeKey];
+
+/**
+ * Fields that `runTool` / `withControl` splice onto EVERY session-bound tool result at runtime.
+ * Merged into each session-bound tool's outputSchema so a schema-strict client (structuredContent
+ * validation) keeps them instead of silently dropping them.
+ *
+ * Derived from `EnvelopeKey` rather than re-listed: this shape and the splice sites disagreed for a
+ * whole release, and every key that went missing was a channel nobody could see was missing.
+ */
+export const sessionEnvelopeShape: z.ZodRawShape = Object.fromEntries(
+  Object.values(EnvelopeKey).map((key) => [
+    key,
+    // `warning` is the one with a narrower type; the rest are opaque envelopes the client forwards.
+    EnvelopeKey.WARNING === key ? z.string().optional() : z.unknown().optional(),
+  ]),
+);
 
 /** Unwrap a browser command result or throw its error so the agent sees a clean failure. */
 export async function commandOrThrow(

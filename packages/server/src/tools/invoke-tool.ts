@@ -13,6 +13,7 @@ import { noteToolCall } from '../daemon/daemon-usefulness.js';
 import { bugsInResult } from '../telemetry/bug-found.js';
 import { verificationOf } from '../telemetry/verification-of.js';
 import { asString } from './tools-helpers.js';
+import { EnvelopeKey } from './tool-kit.js';
 import { ReticleTool } from './tool-names.js';
 import { takeFeedbackPrompt } from './feedback-tools.js';
 import { takeFeedbackUndelivered } from '../telemetry/feedback-delivery.js';
@@ -285,12 +286,12 @@ export async function runTool(
       ? raw
       : {
           ...(raw as object),
-          ...(prompt !== undefined ? { feedback_prompt: prompt } : {}),
-          ...(update !== undefined ? { update_available: update } : {}),
-          ...(skew !== undefined ? { version_skew: skew } : {}),
+          ...(prompt !== undefined ? { [EnvelopeKey.FEEDBACK_PROMPT]: prompt } : {}),
+          ...(update !== undefined ? { [EnvelopeKey.UPDATE_AVAILABLE]: update } : {}),
+          ...(skew !== undefined ? { [EnvelopeKey.VERSION_SKEW]: skew } : {}),
           ...(undelivered !== undefined
             ? {
-                feedback_undelivered: `your earlier report did NOT send: ${undelivered}. Tell the human what you found so it is not lost.`,
+                [EnvelopeKey.FEEDBACK_UNDELIVERED]: `your earlier report did NOT send: ${undelivered}. Tell the human what you found so it is not lost.`,
               }
             : {}),
         };
@@ -306,15 +307,15 @@ export async function runTool(
   // does) — so a long-running backgrounded session, the case most likely to leak, never got the
   // one-time pool-lease reminder or the age cleanup nudge. Splice them regardless.
   const lease = resolved.takeSessionLease();
-  if (lease !== undefined) envelope['session_lease'] = lease;
+  if (lease !== undefined) envelope[EnvelopeKey.SESSION_LEASE] = lease;
   const warning = resolved.ageWarning();
-  if (warning !== undefined) envelope['session_age_warning'] = warning;
+  if (warning !== undefined) envelope[EnvelopeKey.SESSION_AGE_WARNING] = warning;
   // Ask for a verdict when the agent has driven the page and not asked for one. 137 of the 140
   // verdict-less sessions measured over 2026-08-10/11 never called a verdict-producing tool ONCE;
   // the counter behind this already existed and was reported only to us. One-shot per abandoned
   // run, same discipline as the pool lease — a hint on every call is noise that gets tuned out.
   const unverified = getSessionMetrics().takeUnverifiedNudge();
-  if (unverified !== undefined) envelope['verify_next'] = unverified;
+  if (unverified !== undefined) envelope[EnvelopeKey.VERIFY_NEXT] = unverified;
   // Invite feedback at the moment of friction, worded for what just happened. Feedback produced
   // ~11 of this release's fixes from 14 reports; the handshake instruction is what got those 14,
   // and this closes the gap it leaves — the agent mid-problem, not thinking about feedback tooling.
@@ -329,7 +330,7 @@ export async function runTool(
     producedVerdict: 'verified' in result,
   });
   if (friction !== undefined) {
-    envelope['feedback_invite'] = inviteFor(friction);
+    envelope[EnvelopeKey.FEEDBACK_INVITE] = inviteFor(friction);
     getSessionMetrics().recordFeedbackPrompt();
   }
   return Object.keys(envelope).length > 0 ? { ...result, ...envelope } : result;
