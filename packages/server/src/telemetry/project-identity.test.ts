@@ -2,7 +2,7 @@
  * One project must produce one projectId, whichever directory inside it a process happens to start in.
  *
  * In the field a single project minted many distinct projectIds, with `projectIdSource` =
- * `cwd` on 4341 of 6107 events. `reticle init` runs in the app directory; the daemon is spawned by
+ * `cwd` on the large majority of events. `reticle init` runs in the app directory; the daemon is spawned by
  * the agent from wherever its client's cwd happens to be. Two ids, one app — so the install half and
  * the session half of the funnel could not be joined, and the single rate this product is measured
  * by ("how many installs reach a verification report") was not computable at all.

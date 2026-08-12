@@ -343,10 +343,10 @@ export class SessionMetrics {
   /**
    * Ask the agent for a verdict, once, when it has driven the page without asking for one.
    *
-   * Measured 2026-08-10/11: of 170 sessions that made a tool call, 140 produced no verdict — and
-   * **Almost all of those never called a verdict-producing tool even once.** They drove the app
+   * In the field most sessions that made a tool call produced no verdict — and
+   * **almost all of those never called a verdict-producing tool even once.** They drove the app
    * with `reticle_act` and never asked whether it worked. This counter already existed
-   * (`abandonedActions`, non-zero in 58 sessions); it was reported to US and never to the agent.
+   * (`abandonedActions`); it was reported to US and never to the agent.
    *
    * Three is the threshold because the median verdict-less session made four tool calls: any higher
    * and it never fires for the sessions that need it. Re-arms after a verdict, so a second

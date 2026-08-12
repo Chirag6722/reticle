@@ -216,7 +216,7 @@ describe('installProxyResilience — the MCP server must outlive its own bugs', 
 /**
  * A refused connect is not a crash.
  *
- * Measured over 2026-08-10/11: **84 of 84 `runtime_crashed` events were one fingerprint** —
+ * In the field **every `runtime_crashed` event carried one fingerprint** —
  * `connect ECONNREFUSED`, `unhandled_rejection`, actor `agent`. The proxy is designed to tolerate a
  * daemon that has not booted: it serves the catalog from cache and wakes one on the next request. So
  * the crash metric spent two days reporting a designed, recovered-from condition, which is the same

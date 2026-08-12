@@ -9,7 +9,7 @@
  * So on Windows the root was never stripped and every pointer came back as an absolute path from the
  * developer's own machine. That is the exact failure the vite plugin's comment warns about:
  * "Without this, source pointers come back as absolute paths from YOUR machine — useless in a
- * report." It was true on Windows the whole time, and Windows is 65 of 99 users.
+ * report." It was true on Windows the whole time, and Windows is a large share of our users.
  *
  * Found by reading, not by running: this repo has no Windows CI, so a pure-string bug on the
  * majority platform had nothing to trip over.

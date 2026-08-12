@@ -58,8 +58,8 @@ const DISCONNECT_CODES: ReadonlySet<string> = new Set([
 /**
  * Nobody went away — nobody was ever there. A refused connect is the daemon not being up YET.
  *
- * This is the difference that made `runtime_crashed` useless. Measured 2026-08-10/11: **84 of 84
- * crash events were one fingerprint, `connect ECONNREFUSED`, and every affected user was in the
+ * This is the difference that made `runtime_crashed` useless. In the field **every crash event
+ * carried one fingerprint, `connect ECONNREFUSED`, and every affected user was in the
  * never-verified set.** The proxy is BUILT to tolerate this — it answers the handshake from cache
  * and wakes a daemon on the next request — so reporting it as a crash meant the one metric that is
  * supposed to say "Reticle broke" said nothing but "the daemon had not booted yet", and a real crash

@@ -77,9 +77,9 @@ describe('the unreported tail is bounded by the flush interval', () => {
  * closed laptop, OOM, `kill -9`, a force-quit editor — reaches no shutdown handler and has emitted
  * nothing, so the entire session is invisible.
  *
- * Measured 2026-08-10/11 (non-CI): **614 `daemon_started` against 499 `daemon_stopped` — 19% of
- * sessions never reported a summary at all.** Every "did anyone use Reticle" figure is computed on
- * the surviving 81% and undercounts by an unknown amount.
+ * In the field `daemon_started` outran `daemon_stopped` by a wide margin: **a meaningful share of
+ * sessions never reported a summary at all.** Every "did anyone use Reticle" figure is computed only
+ * on the survivors and undercounts by an unknown amount.
  */
 describe('the first roll-up does not wait for the periodic interval', () => {
   it('fires well before the periodic flush', () => {

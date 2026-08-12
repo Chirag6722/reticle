@@ -33,10 +33,10 @@ export const SESSION_FLUSH_MS = 5 * 60 * 1000;
  * tick — a closed laptop, OOM, `kill -9`, a force-quit editor — reaches no shutdown handler and has
  * emitted nothing, so the whole session is invisible.
  *
- * Measured 2026-08-10/11 (non-CI): **614 `daemon_started` against 499 `daemon_stopped` — 19% of
- * sessions never reported a summary at all.** Every "did anyone use Reticle" number is computed on
- * the 81% that did, and undercounts by an unknown amount, which is the one thing a funnel metric
- * must not do.
+ * In the field `daemon_started` outran `daemon_stopped` by a wide margin: **a meaningful share of
+ * sessions never reported a summary at all.** Every "did anyone use Reticle" number is computed only
+ * on the sessions that did, and undercounts by an unknown amount, which is the one thing a funnel
+ * metric must not do.
  *
  * Ninety seconds is chosen against what it protects: a session that did real work usually does it
  * early (snapshot -> act -> assert is seconds), so one early tick captures nearly all of it. It

@@ -258,7 +258,7 @@ export const SessionSummarySchema = z.object({
    * Zero here is the single most diagnostic number in the payload: the daemon ran and no app ever
    * connected, which is a BROKEN INSTALL. Non-zero with no tool calls is the opposite problem — the
    * install works and the agent never asked. Before this field those two were the same row, and
-   * they have opposite fixes. Measured 2026-08-10/11: 88 of 116 users attached an agent and never
+   * they have opposite fixes. In the field most users who attached an agent never
    * drove, and we could not say which case any of them was.
    *
    * A counter rather than an event because the SDK reconnects on every page reload — an event per
@@ -278,7 +278,7 @@ export const SessionSummarySchema = z.object({
    * Distinct from `exit`, which says why the PROCESS ended. A daemon can exit tidily on idle while
    * the agent's work was abandoned mid-task, and those are different findings.
    *
-   * Measured 2026-08-10/11: 20 of the 28 agents that drove an app produced no verdict, and nothing
+   * In the field most agents that drove an app produced no verdict, and nothing
    * could say whether that was a product failure or a task that simply ended.
    *
    * Most of this is derivable at query time from `toolCalls` / `verifications` /
@@ -319,8 +319,8 @@ export const SessionSummarySchema = z.object({
   /**
    * WHY the daemon exited. Absent on a periodic flush (`final: false`) — nothing exited.
    *
-   * Without this, a designed exit and a real failure are the same row. Measured 2026-08-10/11: 299
-   * of 321 `mcp_connection_lost` events were `sse_ended` — the stream the daemon closes on its own
+   * Without this, a designed exit and a real failure are the same row. In the field the large
+   * majority of `mcp_connection_lost` events were `sse_ended` — the stream the daemon closes on its own
    * scheduled idle shutdown — so the metric meant to say "the agent lost its tools" was mostly
    * counting the daemon going to sleep as designed, and a genuine outage was invisible inside it.
    *
@@ -364,8 +364,8 @@ export const ProjectProfileSchema = z.object({
    * help, which is the question that decides whether an agent-correction surface is worth building
    * at all.
    *
-   * Measured 2026-08-10/11, before discovery existed here: stack was detected on **0 of the 77
-   * projects where Reticle was demonstrably set up**, and 0 of 166 `size: huge` ones. A detector
+   * Before discovery existed here, stack was detected on **none of the projects where Reticle was
+   * demonstrably set up**, and none of the large ones either. A detector
    * that reads one directory reports nothing precisely where the real repos are.
    */
   stackSource: z.enum(['cwd', 'workspace']).optional(),

@@ -375,16 +375,10 @@ describe('a final summary reports the whole session, not the last window', () =>
 /**
  * Ask for a verdict when the agent has driven the page and not asked for one.
  *
- * Measured 2026-08-10/11 (non-CI), over 170 sessions that made at least one tool call:
- *
- * | | sessions | act | act_and_wait | assert | ever called a verdict tool |
- * |---|---|---|---|---|---|
- * | no verdict | 140 | 269 | 1 | 2 | **3 of 140 (2%)** |
- * | verdict    |  30 |  50 | 87 | 23 | 29 of 30 (97%) |
- *
- * **Verdict-less sessions overwhelmingly never called a verdict-producing tool once.** They drove
- * the app 269 times and never asked whether it worked. The product already counted this
- * (`abandonedActions`, non-zero in 58 sessions) and never told the agent.
+ * In the field, sessions split cleanly in two: the ones that produced a verdict called
+ * `act_and_wait` and `assert` freely, and the ones that did not almost never called either tool
+ * even once. **Verdict-less sessions drove the app with `reticle_act` and never asked whether it
+ * worked.** The product already counted this (`abandonedActions`) and never told the agent.
  *
  * One-shot per session, like the pool lease: a hint repeated every call is noise that gets tuned
  * out, and every byte here is paid on a live tool result.
@@ -446,8 +440,8 @@ describe('the agent is asked for a verdict once it has acted without one', () =>
  *   - daemon up, the user's dev server never dialled in  -> the INSTALL is broken
  *   - daemon up, app connected fine, the agent never asked -> the agent didn't think to use it
  *
- * They have opposite fixes. Measured 2026-08-10/11: 88 of 116 users attached an agent and never
- * drove, and we cannot say which of those two it was for a single one of them.
+ * They have opposite fixes. In the field most users who attached an agent never drove, and we
+ * cannot say which of those two it was for a single one of them.
  *
  * A counter on the session summary rather than a new event: the SDK reconnects on every page
  * reload, so an event per connect would be high-volume for a question that one number answers.
@@ -609,7 +603,7 @@ describe('the session records WHICH agent drove it', () => {
 /**
  * Why the agent's work ended — the question every other number raises and none answers.
  *
- * Measured 2026-08-10/11: 20 of the 28 agents that drove an app produced no verdict. Whether that
+ * In the field most agents that drove an app produced no verdict. Whether that
  * is a product failure or a task that simply ended is the difference between a bug and a
  * non-event, and nothing in the payload could tell them apart.
  *

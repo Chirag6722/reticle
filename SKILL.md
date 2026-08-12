@@ -554,7 +554,7 @@ Then pick a mode:
 
 ### Targeted
 
-> **Only two tools produce a verdict: `reticle_act_and_wait` and `reticle_assert`.** Everything else — `act`, `snapshot`, `query`, `navigate`, `observe`, `network`, `console` — moves or reads the app and proves nothing. A drive that ends without one of those two is a drive with no result, however many tools it used. Measured across two days of real sessions: `reticle_act` was called 3.6× more often than `reticle_act_and_wait`, and **20 of the 28 agents that drove an app produced no verdict at all.** Reach for `act_and_wait` first; drop to bare `act` only for a step whose consequence you are deliberately asserting later.
+> **Only two tools produce a verdict: `reticle_act_and_wait` and `reticle_assert`.** Everything else — `act`, `snapshot`, `query`, `navigate`, `observe`, `network`, `console` — moves or reads the app and proves nothing. A drive that ends without one of those two is a drive with no result, however many tools it used. In practice `reticle_act` is reached for far more often than `reticle_act_and_wait`, and **most agents that drive an app produce no verdict at all.** Reach for `act_and_wait` first; drop to bare `act` only for a step whose consequence you are deliberately asserting later.
 
 1. Navigate if needed: `reticle_navigate({ sessionId, url })`
 2. Snapshot to confirm correct state

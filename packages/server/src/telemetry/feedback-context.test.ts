@@ -11,14 +11,11 @@ import { detectStack } from './feedback-context.js';
  * the agent's client happened to launch in — usually the repo root, while the app lives in
  * `frontend/`, `web/` or a declared workspace.
  *
- * Measured 2026-08-10/11 (non-CI), and this is the number that forced the fix:
- *
- *   projects where Reticle is demonstrably SET UP (flows / contract / features present): 77
- *   ...of those, stack detected:                                                          0
- *
- * Zero for seventy-seven. Also stack-detected on 0 of 166 `size: huge` projects — the bigger and
- * more real the repo, the more certainly we failed. That is not "these are not web apps"; Reticle
- * only works on web apps. It is a detector looking in one directory.
+ * The finding that forced the fix: across every project where Reticle was demonstrably SET UP
+ * (flows / contract / features present), the stack was detected on NONE of them — and on none of
+ * the large repos either. The bigger and more real the repo, the more certainly we failed. That is
+ * not "these are not web apps"; Reticle only works on web apps. It is a detector looking in one
+ * directory.
  */
 describe('detectStack finds the app when it is not in the daemon cwd', () => {
   let root = '';

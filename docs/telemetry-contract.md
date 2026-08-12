@@ -33,7 +33,7 @@ Do **not** add telemetry inside a tool handler. If you find yourself wanting to,
 
 `bug_found` fires once per OCCURRENCE. A defect hit five times in a session is five events, which is the right raw signal — frequency is what says which classes of defect actually cost anybody anything. But it means a naive count answers "how often were defects hit", not "how many defects were found", while looking like it answers the second.
 
-So every `bug_found` carries **`repeat`**: false the first time a KIND is seen in a session, true after. Count `repeat: false` for **distinct defects**; count everything for **instances**. Measured on a real app: 7 events, 3 defects, 4 repeats. Publishing the 7 as defects would have inflated the claim by more than double.
+So every `bug_found` carries **`repeat`**: false the first time a KIND is seen in a session, true after. Count `repeat: false` for **distinct defects**; count everything for **instances**. Measured on a real app, the instance count was more than double the defect count. Publishing instances as defects inflates the claim accordingly.
 
 The denominator is **`verification_completed`**, which fires per verdict with `via`, `verified`, `passed` and `falseGreenCaught`. Defects per verification is the honest rate; raw defect counts grow with usage and say nothing on their own.
 

@@ -45,7 +45,7 @@ interface HonestyInputs {
    * The machine-readable half of `issues` — WHICH kind of loss, from core's closed `CaptureLoss`.
    *
    * `issues` is prose built for an agent to read, and prose is not something a dashboard can group
-   * by: `unclean_capture` was a fifth of all field verdicts with no way to ask which of its three
+   * by: `unclean_capture` became a large share of all field verdicts with no way to ask which of its three
    * causes produced them. Passed by the caller rather than derived here, because only the caller
    * knows whether a blind-spot note came from the browser transport or from a boundary in the page.
    */

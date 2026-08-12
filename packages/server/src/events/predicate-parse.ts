@@ -1,7 +1,7 @@
 /**
  * One readable sentence when a predicate does not parse — never the zod array.
  *
- * Measured 2026-08-10: **9 of 58 tool errors that day were a serialized zod issue array**, all on
+ * In the field a meaningful share of all tool errors were **a serialized zod issue array**, all on
  * `reticle_act_and_wait`, `reticle_wait_for` and `reticle_assert` — the three tools that produced
  * every action-derived finding in the dataset. The least readable error we emit was landing on the
  * highest-value path, and an agent had to `JSON.parse` an error string to learn which field it got
