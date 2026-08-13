@@ -45,7 +45,9 @@ The maddening part: the truth was right there in the running app the whole time.
   <img src="assets/readme/silent-failures.png" alt="An e-commerce page looks perfectly shipped, but underneath: mock data, a dead click, a hidden 500 — the failures the UI completely hid." width="560" />
 </p>
 
-## What Reticle does
+## What is Reticle?
+
+**Reticle is a verification layer for AI coding agents.** It runs a dev-only SDK inside your running web app, so an agent can drive a real flow and read what actually happened — the network calls, the store, the console, the routes, the DOM — instead of guessing that its change worked.
 
 **It proofreads your agent's work, on the running app, before you ever see it.**
 
