@@ -24,6 +24,26 @@
 //   node apps/e2e/install-gate.mjs --only next-pages-router [--keep]
 //   pnpm gate:install:self-test       # negative control: every scaffold must go RED
 import { execFileSync, spawn } from 'node:child_process';
+
+// ── Never phone home from the gate ───────────────────────────────────────────────────────────────
+//
+// Set BEFORE anything spawns, and on this process rather than per-call, so every child inherits it —
+// the `reticle init` runs, the dev servers, and the daemon whichever of them starts it. Per-spawn
+// env is how the next site added here quietly leaks.
+//
+// This is the ONE harness the source-checkout guard does not cover. That guard walks up from `cwd`
+// looking for the monorepo's package.json, and this gate deliberately scaffolds PRISTINE apps into
+// the OS temp directory and installs Reticle into them from a local Verdaccio — which is the entire
+// point of it, and which means those daemons are, correctly, not in a source checkout.
+//
+// So it emitted real events. Measured in one day of production data: 308 CI rows from 19 distinct
+// anonymous ids — every runner a brand-new "user" — carrying 144 of the 169 `init_completed` events
+// and 19 `reticle_installed`. The gate was the majority of our own install funnel, and on a release
+// branch it reports that branch's version, so unreleased versions appear in production dashboards.
+//
+// `RETICLE_TELEMETRY=0` and not `RETICLE_TELEMETRY_FILE`: the gate asserts on `init`'s printed plan,
+// never on emitted events, so there is nothing here worth recording.
+process.env.RETICLE_TELEMETRY = '0';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join, resolve } from 'node:path';
