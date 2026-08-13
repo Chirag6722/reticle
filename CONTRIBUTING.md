@@ -2,7 +2,7 @@
 
 Thanks for your interest in Reticle! Reticle is the **proof layer for AI agents** — it verifies a running web app from the inside, without screenshots. It instruments the DOM, network, routing, console, and framework state in your app, and exposes that to an agent over MCP as a `look → act → observe → assert` loop.
 
-This guide covers how to set up the repo, the rules we hold the line on, and how to land a change. We aim to make contributing pleasant — if anything here is unclear, ask in [Discord](https://discord.gg/7kS66x494) or open an issue.
+This guide covers how to set up the repo, the rules we hold the line on, and how to land a change. We aim to make contributing pleasant — if anything here is unclear, ask in [Discord](https://discord.gg/BwAbzv9ZRz) or open an issue.
 
 **Looking for something to work on?** [`good first issue`](https://github.com/reticlehq/reticle/labels/good%20first%20issue) is scoped, reviewed, and has a pointer to the file to start in. [`help wanted`](https://github.com/reticlehq/reticle/labels/help%20wanted) is bigger and unclaimed. Comment on the issue to claim it — we'll answer within a day or two, and nobody else will start on it once you have.
 

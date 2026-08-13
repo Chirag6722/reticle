@@ -17,13 +17,13 @@ Your agent writes code. Reticle checks it against the **real running app** — t
 
 <a href="https://reticle.sh"><img src="assets/readme/demo-montage.webp" alt="Reticle in action: an AI agent verifying a real running app from the inside, returning pass/fail verdicts with evidence and the file:line to fix" width="820" /></a>
 
-[![npm](https://img.shields.io/npm/v/@reticlehq/react?color=8b7bff&labelColor=15131f&logo=npm)](https://www.npmjs.com/package/@reticlehq/react) [![downloads](https://img.shields.io/npm/dm/@reticlehq/react?color=5fd9f5&labelColor=15131f)](https://www.npmjs.com/package/@reticlehq/react) [![stars](https://img.shields.io/github/stars/reticlehq/reticle?color=ff9f87&labelColor=15131f&logo=github)](https://github.com/reticlehq/reticle/stargazers) [![license](https://img.shields.io/badge/license-Apache--2.0%20%2B%20FSL-46d6a0?labelColor=15131f)](LICENSE) [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/reticlehq/reticle/badge)](https://securityscorecards.dev/viewer/?uri=github.com/reticlehq/reticle) [![types](https://img.shields.io/npm/types/@reticlehq/react?color=5fd9f5&labelColor=15131f)](https://www.npmjs.com/package/@reticlehq/react) [![Discord](https://img.shields.io/badge/Discord-join-8b7bff?labelColor=15131f&logo=discord&logoColor=white)](https://discord.gg/7kS66x494)
+[![npm](https://img.shields.io/npm/v/@reticlehq/react?color=8b7bff&labelColor=15131f&logo=npm)](https://www.npmjs.com/package/@reticlehq/react) [![downloads](https://img.shields.io/npm/dm/@reticlehq/react?color=5fd9f5&labelColor=15131f)](https://www.npmjs.com/package/@reticlehq/react) [![stars](https://img.shields.io/github/stars/reticlehq/reticle?color=ff9f87&labelColor=15131f&logo=github)](https://github.com/reticlehq/reticle/stargazers) [![license](https://img.shields.io/badge/license-Apache--2.0%20%2B%20FSL-46d6a0?labelColor=15131f)](LICENSE) [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/reticlehq/reticle/badge)](https://securityscorecards.dev/viewer/?uri=github.com/reticlehq/reticle) [![types](https://img.shields.io/npm/types/@reticlehq/react?color=5fd9f5&labelColor=15131f)](https://www.npmjs.com/package/@reticlehq/react) [![Discord](https://img.shields.io/badge/Discord-join-8b7bff?labelColor=15131f&logo=discord&logoColor=white)](https://discord.gg/BwAbzv9ZRz)
 
-### [💬 Build the open-source Reticle with us on Discord →](https://discord.gg/7kS66x494)
+### [💬 Build the open-source Reticle with us on Discord →](https://discord.gg/BwAbzv9ZRz)
 
 Where the work happens in the open: what's being built this cycle, what's up for grabs, and design calls before they land.
 
-**[⚡ Install in 30 seconds](#install-in-30-seconds)** · [How it works](#how-it-works) · [**What we support**](#what-we-support--frameworks-desktop-platforms) · [vs Playwright / DevTools](#cant-playwright--devtools--a-browser-agent-already-do-this) · [The numbers](#the-numbers) · [Docs](docs/getting-started.md) · [Discord](https://discord.gg/7kS66x494)
+**[⚡ Install in 30 seconds](#install-in-30-seconds)** · [How it works](#how-it-works) · [**What we support**](#what-we-support--frameworks-desktop-platforms) · [vs Playwright / DevTools](#cant-playwright--devtools--a-browser-agent-already-do-this) · [The numbers](#the-numbers) · [Docs](docs/getting-started.md) · [Discord](https://discord.gg/BwAbzv9ZRz)
 
 `dev-only` · `localhost-only` · `your app data stays local` · `Apache-2.0 SDK` · works with Claude Code, Cursor, and any MCP agent
 
@@ -379,7 +379,7 @@ export function valtioStore<T extends object>(
 }
 ```
 
-**Effector, Nanostores, Signals** — whatever you use, add it in [`store-adapters.ts`](packages/browser/src/registry/store-adapters.ts) with a test beside it and open a PR — see [CONTRIBUTING.md](CONTRIBUTING.md), or say hello in [`#contributors`](https://discord.gg/7kS66x494) first. Until then the generic `pushStore` path covers you.
+**Effector, Nanostores, Signals** — whatever you use, add it in [`store-adapters.ts`](packages/browser/src/registry/store-adapters.ts) with a test beside it and open a PR — see [CONTRIBUTING.md](CONTRIBUTING.md), or say hello in [`#contributors`](https://discord.gg/BwAbzv9ZRz) first. Until then the generic `pushStore` path covers you.
 
 ## Go deeper
 
@@ -403,7 +403,7 @@ Reticle is built in the open. Pick the channel that fits:
 
 | You want to… | Go here |
 | --- | --- |
-| See what's being built now, ask a question, claim work | **[Discord](https://discord.gg/7kS66x494)** — `#roadmap`, `#help`, `#contributors` |
+| See what's being built now, ask a question, claim work | **[Discord](https://discord.gg/BwAbzv9ZRz)** — `#roadmap`, `#help`, `#contributors` |
 | Report a bug or request a feature | [Open an issue](https://github.com/reticlehq/reticle/issues/new/choose) |
 | Find something to work on | [`good first issue`](https://github.com/reticlehq/reticle/labels/good%20first%20issue) · [`help wanted`](https://github.com/reticlehq/reticle/labels/help%20wanted) |
 | Know where the project is headed | [ROADMAP](ROADMAP.md) · [what shipped](CHANGELOG.md) · [how we release](RELEASING.md) |

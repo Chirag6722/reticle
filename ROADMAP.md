@@ -2,7 +2,7 @@
 
 Direction, not dates. What actually shipped is in the [CHANGELOG](./CHANGELOG.md); how it ships is in [RELEASING](./RELEASING.md). Priorities shift with what users hit — open an issue to push on any of these.
 
-Each item below has a **tracking issue** labelled `roadmap`: that's where the design gets argued and where you say "I'll take this". Anything unclaimed is genuinely up for grabs — comment before you start so two people don't build it twice. Live discussion happens in [Discord](https://discord.gg/7kS66x494) `#roadmap`.
+Each item below has a **tracking issue** labelled `roadmap`: that's where the design gets argued and where you say "I'll take this". Anything unclaimed is genuinely up for grabs — comment before you start so two people don't build it twice. Live discussion happens in [Discord](https://discord.gg/BwAbzv9ZRz) `#roadmap`.
 
 ## Guiding bet
 
