@@ -733,7 +733,7 @@ export function buildPlan(input: PlanInput): Plan {
       title: 'Connect snippet',
       target: 'index.html',
       status: StepStatus.MANUAL,
-      detail: htmlManual(input.options.port, input.options.projectId),
+      detail: htmlManual(input.options.port, input.options.projectId, input.pairingToken),
     });
   }
   return { framework: input.detection.framework, steps };

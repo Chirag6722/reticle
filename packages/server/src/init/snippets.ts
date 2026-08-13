@@ -239,8 +239,28 @@ export const NEXT_LAYOUT_MANUAL = `Mount <ReticleDev /> in your root layout (app
  * where a bare `@reticlehq/react` import resolves. A bare import in a plain index.html does NOT resolve in
  * the browser, so we never tell a bundled app to do that (the old advice silently failed for CRA).
  */
-export function htmlManual(port: number | undefined, projectId?: string): string {
-  const arg = connectArg(port, projectId);
+export function htmlManual(
+  port: number | undefined,
+  projectId?: string,
+  pairingToken?: string,
+): string {
+  const base = connectArg(port, projectId);
+  // The token belongs INSIDE the call the user pastes. Every other stack has a build step to inline
+  // it (the Vite plugin's `define`, Next's NEXT_PUBLIC_*, Astro's config, CRA's .env); this path has
+  // none, so `init` inlines the literal it already read. Without it the bridge closes the socket
+  // with AUTH_FAILED and no session ever appears — see Bridge's hello handler.
+  const withToken =
+    pairingToken === undefined || 0 === pairingToken.length
+      ? base
+      : `{ ${[base.length > 0 ? base.slice(1, -1).trim() : '', `token: '${pairingToken}'`]
+          .filter((p) => p.length > 0)
+          .join(', ')} }`;
+  const tokenNote =
+    pairingToken === undefined || 0 === pairingToken.length
+      ? ''
+      : `\n\n  The \`token\` is this machine's pairing token, read from ~/.reticle/pairing-token. Keep it: the
+  bridge REJECTS a connect without it ("authentication failed") and no session appears. It is
+  per-machine and local-only, so do not commit it — a teammate's daemon mints their own.`;
   return `No Vite/Next plugin detected — wire the dev-only connect by hand. Pick the form for your setup:
 
   • Bundled app (Create React App, webpack, Parcel, Vue/Svelte CLI, etc.) — add to your ENTRY module
@@ -249,9 +269,9 @@ export function htmlManual(port: number | undefined, projectId?: string): string
       if (window.location.hostname === 'localhost') {
         void import('@reticlehq/react').then(({ reticle, install }) => {
           install();
-          reticle.connect(${arg});
+          reticle.connect(${withToken});
         });
-      }
+      }${tokenNote}
 
   • Plain static HTML with no build step — the browser can't resolve the bare '@reticlehq/react' import, so
     bundle the SDK once (e.g. \`npx esbuild\`) and point a dev-only <script type="module"> at the output,
