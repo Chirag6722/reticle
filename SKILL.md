@@ -26,6 +26,20 @@ cat .reticle.json 2>/dev/null || echo "NOT_FOUND"
 
 > Run this once per project. Writes config files, installs the SDK, and validates the connection. After setup, every subsequent `/reticle` goes straight to Test mode.
 
+## What "installed" means — do not stop before this
+
+**Setup is complete when you have driven one real flow in the user's app and produced a verdict. Not before.** Every earlier point looks like success and is not:
+
+| Looks done | Why it is not |
+| --- | --- |
+| `init` exited 0 | Files were written. Nothing has connected, and nothing has been verified. |
+| The `reticle_*` tools appeared | Your client can reach a daemon. The user's app may still not be instrumented. |
+| A session is listed | The app dialled in. You have still shown the user nothing. |
+
+**A user who runs the installer and sees no verdict has installed a config file.** They cannot tell a working setup from a broken one, and neither can we. So: run `init`, get the tools, get the app connected, drive one flow, report the verdict — and if you are blocked at any of those, say which one and what you tried, rather than reporting a clean install.
+
+The one thing you may not do is stop early and call it done.
+
 ## Step 1 — Run `init`. Ask the user nothing.
 
 ```bash
@@ -58,7 +72,7 @@ Then read the report. Each line is marked:
 | `–`  | skipped by a flag        | nothing                                             |
 | `⚠`  | needs a human/agent edit | **only these** — the line carries the exact snippet |
 
-**If every line is `✓`, `·` or `–`, skip to Step 4 and validate.** The manual sections below exist for the `⚠` lines only.
+**If every line is `✓`, `·` or `–`, go to Step 1c.** The manual sections below exist for the `⚠` lines only.
 
 **`init` exits non-zero when a `⚠` lands on a step that makes the app CONNECT** (the Vite plugin, the `ReticleDev` component, the connect snippet). Nothing else applies that step, so the app will never dial the daemon and every tool will answer "no browser session connected" until you paste it in. A non-zero exit is therefore a to-do list for you, not a failed install — apply the snippet on that line, then validate. Other `⚠` lines (MCP registration, the agent rule) exit 0.
 
@@ -208,6 +222,32 @@ Only add this if the user explicitly asks for the daemon to stop between turns:
   },
 }
 ```
+
+---
+
+## Step 1c — The `reticle_*` tools do not exist yet. Get them.
+
+`init` registered the MCP server, but **your client read its tool list when it started and has not read it again.** So `reticle_*` is not callable in this session yet, however successful the install was. An agent that skips straight to driving here gets "unknown tool" and misdiagnoses it as a broken install.
+
+**Check first — it costs one call:**
+
+- If `reticle_sessions` is callable, you already have the tools. Skip this step.
+- If it is not, the tools have not loaded, and no amount of retrying will load them.
+
+**Then tell the user, in one line, to reload the tools.** This is the only point in setup where you genuinely need them, and it takes them five seconds:
+
+| Client            | What they do                                                               |
+| ----------------- | -------------------------------------------------------------------------- |
+| Claude Code       | run `/mcp` to refresh — or restart Claude Code if that does not pick it up |
+| Cursor / Windsurf | reopen the window (Cmd/Ctrl-Shift-P → "Reload Window")                     |
+| VS Code (Copilot) | reload the window                                                          |
+| anything else     | restart the client                                                         |
+
+Say exactly this and nothing more: **"Reticle is installed. Reload your MCP tools (`/mcp` in Claude Code, or reload the window) and tell me when they're back — then I'll verify a flow in your app."**
+
+Then **wait for them, and continue where you left off.** Do not declare setup finished here: nothing has been verified yet, and this is the single most likely place for a user to walk away believing they are done. When the tools return, go to Step 4.
+
+> While you wait, you can still use the CLI — `npx @reticlehq/server status` works without the MCP tools and tells you whether the daemon is up and whether the app has connected.
 
 ---
 
