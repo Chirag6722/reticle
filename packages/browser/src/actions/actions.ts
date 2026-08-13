@@ -465,13 +465,38 @@ async function dispatchOther(
       }
       throw new Error(`cannot select on a <${el.tagName.toLowerCase()}>`);
     case ActionType.CHECK:
-    case ActionType.UNCHECK:
-      if (isInput(el)) {
-        el.checked = action === ActionType.CHECK;
-        el.dispatchEvent(new Event('change', { bubbles: true }));
-        return false;
+    case ActionType.UNCHECK: {
+      if (!isInput(el)) throw new Error(`cannot (un)check a <${el.tagName.toLowerCase()}>`);
+      // Same rule as the readonly/disabled refusal on fill: if a real user could not do it, forcing
+      // it is not a test, it is damage — and a green over it is a false one.
+      if (!enabledOf(el)) {
+        throw new Error(
+          `cannot ${action} a disabled control — a real user could not, so neither will Reticle`,
+        );
       }
-      throw new Error(`cannot (un)check a <${el.tagName.toLowerCase()}>`);
+      const wanted = action === ActionType.CHECK;
+      // Already there: report success and touch nothing. `check` means "end up checked", not
+      // "toggle", so clicking here would flip it OFF and hand the app an event no user produced.
+      if (el.checked === wanted) return false;
+      // `click()`, never `el.checked = …`. Assigning the property flips the pixel and tells no
+      // framework: React binds a checkbox's onChange to the CLICK event, and its value tracker
+      // dedups the change it would otherwise synthesise from a direct assignment — so a controlled
+      // `checked={state}` box never heard from us while the action reported success. `click()` is
+      // the one DOM call that runs the element's ACTIVATION BEHAVIOUR (the native toggle) as well
+      // as firing the event; `dispatchEvent` does not.
+      let prevented = false;
+      // On window, so it runs after every listener on the element itself whenever they were added.
+      const probe = (e: Event): void => {
+        prevented = e.defaultPrevented;
+      };
+      window.addEventListener('click', probe, { once: true, capture: false });
+      try {
+        el.click();
+      } finally {
+        window.removeEventListener('click', probe, false);
+      }
+      return prevented;
+    }
     case ActionType.SUBMIT: {
       const form = isForm(el) ? el : el.closest('form');
       if (null === form) throw new Error('no form to submit');
