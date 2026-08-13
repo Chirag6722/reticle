@@ -242,6 +242,20 @@ function pressKey(args: Record<string, unknown>): string {
   return asString(args['key'], 'Enter');
 }
 
+/**
+ * The drop target a `drag` names, under either spelling.
+ *
+ * `toRef` is what the source has always read and it appears NOWHERE in the tool description an
+ * agent sees — the `args` sentence names `value`, `text`, `native`, `holdMs` and `confirmDangerous`
+ * and omits the one argument without which this action cannot do its job. So agents guess, and
+ * `target` is the guess they make. Accepting it costs nothing and removes a whole class of
+ * silently-target-less drags; the description now documents `toRef` as well.
+ */
+function dragTargetRef(args: Record<string, unknown>): string {
+  const named = asString(args['toRef']);
+  return '' !== named ? named : asString(args['target']);
+}
+
 function assertActionAllowed(el: HTMLElement, action: string, args: Record<string, unknown>): void {
   const canTrigger =
     action === ActionType.CLICK ||
@@ -251,7 +265,9 @@ function assertActionAllowed(el: HTMLElement, action: string, args: Record<strin
     // Read through the SAME resolver as the dispatch below. Reading a different argument here meant
     // the destructive-action guard classified the call by a key nobody had asked for.
     (action === ActionType.PRESS && 'Enter' === pressKey(args));
-  const dragTarget = action === ActionType.DRAG ? refs.resolve(asString(args['toRef'])) : null;
+  // Same resolver as the dispatch below, so the destructive-action guard cannot classify a drag
+  // by a target the dispatch will not use.
+  const dragTarget = action === ActionType.DRAG ? refs.resolve(dragTargetRef(args)) : null;
   const context = isHtmlElement(dragTarget)
     ? `${dangerousActionContext(el)} ${dangerousActionContext(dragTarget)}`
     : dangerousActionContext(el);
@@ -555,11 +571,22 @@ async function dispatchOther(
       return !inputOk;
     }
     case ActionType.DRAG: {
-      const toRef = asString(args['toRef']);
+      const toRef = dragTargetRef(args);
       // asString falls back to '' (never undefined), so the old `!== undefined` was always true and
-      // handed '' to refs.resolve. A drag with no target ref is a free drag — resolve nothing.
-      const resolved = toRef !== '' ? refs.resolve(toRef) : null;
-      return await dragElement(el, isHtmlElement(resolved) ? resolved : null, args['data']);
+      // handed '' to refs.resolve. A drag with NO target named is a free drag — resolve nothing.
+      if ('' === toRef) return await dragElement(el, null, args['data']);
+      // A target WAS named and did not resolve. That is a malformed call, not a free drag: dragging
+      // nowhere and reporting `ok: true` is a false green, and it is the one this action produced
+      // in the field — the drop target argument is undocumented, the agent guessed a name, the guess
+      // read as "no target", and the drag landed nowhere while every effect field looked healthy.
+      const resolved = refs.resolve(toRef);
+      if (!isHtmlElement(resolved)) {
+        throw new Error(
+          `drag target '${echoRef(toRef)}' did not resolve to an element — pass a ref from ` +
+            'reticle_snapshot or reticle_query as args.toRef (alias: args.target)',
+        );
+      }
+      return await dragElement(el, resolved, args['data']);
     }
     default:
       throw new Error(`unknown action '${action}'`);

@@ -35,7 +35,7 @@ describe('press sends the key it was asked for', () => {
 
   const listen = (el: HTMLElement): string[] => {
     const keys: string[] = [];
-    el.addEventListener('keydown', (e) => keys.push((e as KeyboardEvent).key));
+    el.addEventListener('keydown', (e) => keys.push(e.key));
     return keys;
   };
 
@@ -69,7 +69,7 @@ describe('press sends the key it was asked for', () => {
     const el = document.createElement('button');
     document.body.appendChild(el);
     const atDocument: string[] = [];
-    const onDoc = (e: Event): void => void atDocument.push((e as KeyboardEvent).key);
+    const onDoc = (e: KeyboardEvent): void => void atDocument.push(e.key);
     document.addEventListener('keydown', onDoc);
     await executeAction(refs.refFor(el), ActionType.PRESS, { text: 'Escape' });
     document.removeEventListener('keydown', onDoc);
