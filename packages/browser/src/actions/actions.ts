@@ -222,13 +222,35 @@ function requiresDangerousConfirmation(text: string): boolean {
   return isDangerousActionText(text);
 }
 
+/**
+ * Which key a `press` is asking for.
+ *
+ * `text` FIRST, because that is what the tool description documents ("{ text } for type/press") and
+ * therefore what agents send. The implementation read only `args['key']` and defaulted to `'Enter'`,
+ * so the documented call — `press` with `{ text: 'Escape' }` — silently dispatched **Enter** and
+ * reported success. Two field reports blamed "synthetic events not reaching the app"; the events
+ * arrived perfectly and said the wrong thing.
+ *
+ * Enter is the worst possible substitute to pick by accident: on a focused field inside a form it
+ * SUBMITS it, so a request to dismiss a dialog could file the form behind it. `key` still works —
+ * it is what anyone reading the source would have sent — and the default only applies when neither
+ * was named.
+ */
+function pressKey(args: Record<string, unknown>): string {
+  const text = args['text'];
+  if ('string' === typeof text && text.length > 0) return text;
+  return asString(args['key'], 'Enter');
+}
+
 function assertActionAllowed(el: HTMLElement, action: string, args: Record<string, unknown>): void {
   const canTrigger =
     action === ActionType.CLICK ||
     action === ActionType.DBLCLICK ||
     action === ActionType.DRAG ||
     action === ActionType.SUBMIT ||
-    (action === ActionType.PRESS && 'Enter' === asString(args['key'], 'Enter'));
+    // Read through the SAME resolver as the dispatch below. Reading a different argument here meant
+    // the destructive-action guard classified the call by a key nobody had asked for.
+    (action === ActionType.PRESS && 'Enter' === pressKey(args));
   const dragTarget = action === ActionType.DRAG ? refs.resolve(asString(args['toRef'])) : null;
   const context = isHtmlElement(dragTarget)
     ? `${dangerousActionContext(el)} ${dangerousActionContext(dragTarget)}`
@@ -504,7 +526,7 @@ async function dispatchOther(
       return false; // requestSubmit returns void; the internal submit event is unobservable.
     }
     case ActionType.PRESS: {
-      const key = asString(args['key'], 'Enter');
+      const key = pressKey(args);
       const down = el.dispatchEvent(
         new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }),
       );
