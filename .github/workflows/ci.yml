@@ -53,8 +53,8 @@ jobs:
 
   # Windows is the MAJORITY platform and has never been tested.
   #
-  # 65 of 99 persons and 1,032 of 1,468 events in a day of telemetry are win32 — 66% of users — and
-  # until this job existed nothing in this repo had ever executed on Windows. Two total blockers were
+  # Windows is the largest platform in our telemetry by a wide margin, and until this job existed
+  # nothing in this repo had ever executed on Windows. Two total blockers were
   # reported by a Windows user before any check here could see them, and a path bug that made every
   # source pointer an absolute `C:\Users\...` path shipped for months because a pure-string mistake
   # on the majority platform had nothing to trip over.
@@ -81,9 +81,50 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm typecheck
-      # The unit gate only. The e2e battery boots three HTTP servers and a browser, which is a
-      # separate problem from "does this code run on Windows at all" — start with the cheap question.
       - run: pnpm test:unit
+      # A DAEMON, on Windows, under test. The unit gate cannot see the class of bug that shipped
+      # through a release here: an unhandled ECONNREFUSED from the proxy's first connect, and a
+      # doctor line that called the port holder "not a Reticle daemon" on every Windows run because
+      # its probe shells out to `lsof`. Both are lifecycle- and message-level, both were win32-only,
+      # and no job on this platform ever started a daemon. (#248)
+      #
+      # These two specs need no app and no browser — they boot a daemon, attach a real MCP client,
+      # call a tool and assert the daemon's life — so they are the cheap half of the battery and the
+      # half that answers "does the runtime work on Windows at all".
+      - name: Daemon runtime (no app, no browser)
+        run: |
+          node apps/e2e/specs/daemon-lifecycle-test.mjs
+          node apps/e2e/specs/mcp-survives-test.mjs
+        env:
+          RETICLE_TELEMETRY: '0'
+
+  # macOS ran NO JavaScript at all — no build, no unit tests, nothing. `rust-macos` below compiles the
+  # Tauri crate and that was the entire extent of macOS coverage, so the only reason we knew the
+  # product worked there was that it is the development machine. That is not a gate, it is a habit.
+  # Same shape as the Windows gap above and the same issue. (#248)
+  #
+  # Deliberately the cheap tier: build + typecheck + unit. The full battery passes on macOS but costs
+  # a browser and three servers, and the question worth answering first is "does this run here".
+  macos:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm typecheck
+      - run: pnpm test:unit
+      - name: Daemon runtime (no app, no browser)
+        run: |
+          node apps/e2e/specs/daemon-lifecycle-test.mjs
+          node apps/e2e/specs/mcp-survives-test.mjs
+        env:
+          RETICLE_TELEMETRY: '0'
 
   # `reticle-tauri` is Rust, so NONE of the gates above can see it — and it had no job at all, which
   # meant the Windows capture backend had never been compiled by CI even though publish-crate.yml
@@ -463,7 +504,8 @@ jobs:
     # compiles packages/tauri at all: it sits outside every JS gate, so an absent entry here meant a
     # red Rust build merged clean. Adding a job to the workflow is half the work; this line is the
     # other half.
-    needs: [verify, e2e, install-gate, matrix-records, windows, rust, rust-macos, desktop-e2e]
+    needs:
+      [verify, e2e, install-gate, matrix-records, windows, macos, rust, rust-macos, desktop-e2e]
     if: always()
     timeout-minutes: 5
     steps:

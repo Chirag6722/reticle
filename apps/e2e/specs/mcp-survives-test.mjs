@@ -18,6 +18,7 @@ import path from 'node:path';
 import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { McpStdioClient } from '../../../bench/harness/mcp-client.mjs';
+import { pidOnPort } from '../port-pid.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const PORT = process.env.MCP_SURVIVES_PORT ?? '4703';
@@ -32,10 +33,7 @@ const chk = (label, ok, detail = '') => {
 
 function daemonPid() {
   try {
-    const out = execSync(`lsof -nP -iTCP:${PORT} -sTCP:LISTEN -t`, {
-      stdio: ['ignore', 'pipe', 'ignore'],
-    });
-    return out.toString().trim().split('\n')[0] || null;
+    return pidOnPort(PORT);
   } catch {
     return null;
   }

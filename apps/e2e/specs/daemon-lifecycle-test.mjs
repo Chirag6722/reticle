@@ -19,6 +19,7 @@ import path from 'node:path';
 import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { McpStdioClient } from '../../../bench/harness/mcp-client.mjs';
+import { pidOnPort } from '../port-pid.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const PORT = process.env.LIFECYCLE_PORT ?? '4699';
@@ -36,8 +37,7 @@ const chk = (label, ok, detail = '') => {
 /** The pid listening on the bridge port, or null. The only honest way to watch a daemon's life. */
 function daemonPid() {
   try {
-    const out = execSync(`lsof -nP -iTCP:${PORT} -sTCP:LISTEN -t`, { stdio: ['ignore', 'pipe', 'ignore'] });
-    return out.toString().trim().split('\n')[0] || null;
+    return pidOnPort(PORT);
   } catch {
     return null;
   }
