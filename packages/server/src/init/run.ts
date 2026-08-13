@@ -480,16 +480,37 @@ export const FEEDBACK_HINT =
   `  ${CLI} feedback --agent --kind <bug|gap|ambiguity|feature_request|improvement> "what happened"   (agents)\n` +
   `  ${CLI} feedback "what worked, what didn't"   (humans)`;
 
-function restartHint(framework: Framework): string {
-  if (framework === Framework.NEXT)
-    return 'Restart `next dev`, then ask your agent: "List Reticle sessions".';
-  if (framework === Framework.VITE)
-    return 'Restart `vite`, then ask your agent: "List Reticle sessions".';
-  if (framework === Framework.ASTRO)
-    return 'Restart `astro dev`, then ask your agent: "List Reticle sessions".';
-  if (framework === Framework.SVELTEKIT)
-    return 'Restart your dev server (`npm run dev`), then ask your agent: "List Reticle sessions".';
-  return 'Reload your app on localhost, then ask your agent: "List Reticle sessions".';
+function devServerRestart(framework: Framework): string {
+  if (framework === Framework.NEXT) return 'Restart `next dev`';
+  if (framework === Framework.VITE) return 'Restart `vite`';
+  if (framework === Framework.ASTRO) return 'Restart `astro dev`';
+  if (framework === Framework.SVELTEKIT) return 'Restart your dev server (`npm run dev`)';
+  return 'Reload your app on localhost';
+}
+
+/**
+ * The last two lines a user reads, and the order matters.
+ *
+ * This used to say only "Restart <dev server>, then ask your agent: List Reticle sessions" — and
+ * asking the agent was the one thing that could not work yet. `init` registers the MCP server, but
+ * an agent client reads its tool list when it STARTS and never re-reads it, so the session that
+ * just ran `init` has no `reticle_*` tools however clean the install was. The user follows the
+ * instruction, the agent answers "unknown tool", and the obvious conclusion is that the install
+ * failed.
+ *
+ * So the reload is named FIRST, before the sentence that depends on it. Omitted entirely when this
+ * run did not register MCP (`--no-mcp`), where it would be advice about something we did not do.
+ */
+function restartHint(framework: Framework, mcpRegistered: boolean): string {
+  const dev = `${devServerRestart(framework)}.`;
+  if (!mcpRegistered) return `${dev} Then ask your agent: "List Reticle sessions".`;
+  return (
+    `${dev}\n` +
+    "Then reload your agent's MCP tools — `/mcp` in Claude Code, or reload the window in " +
+    'Cursor/VS Code.\n' +
+    'The tools only appear after that: your agent read its tool list before Reticle existed.\n' +
+    'Then ask it: "List Reticle sessions".'
+  );
 }
 
 const SKIPPED_DETAIL =
@@ -556,7 +577,12 @@ function report(
     );
     io.print('');
   }
-  io.print(restartHint(plan.framework));
+  io.print(
+    restartHint(
+      plan.framework,
+      wasMcpRegistered(resolvedStatus(plan, MCP_TARGET, failed, skipped)),
+    ),
+  );
   return { ok: !connectPending, applied, manual };
 }
 

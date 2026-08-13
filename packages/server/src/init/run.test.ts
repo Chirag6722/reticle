@@ -781,3 +781,46 @@ describe('init confirms a file it claims to have written', () => {
     expect(io.written['.reticle.json']).toBeDefined();
   });
 });
+
+/**
+ * The last two lines a user reads after `init`, and the order they are in.
+ *
+ * It used to print only "Restart <dev server>, then ask your agent: List Reticle sessions" — and
+ * asking the agent was the one instruction that could not work yet. `init` registers the MCP
+ * server, but an agent client reads its tool list when it STARTS and never re-reads it, so the
+ * session that just ran `init` has no `reticle_*` tools however clean the install was.
+ *
+ * The user follows the instruction, the agent answers "unknown tool", and the obvious conclusion is
+ * that the install failed. This is the final line of the primary setup path, so it reaches every
+ * user on every route — not only the ones following SKILL.md.
+ */
+describe('the closing hint names the MCP reload before it tells you to ask the agent', () => {
+  it('tells the user to reload their MCP tools, and why', () => {
+    const io = memoryIo(VITE_FILES);
+    runInit(OPTS, io);
+    const out = io.lines.join('\n');
+    expect(out).toMatch(/\/mcp|reload the window/i);
+    expect(out, 'the reason, or it reads as superstition').toMatch(/tool list|only appear/i);
+  });
+
+  it('puts the reload BEFORE "ask your agent" — the instruction that depends on it', () => {
+    const io = memoryIo(VITE_FILES);
+    runInit(OPTS, io);
+    const out = io.lines.join('\n');
+    const reload = out.search(/\/mcp|reload the window/i);
+    const ask = out.indexOf('List Reticle sessions');
+    expect(reload).toBeGreaterThan(-1);
+    expect(ask).toBeGreaterThan(-1);
+    expect(reload, 'reload must come first').toBeLessThan(ask);
+  });
+
+  it('says nothing about MCP when this run did not register it', () => {
+    // `--no-mcp`. Advice about something we deliberately did not do is noise, and noise in the
+    // closing lines is what makes the real instructions get skimmed.
+    const io = memoryIo(VITE_FILES);
+    runInit({ ...OPTS, mcp: false }, io);
+    const out = io.lines.join('\n');
+    expect(out).not.toMatch(/\/mcp\b|reload the window/i);
+    expect(out, 'the dev-server restart still stands').toContain('Restart');
+  });
+});
