@@ -369,6 +369,10 @@ describe('installNetwork (fetch)', () => {
     expect(rb).toContain('[REDACTED]');
   });
 
+  // A generous timeout, not the 5s default, because the invariant here is a BOUND — the truncated
+  // flag and the 8192-char output — and never a duration. It runs in ~120ms locally and timed out at
+  // 5000ms on a contended macOS runner the first time this suite ever executed there: a 40x margin
+  // lost to machine load, which is the definition of a test that reports the runner as a defect.
   it('caps an oversized body and sets the truncated flag', async () => {
     const huge = 'x'.repeat(20000);
     window.fetch = vi.fn(() => Promise.resolve(fakeResponseWithBody(200, 'text/plain', huge)));
@@ -379,7 +383,7 @@ describe('installNetwork (fetch)', () => {
     const data = eventOf(events, EventType.NET_REQUEST);
     expect(data['responseBodyTruncated']).toBe(true);
     expect(String(data['responseBody']).length).toBe(8192); // MAX_BODY_CHARS
-  });
+  }, 30_000);
 
   it('does NOT capture bodies by default (opt-in only)', async () => {
     window.fetch = vi.fn(() =>
