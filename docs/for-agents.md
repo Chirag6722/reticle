@@ -24,8 +24,8 @@ The slug is the filename in [`docs/`](https://github.com/reticlehq/reticle/tree/
 
 | URL | What it is | Use it when |
 | --- | --- | --- |
-| [`/llms.txt`](https://docs.reticle.sh/llms.txt) | Every page title and URL, ~2 KB | You want to pick the right page before spending tokens on it |
-| [`/llms-full.txt`](https://docs.reticle.sh/llms-full.txt) | The entire documentation as one file | You are seeding a context window or an index once |
+| [`/llms.txt`](https://docs.reticle.sh/llms.txt) | Every page title and URL, and nothing else | You want to pick the right page before spending tokens on it |
+| [`/llms-full.txt`](https://docs.reticle.sh/llms-full.txt) | The entire documentation as one file — hundreds of KB, and growing | You are seeding a context window or an index once |
 
 Start with `llms.txt`. It is small enough to read in full and tells you which single page answers the question — which is almost always cheaper than pulling `llms-full.txt`.
 
