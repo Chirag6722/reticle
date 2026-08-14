@@ -4,6 +4,20 @@ description: Reticle is the proof layer for AI coding agents. It verifies a runn
 mode: wide
 ---
 
+<script type="application/ld+json">
+  {JSON.stringify({
+    '@context': 'https://schema.org',
+    '@type': 'SoftwareApplication',
+    name: 'Reticle',
+    applicationCategory: 'DeveloperApplication',
+    operatingSystem: 'macOS, Linux, Windows',
+    description:
+      'Reticle is the proof layer for AI coding agents. It verifies a running web app from the inside and returns a verdict with evidence, not a screenshot.',
+    url: 'https://docs.reticle.sh',
+    offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+  })}
+</script>
+
 Your agent says it works. Reticle checks.
 
 AI-written code has a specific failure mode: it looks right and silently doesn't work. The POST returns 200 and nothing persists. The button is wired to a handler that never fires. One click sends two requests. A screenshot shows all of this as a perfectly nice page.
