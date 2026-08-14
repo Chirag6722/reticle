@@ -271,6 +271,45 @@ describe('docs/docs.json publishes every doc', () => {
     ).toEqual([]);
   });
 
+  it('no page contains markup MDX will refuse to build', () => {
+    // Two pages 404'd on the deployed site while passing every check here: they existed, were in the
+    // nav, had frontmatter, and their links resolved. Mintlify compiles markdown as MDX, so `<1s` in
+    // a table cell is read as a JSX tag and `{action:"review"}` as a JS expression. The page fails to
+    // build and simply is not there.
+    //
+    // Nothing local caught it because the file is perfectly good markdown. Only fetching the built
+    // site did. These are the two shapes that actually broke.
+    const HAZARDS: { pattern: RegExp; what: string }[] = [
+      {
+        pattern: /<[0-9]/,
+        what: 'a bare `<` before a digit (MDX reads it as a tag) — wrap it in backticks',
+      },
+      {
+        pattern: /\]\([^)]*[{}][^)]*\)/,
+        what: 'a link whose URL contains { or } (MDX reads it as an expression)',
+      },
+      { pattern: /\]\([^)\s]*\s[^)]*\)/, what: 'a link whose URL contains a space' },
+    ];
+
+    const problems: string[] = [];
+    for (const file of markdownPages()) {
+      const source = readFileSync(join(DOCS, file), 'utf8');
+      // Fenced and inline code are safe: MDX does not parse inside them.
+      const prose = source.replace(/```[\s\S]*?```/g, '').replace(/`[^`\n]*`/g, '');
+      for (const line of prose.split('\n')) {
+        for (const { pattern, what } of HAZARDS) {
+          if (pattern.test(line)) problems.push(`${file}: ${what} — ${line.trim().slice(0, 70)}`);
+        }
+      }
+    }
+
+    expect(
+      problems,
+      `MDX will not build these, and a page that fails to build is a 404 on the site with nothing ` +
+        `failing here: ${problems.join('; ')}`,
+    ).toEqual([]);
+  });
+
   it('no page shows a predicate combinator in a shape that does not parse', () => {
     // `{ allOf: [ … ] }` reads perfectly and is rejected by the schema. Reticle refuses the whole
     // call rather than evaluating part of it, so a reader who copies one gets NO verdict, which is

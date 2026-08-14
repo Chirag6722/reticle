@@ -37,7 +37,7 @@ You don't have to describe a bug in prose. **Point at it.** The flag captures th
 3. **The agent** opens the file, fixes it, and calls `reticle_session {action:"review"}({ resolve: "m1" })`.
 4. **You** see **"✓ fixed: \<your note\>"** land in the panel. Flag → fix → confirmation.
 
-See [`reticle_session {action:"review"}` in the usage guide](usage.md#reticle_session {action:"review"}--drain-the-bugs-the-human-flagged-on-the-page) for the tool shape. Suppress the button with `annotate: false` if you don't want it.
+See [`reticle_session {action:"review"}` in the usage guide](/usage) for the tool shape. Suppress the button with `annotate: false` if you don't want it.
 
 ## From the agent (the tools)
 
