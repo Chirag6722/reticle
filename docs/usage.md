@@ -359,9 +359,9 @@ A `state` assertion is graded as a **consequence** (a wrong element or stale ren
 ### Combinators
 
 ```jsonc
-{ "allOf": [ <predicate>, <predicate>, … ] }   // every one must hold
-{ "anyOf": [ <predicate>, … ] }                // at least one
-{ "not": <predicate> }
+{ "kind": "allOf", "predicates": [ <predicate>, <predicate>, … ] }  // every one must hold
+{ "kind": "anyOf", "predicates": [ <predicate>, … ] }              // at least one
+{ "kind": "not", "predicate": <predicate> }
 ```
 
 ### Timing

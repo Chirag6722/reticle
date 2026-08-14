@@ -1,0 +1,229 @@
+---
+title: Recipes
+description: Worked examples for the situations you are actually in, with the real response each one returned.
+icon: book-open
+---
+
+Each recipe is a situation, the call that verifies it, and what came back. Every response on this page was captured from a running app.
+
+## "Did the login actually work?"
+
+One call, three conditions. The signal fired, exactly one request went out, and nothing was logged.
+
+```json
+{
+  "ref": "e5",
+  "action": "click",
+  "until": {
+    "kind": "allOf",
+    "predicates": [
+      { "kind": "signal", "name": "auth:granted" },
+      { "kind": "net", "method": "POST", "urlContains": "/api/login", "count": 1 },
+      { "kind": "console", "level": "error", "absent": true }
+    ]
+  }
+}
+```
+
+```json
+{
+  "verified": "yes",
+  "because": "assertion held at signal grade over a clean capture with no channel disagreeing",
+  "verdict": {
+    "pass": true,
+    "evidence": [
+      { "name": "auth:granted", "data": { "email": "admin@reticle.dev" } },
+      { "matched": 1 },
+      { "absent": true }
+    ]
+  },
+  "summary": {
+    "stateDiffs": [{ "path": "auth", "from": null, "to": "{…}" }],
+    "storageKeysChanged": ["reticle.bench.authToken", "reticle.bench.sessionId"]
+  },
+  "honesty": { "grade": "signal", "coverage": { "pct": 100, "partial": false } }
+}
+```
+
+Each child predicate reports its own evidence, in order. `count: 1` is the part that catches double-submit, and it costs nothing to ask for.
+
+## "Did navigating actually change the view?"
+
+```json
+{ "ref": "e17", "action": "click", "until": { "kind": "signal", "name": "nav:changed" } }
+```
+
+```json
+{
+  "verified": "yes",
+  "verdict": {
+    "pass": true,
+    "evidence": { "name": "nav:changed", "data": { "view": "deployments" } }
+  },
+  "summary": {
+    "stateDiffs": [{ "path": "view", "from": "overview", "to": "deployments" }],
+    "route": "/deployments"
+  }
+}
+```
+
+The signal carries the destination in its payload, so one predicate proves both that navigation happened and that it went to the right place.
+
+## "Did the modal open?" and the lesson in getting it wrong
+
+Here is a real failure, kept because it teaches more than another pass.
+
+```json
+{
+  "ref": "e23",
+  "action": "click",
+  "until": {
+    "kind": "allOf",
+    "predicates": [
+      { "kind": "element", "query": { "role": "dialog" }, "state": "visible" },
+      { "kind": "console", "level": "error", "absent": true }
+    ]
+  }
+}
+```
+
+```json
+{
+  "verified": "no",
+  "verdict": {
+    "pass": false,
+    "evidence": [
+      {
+        "pass": false,
+        "expected": "an element matching {\"role\":\"dialog\"} in state 'visible'",
+        "observed": "no matching element on the page",
+        "evidence": { "presentTestids": ["deploy-table", "filter-search", "env-filter", "…"] }
+      },
+      { "pass": true, "evidence": { "absent": true } }
+    ]
+  },
+  "summary": {
+    "stateDiffs": [{ "path": "newDeployOpen", "from": false, "to": true }],
+    "signals": ["modal:opened"]
+  }
+}
+```
+
+Read the `summary`. The modal **did** open. `newDeployOpen` went `false → true` and the app fired `modal:opened`.
+
+The assertion was wrong, not the app. That modal is a `div` with no `role="dialog"`, so a role query could never match it. (Which is also an accessibility bug worth fixing, found for free.)
+
+The right predicate was sitting in the response the whole time:
+
+```json
+{ "until": { "kind": "signal", "name": "modal:opened" } }
+```
+
+<Tip>
+  When an assertion fails, read `summary.signals` and `summary.stateDiffs` before you assume the
+  feature is broken. They tell you what actually happened, and usually hand you the predicate you
+  should have written.
+</Tip>
+
+## "Nothing matched, and I do not know why"
+
+An empty `reticle_query` result tells you what _is_ there:
+
+```json
+{
+  "count": 0,
+  "elements": [],
+  "hint": {
+    "route": "/",
+    "knownEmptyState": true,
+    "presentTestids": ["nav-overview", "nav-deployments", "kpi-deploys", "…"]
+  }
+}
+```
+
+In this case the testid existed, on another route. The hint saved a snapshot and a guess.
+
+## "Is this button destructive?"
+
+Reticle refuses controls that look destructive, before acting:
+
+```json
+{
+  "error": "potentially destructive action blocked; retry with args.confirmDangerous=true",
+  "recovery": "Reticle blocked a potentially destructive control (delete, remove, revoke…) on purpose. If you mean it, retry the same action with args.confirmDangerous set to true. This is a deliberate refusal, not a defect: there is nothing to report."
+}
+```
+
+Confirm it explicitly when you mean it:
+
+```json
+{ "ref": "e23", "action": "click", "args": { "confirmDangerous": true }, "until": { … } }
+```
+
+<Note>
+  The matcher is conservative and will occasionally stop something harmless. A button labelled "New
+  deploy" trips it. That is the trade: a false stop costs you one argument, and a false start costs
+  you a deleted record.
+</Note>
+
+## "Did my change break anything else?"
+
+```json
+{ "tool": "reticle_verify_change", "args": { "since": "HEAD~1" } }
+```
+
+Give it the files you edited, or a git ref. It works out which saved flows cover them and replays only those.
+
+## "What is even testable in this app?"
+
+The best first call on an unfamiliar codebase:
+
+```json
+{ "tool": "reticle_capabilities" }
+```
+
+```json
+{
+  "testids": ["login-email", "login-submit", "new-deploy", "deploy-submit", "…"],
+  "signals": ["auth:granted", "auth:denied", "deploy:created", "modal:opened", "…"],
+  "stores": ["app"],
+  "flows": [
+    {
+      "name": "ship-a-deploy",
+      "steps": ["nav-deployments", "new-deploy", "deploy-name", "deploy-submit"]
+    }
+  ],
+  "source": "live"
+}
+```
+
+That is the app stating what it considers testable, which beats snapshotting the DOM and inferring it from element names.
+
+## "The error state has never been tested"
+
+Most error states have never run. Force one:
+
+```json
+{ "tool": "reticle_network_mock", "args": { "urlContains": "/api/deploys", "status": 500 } }
+```
+
+Then drive the flow and assert the error UI appears. Needs a Reticle-driven context, so acquire a lease first.
+
+## "I want this to run on every PR"
+
+Record it once, replay it forever:
+
+```json
+{ "tool": "reticle_flow_verify" }
+```
+
+Replays every saved flow and returns one consolidated verdict.
+
+<CardGroup cols={2}>
+  <Card title="The predicate grammar" icon="filter" href="/predicates">
+    Every kind, every field, and which ones actually prove something.
+  </Card>
+  <Card title="Best practices" icon="star" href="/best-practices">
+    The habits behind these recipes, and the mistakes that produce a confident wrong pass.
+  </Card>
+</CardGroup>

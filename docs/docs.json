@@ -103,7 +103,7 @@
               },
               {
                 "group": "Grammar",
-                "pages": ["predicates", "actions"]
+                "pages": ["predicates", "actions", "recipes"]
               },
               {
                 "group": "Everything else",

@@ -128,19 +128,39 @@ This is the predicate that catches a UI-versus-store desync. A deploy that only 
 
 ```json
 {
-  "allOf": [
-    { "kind": "signal", "name": "order:placed" },
-    { "kind": "console", "absent": true }
+  "kind": "allOf",
+  "predicates": [
+    { "kind": "signal", "name": "auth:granted" },
+    { "kind": "net", "method": "POST", "urlContains": "/api/login", "count": 1 },
+    { "kind": "console", "level": "error", "absent": true }
   ]
 }
 ```
 
 ```json
-{ "anyOf": [ … ] }
-{ "not": { … } }
+{ "kind": "anyOf", "predicates": [ … ] }
+{ "kind": "not", "predicate": { … } }
 ```
 
-`allOf` is the workhorse. "The signal fired **and** the console stayed clean **and** exactly one request went out" is a genuinely strong check, and it is one call.
+<Warning>
+A combinator needs its own `kind`, and the children go in `predicates`. A bare
+`{ "allOf": [ … ] }` does not parse, and neither does `{ "kind": "allOf", "allOf": [ … ] }`.
+
+Reticle refuses the call rather than running half of it: _"Nothing ran, the predicate was not evaluated, so no verdict was produced."_ Better to be told than to get a green from an assertion that never executed.
+
+</Warning>
+
+`allOf` is the workhorse. "The signal fired **and** exactly one request went out **and** the console stayed clean" is a genuinely strong check, and it is one call.
+
+Each child reports its own evidence:
+
+```json
+"evidence": [
+  { "name": "auth:granted", "data": { "email": "admin@reticle.dev" } },
+  { "matched": 1 },
+  { "absent": true }
+]
+```
 
 ## Timing and scoping
 

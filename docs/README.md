@@ -19,6 +19,7 @@ Everything here is published to [docs.reticle.sh](https://docs.reticle.sh) by `d
 | [getting-started.md](getting-started.md) | install it, connect an agent, verify something |
 | [usage.md](usage.md) | every tool, every argument — the long-form reference |
 | [predicates.mdx](predicates.mdx) | the predicate grammar, and which kinds actually prove something |
+| [recipes.mdx](recipes.mdx) | worked examples for real situations, with the response each returned |
 | [actions.mdx](actions.mdx) | every action and its arguments, including `press` and its history |
 | [faq.mdx](faq.mdx) | production, frameworks, comparisons, and the honest limits |
 | [tools-overview.mdx](tools-overview.mdx) | the 18 advertised tools, the 30 in the cold tail, and why |
