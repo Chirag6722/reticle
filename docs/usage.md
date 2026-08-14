@@ -6,6 +6,20 @@ icon: book
 
 The full reference and cookbook. If you haven't set up Reticle yet, start with [Getting Started](getting-started.md).
 
+> **Start here instead, unless you want the long form.** This page predates the focused reference and still holds the fullest single narrative, but almost everything in it now has a page of its own that is shorter, searchable and verified against a running app:
+>
+> | Looking for                                | Go to                                   |
+> | ------------------------------------------ | --------------------------------------- |
+> | One tool, with a real request and response | [Tools reference](/tools-overview)      |
+> | The predicate grammar                      | [Predicates](/predicates)               |
+> | Every action and its arguments             | [Actions](/actions)                     |
+> | Worked examples for real situations        | [Recipes](/recipes)                     |
+> | Baselines, clock, crawl, mocking, flows    | [Beyond the verify loop](/capabilities) |
+> | Habits that make a verdict trustworthy     | [Best practices](/best-practices)       |
+> | Common questions                           | [FAQ](/faq)                             |
+>
+> What is still only here: turning existing test cases into agent checks (§11), the security and privacy detail (§15), and real input mode (§18).
+
 > **On the notation.** Examples here are written as `reticle_act({ ref, action })`, which is shorthand for "call that tool with these arguments". Over MCP you do not write JavaScript; your client sends the tool name and an arguments object. The shorthand is shorter to read, and the argument shapes are identical either way.
 >
 > If you want examples in the exact JSON your client sends, [Recipes](/recipes) has them, and every response on that page was captured from a running app.

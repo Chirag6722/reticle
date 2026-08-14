@@ -17,7 +17,7 @@ Everything here is published to [docs.reticle.sh](https://docs.reticle.sh) by `d
 | [install-agentic.mdx](install-agentic.mdx) | `npx reticle init` — what it writes and how to read its marks |
 | [install-manual.mdx](install-manual.mdx) | wiring the MCP server and SDK by hand, per agent and framework |
 | [getting-started.md](getting-started.md) | install it, connect an agent, verify something |
-| [usage.md](usage.md) | every tool, every argument — the long-form reference |
+| [usage.md](usage.md) | the long-form narrative; most of it now has a focused page, and it says so at the top |
 | [predicates.mdx](predicates.mdx) | the predicate grammar, and which kinds actually prove something |
 | [capabilities.mdx](capabilities.mdx) | coverage, storage, fake clocks, crawl, visual diff, network mocking |
 | [recipes.mdx](recipes.mdx) | worked examples for real situations, with the response each returned |
