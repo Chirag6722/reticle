@@ -94,6 +94,10 @@
                 ]
               },
               {
+                "group": "Beyond the loop",
+                "pages": ["capabilities"]
+              },
+              {
                 "group": "CLI",
                 "pages": ["cli"]
               },

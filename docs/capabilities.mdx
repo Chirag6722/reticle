@@ -1,0 +1,186 @@
+---
+title: Beyond the verify loop
+description: Coverage, storage, fake clocks, autonomous crawling, visual diffing and network mocking. What Reticle does once look-act-observe-assert is not enough.
+icon: sparkles
+---
+
+Most of the time you want the verify loop. Look, act, observe, assert.
+
+These are the tools for the times you want something else, and they are the ones people are most surprised exist. All of them live in the cold tail, reachable through [`reticle_run`](/tools-tools-and-run).
+
+## Available anywhere
+
+These work through the always-on SDK, in any connected session.
+
+### Coverage: what you have not driven yet
+
+```json
+{ "tool": "reticle_coverage" }
+```
+
+```json
+{
+  "total": 3,
+  "exercised": 0,
+  "untouched": [
+    { "ref": "e3", "label": "textbox \"Email\"" },
+    { "ref": "e4", "label": "textbox \"Password\"" },
+    { "ref": "e5", "label": "button \"Sign in\"" }
+  ]
+}
+```
+
+Not code coverage. Control coverage: which interactive elements this session has actually touched.
+
+Useful at the end of a drive, when the agent is about to report success. "I verified the page" reads differently next to `exercised: 0`.
+
+### Storage: the persistence layer
+
+```json
+{ "tool": "reticle_storage" }
+```
+
+```json
+{
+  "local": {},
+  "session": { "__reticle_ref_base": "100", "__reticle_session": "lease-0cee1313…" },
+  "cookies": {}
+}
+```
+
+localStorage, sessionStorage and readable cookies.
+
+This is where the "logged in but nothing persisted" bug lives. A login can fire its success signal, mutate state, and write nothing. Reload, and you are back at the login screen.
+
+<Tip>
+  `storageKeysChanged` already appears in every `act_and_wait` summary, so you often do not need
+  this tool. Read it there first.
+</Tip>
+
+### Clock: freeze time, skip the wait
+
+```json
+{ "tool": "reticle_clock", "args": { "freeze": true } }
+```
+
+```json
+{ "frozen": true }
+```
+
+```json
+{ "tool": "reticle_clock", "args": { "advanceMs": 5000 } }
+{ "tool": "reticle_clock", "args": { "reset": true } }
+```
+
+Toasts that auto-dismiss, debounced search, polling, session timeouts, retry backoff. All of these are normally verified by sleeping, which is slow and flaky in equal measure.
+
+Freeze the clock, advance it by exactly the interval, assert the consequence. No sleeping, no guessing, and the same result on a fast laptop and a loaded CI runner.
+
+### Crawl: click everything, report anomalies
+
+```json
+{ "tool": "reticle_crawl", "args": { "maxSteps": 25 } }
+```
+
+Autonomously clicks every reachable control and reports what went wrong. No script, no plan.
+
+This is the tool for an app you did not write and do not understand yet. It found real anomalies in both desktop demo apps.
+
+### Reconcile: what the API said versus what rendered
+
+```json
+{ "tool": "reticle_reconcile" }
+```
+
+Compares the data an endpoint returned against what the page actually displays.
+
+The bug it catches is specific and common: the API returned ten rows, the table shows nine, and nothing errored. Neither the network log nor the DOM is wrong on its own. Only the comparison is.
+
+### Baselines: semantic snapshots, not pixels
+
+```json
+{ "tool": "reticle_baseline", "args": { "action": "save", "name": "checkout-empty" } }
+{ "tool": "reticle_baseline", "args": { "action": "diff", "name": "checkout-empty" } }
+```
+
+Records the meaningful state of a page and compares later. Structure and content rather than pixels, so a font change does not fail your check and a missing row does.
+
+## Needs a driven browser
+
+Four tools apply their effects through the Chrome DevTools Protocol. The always-on SDK cannot do that, so they need a browser Reticle is driving.
+
+<Warning>
+**A pooled lease is not enough.** Verified: acquiring one with `reticle_lease` and calling these
+still returns `{ "ok": false, "reason": "no-cdp-provider" }` and `"no-visual-provider"`.
+
+Point `RETICLE_CDP_URL` at a Chrome started with `--remote-debugging-port`. That is currently the reliable route.
+
+</Warning>
+
+### Screenshots and visual diffing
+
+```json
+{ "tool": "reticle_screenshot", "args": { "name": "login-baseline" } }
+{ "tool": "reticle_visual_diff", "args": { "name": "login-baseline" } }
+```
+
+`fullPage` captures the whole scroll height. `ref` or `clip` scopes to one element or region.
+
+Reticle reads program truth, not pixels, so this is the deliberate exception: a font that failed to load or a compositing glitch is only visible in the actual frame.
+
+### Viewport pinning
+
+```json
+{ "tool": "reticle_viewport", "args": { "width": 1280, "height": 800 } }
+```
+
+Fixes the viewport so a visual baseline is reproducible across machines. Without it, a diff taken on a laptop and re-run in CI compares two different layouts and fails for a reason nobody wants to debug.
+
+### Network mocking
+
+```json
+{
+  "tool": "reticle_network_mock",
+  "args": { "mocks": [{ "urlContains": "/api/deploys", "status": 500 }] }
+}
+```
+
+Return a 500, force offline, or delay a response. First matching rule wins. `clear: true` turns it off.
+
+Most error states have never actually run. This is how you find out whether yours works, without touching the backend or waiting for a real outage to tell you.
+
+## Flows: record once, replay forever
+
+The loop closer, and the reason Reticle is not only an interactive tool.
+
+```json
+{ "tool": "reticle_record", "args": { "action": "start", "name": "ship-a-deploy" } }
+{ "tool": "reticle_record", "args": { "action": "stop" } }
+{ "tool": "reticle_flow_verify" }
+```
+
+`reticle_flow_verify` replays every saved flow and returns one consolidated verdict. Flows are stored in `.reticle/` as human-readable files, so they are reviewed in pull requests and diffed like code.
+
+They anchor on meaning, a testid plus a signal, rather than volatile refs or coordinates. That is what lets them survive a refactor. When an anchor does drift, `reticle_flow_heal` proposes a rebind and tells you why it moved.
+
+<Card title="Flows in full" icon="repeat" href="/flows">
+  Recording, replay, self-healing, and what lives in `.reticle/`.
+</Card>
+
+## Discovering the rest
+
+```json
+{ "tool": "reticle_tools" }
+```
+
+Returns every tool with a one-line summary, and the profile currently in force. Load the full argument grammar for the ones you want before calling them:
+
+```json
+{ "names": ["reticle_network_mock", "reticle_clock"] }
+```
+
+<Tip>
+  Do this rather than guessing at arguments. Reticle refuses a call with unknown parameters rather
+  than running it, and says why: *"NOT applied, so any result would be an answer to a different
+  question."* Good behaviour, but a wasted turn you can skip.
+</Tip>

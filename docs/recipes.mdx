@@ -204,10 +204,22 @@ That is the app stating what it considers testable, which beats snapshotting the
 Most error states have never run. Force one:
 
 ```json
-{ "tool": "reticle_network_mock", "args": { "urlContains": "/api/deploys", "status": 500 } }
+{
+  "tool": "reticle_network_mock",
+  "args": { "mocks": [{ "urlContains": "/api/deploys", "status": 500 }] }
+}
 ```
 
-Then drive the flow and assert the error UI appears. Needs a Reticle-driven context, so acquire a lease first.
+Then drive the flow and assert the error UI appears. Pass `clear: true` to turn mocking off.
+
+<Warning>
+This one needs a **Reticle-driven browser**, because mocks are applied through CDP and the always-on
+SDK cannot do that. A pooled lease is **not** enough. Verified: `reticle_lease` still returns
+`{ "ok": false, "reason": "no-cdp-provider" }`.
+
+Your route is `RETICLE_CDP_URL` pointed at a Chrome started with `--remote-debugging-port`. The same applies to `reticle_screenshot`, `reticle_visual_diff` and `reticle_viewport`.
+
+</Warning>
 
 ## "I want this to run on every PR"
 
