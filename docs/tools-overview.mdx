@@ -1,22 +1,23 @@
 ---
 title: Tools overview
-description: The 16 tools your agent sees every turn, the 32 more it can reach on demand, and why the surface is deliberately small.
+description: The 18 tools your agent sees every turn, the 30 more it can reach on demand, and why the surface is deliberately small.
 icon: wrench
 ---
 
-Reticle ships 48 tools. Your agent is shown **16** of them.
+Reticle ships 48 tools. Your agent is shown **18** of them.
 
 That is not a limitation, it's the design. MCP re-sends every advertised tool definition to the model on **every single turn**, so the tool list is not a menu you pay for once — it's rent. A wider surface costs tokens on every message and, less obviously, makes the model wander: give it forty ways to look at a page and it will try several before doing anything useful.
 
-The other 32 tools are one call away, never unreachable. `reticle_tools` lists them and `reticle_run` invokes them.
+The other 30 tools are one call away, never unreachable. `reticle_tools` lists them and `reticle_run` invokes them.
 
 <Note>
-  Measured off the real wire: the default surface is 16 tools at roughly 4,500 tokens per turn,
-  against roughly 32,000 for all 48. Treat those as the shape of the gap rather than today's exact
-  figures — the surface changes, and the numbers are re-measured in the test suite, not here.
+  Measured off the real wire on 2026-08-14, by reading `tools/list` from a fresh daemon: the default
+  surface is **18 tools, 21,468 bytes, ~5,400 tokens per turn**. Advertising all 48 costs **134,368
+  bytes, ~33,600 tokens** — 6.3x more, charged on every message. Re-measure before quoting these;
+  the surface grows.
 </Note>
 
-## The default 16
+## The default 18
 
 Grouped by the job they do in the verify loop.
 
@@ -33,6 +34,9 @@ Grouped by the job they do in the verify loop.
   <Card title="Prove & discover" icon="circle-check">
     `reticle_assert` · `reticle_tools` · `reticle_run`
   </Card>
+  <Card title="Session & feedback" icon="comment">
+    `reticle_session` · `reticle_feedback`
+  </Card>
 </CardGroup>
 
 <Warning>
@@ -41,7 +45,7 @@ Grouped by the job they do in the verify loop.
   however many tools it used and however confident the summary sounds.
 </Warning>
 
-## Why these 16 and not others
+## Why these 18 and not others
 
 Each one earned its slot, and a couple are there because of measured mistakes.
 
@@ -58,7 +62,7 @@ Direct `reticle_network` and `reticle_console` stay advertised even though `reti
   is not.
 </Tip>
 
-## Reaching the other 32
+## Reaching the other 30
 
 ```json
 { "name": "reticle_flow_verify", "args": {} }
@@ -102,21 +106,44 @@ A tool that says "no requests found" when it actually means "I lost the ones you
 
 ## Reference
 
-<CardGroup cols={2}>
-  <Card title="reticle_query" icon="magnifying-glass" href="/tools-query">
-    Find elements by Testing-Library semantics, with source pointers.
-  </Card>
-  <Card title="reticle_inspect" icon="crosshairs" href="/tools-inspect">
-    Everything about one element — component stack, source, box, design tokens.
-  </Card>
-  <Card title="reticle_network" icon="satellite-dish" href="/tools-network">
-    Filtered request log with bodies, timings and automatic redaction.
-  </Card>
-  <Card title="reticle_state" icon="database" href="/tools-state">
-    Read live framework state without the app broadcasting it.
-  </Card>
-</CardGroup>
+### Look
+
+| Tool | Answers |
+| --- | --- |
+| [`reticle_snapshot`](/tools-snapshot) | What is on this page? Three modes, from full tree to a 25-token route check |
+| [`reticle_query`](/tools-query) | Where is the thing I mean? |
+| [`reticle_inspect`](/tools-inspect) | Everything about one element, down to source and design tokens |
+| [`reticle_sessions`](/tools-sessions) | Which tabs are connected, and can they actually be driven? |
+
+### Act
+
+| Tool | Answers |
+| --- | --- |
+| [`reticle_act`](/tools-act) | Do this. Proves nothing, and says so |
+| [`reticle_act_and_wait`](/tools-act-and-wait) | Do this, and prove the consequence. **Produces a verdict** |
+| [`reticle_act_sequence`](/tools-act-sequence) | Do these three things in one round trip |
+| [`reticle_navigate`](/tools-navigate) | Go here — dispatched, not confirmed |
+
+### Observe
+
+| Tool                                  | Answers                                         |
+| ------------------------------------- | ----------------------------------------------- |
+| [`reticle_observe`](/tools-observe)   | Everything that happened in a window            |
+| [`reticle_network`](/tools-network)   | Which requests fired, with bodies and timings   |
+| [`reticle_console`](/tools-console)   | What was logged — and whether the read was real |
+| [`reticle_state`](/tools-state)       | What the app believes, not what it drew         |
+| [`reticle_wait_for`](/tools-wait-for) | Block until something you did not cause happens |
+
+### Prove and discover
+
+| Tool | Answers |
+| --- | --- |
+| [`reticle_assert`](/tools-assert) | Did the named consequence hold? **Produces a verdict** |
+| [`reticle_tools`](/tools-tools-and-run) | What else is available, and what are its arguments? |
+| [`reticle_run`](/tools-tools-and-run) | Invoke any of the other 30 |
+| [`reticle_session`](/tools-session-and-feedback) | Hand control back to the human |
+| [`reticle_feedback`](/tools-session-and-feedback) | Tell the maintainers Reticle got something wrong |
 
 <Card title="The complete reference" icon="book" href="/usage">
-  Every tool, every argument, including the 32 in the cold tail.
+  Every tool, every argument, including the 30 in the cold tail.
 </Card>

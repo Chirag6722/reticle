@@ -1,0 +1,89 @@
+---
+title: reticle_observe
+description: The full timeline of everything the app did in a window — DOM, network, routing, console, animations and signals — with a summary.
+icon: timeline
+---
+
+`reticle_observe` is the wide-angle lens. Where `reticle_network` and `reticle_console` answer one question each, `observe` returns everything that happened in a window, in order.
+
+## Example
+
+```json
+{ "window_ms": 4000, "max_events": 4 }
+```
+
+Real response:
+
+```json
+{
+  "window_ms": 4000,
+  "events": [
+    {
+      "t": 925870,
+      "type": "page.health",
+      "seq": 586,
+      "data": {
+        "hidden": true,
+        "focused": false,
+        "runtime": "web",
+        "engine": "blink",
+        "brand": "chrome",
+        "reason": "heartbeat"
+      }
+    }
+  ],
+  "summary": {
+    "total": 1,
+    "network": 0,
+    "domAdded": 0,
+    "domRemoved": 0,
+    "domChanged": 0,
+    "routeChanges": 0,
+    "consoleErrors": 0,
+    "animations": 0,
+    "signals": 0
+  },
+  "cost": { "events": 1, "bytes": 374 }
+}
+```
+
+A quiet window, honestly reported as quiet.
+
+## Read the summary first
+
+The `summary` block is the cheap answer. `consoleErrors: 0` and `network: 0` tells you most of what you need without reading a single event. Pull the timeline only when the summary says something interesting happened.
+
+## Arguments
+
+| Argument          | What it does                                                       |
+| ----------------- | ------------------------------------------------------------------ |
+| `window_ms`       | How far back to look                                               |
+| `since` / `until` | Cursors from a prior act — the precise way to scope                |
+| `actionId`        | Only events attributed to one action: "what did that click cause?" |
+| `filters`         | Event-type allowlist. The cheapest way to shrink a big timeline    |
+| `max_events`      | Cap the timeline to the most recent N                              |
+
+## Scope by cursor, not by clock
+
+Every `reticle_act` response includes a `since` cursor. Passing it to `observe` scopes the timeline to exactly what followed that action, with no guessing about how many milliseconds to look back:
+
+```json
+{ "since": 28123 }
+```
+
+This is more precise than `window_ms` and it does not drift when the machine is slow — which matters, because a timing-based window that works on your laptop and fails in CI is a flaky test waiting to happen.
+
+## When to use it
+
+Use `observe` when you do not yet know what went wrong. Use the narrow tools when you do.
+
+<CardGroup cols={2}>
+  <Card title="Good use" icon="circle-check">
+    "Something broke after that click — show me everything that happened."
+  </Card>
+  <Card title="Wasteful use" icon="circle-xmark">
+    "Did a POST fire?" — [`reticle_network`](/tools-network) answers that far more cheaply.
+  </Card>
+</CardGroup>
+
+<Note>`observe` reads. It does not produce a verdict. It is for diagnosis, not proof.</Note>

@@ -1,0 +1,70 @@
+---
+title: reticle_assert
+description: Evaluate a predicate against what the app actually did, and get a verdict — including a clear explanation when it fails.
+icon: gavel
+---
+
+`reticle_assert` is the second of the two tools that produce a verdict. It takes the same predicate grammar as [`reticle_act_and_wait`](/tools-act-and-wait) and evaluates it against what already happened.
+
+## A real failure
+
+Failures are more instructive than passes, so here is one. I asserted a route change to `/` on a page that was already at `/`:
+
+```json
+{ "predicate": { "kind": "route", "path": "/" } }
+```
+
+```json
+{
+  "verified": "no",
+  "verifiedReason": "assertion_failed",
+  "because": "the declared consequence did not hold",
+  "pass": false,
+  "failureReason": "no route change observed",
+  "observed": "no route change in the window",
+  "expected": "a route change to /",
+  "assertion": "route.changed",
+  "source": "src/components/Login.tsx:81"
+}
+```
+
+<Warning>
+  Read `assertion: "route.changed"` carefully. The `route` predicate asserts that the route
+  **changed**, not that it currently equals a value. Asserting the route you are already on will
+  always fail. This catches people out, and the response says so in `expected` rather than leaving
+  you to work it out.
+</Warning>
+
+Note also `expected` and `observed` side by side. A verdict that says only "failed" makes you go digging; this one tells you what it wanted, what it saw, and where in your source the relevant element lives.
+
+## Arguments
+
+| Argument                 | What it does                                                |
+| ------------------------ | ----------------------------------------------------------- |
+| `predicate` (or `until`) | `{ kind, ...fields }`                                       |
+| `timeout_ms`             | If above zero, wait this long before failing                |
+| `since`                  | Cursor from a prior act — scope to events after that action |
+
+## Scope it with `since`
+
+Without `since`, an assertion evaluates against the recent buffer, which may contain events from before your action. That can pass for the wrong reason — the request you are asserting fired, but it fired two clicks ago.
+
+```json
+{ "predicate": { "kind": "net", "method": "POST" }, "since": 28123 }
+```
+
+The cursor comes from the preceding `reticle_act` response. Use it whenever you are asserting something an action was supposed to cause.
+
+## When to use assert over act_and_wait
+
+Use [`reticle_act_and_wait`](/tools-act-and-wait) when you are performing the action. Use `reticle_assert` when:
+
+- you are checking a precondition before acting;
+- the state was reached by several actions and you want one verdict over the lot;
+- you want to assert something extra about an action you already ran, using its `since` cursor.
+
+<Note>
+  `verified: "unknown"` means Reticle could not tell. It is not a pass, and it is not a failure — it
+  is a statement that the evidence was insufficient. Report it as unknown rather than rounding it in
+  either direction.
+</Note>

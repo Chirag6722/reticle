@@ -18,11 +18,23 @@ Everything here is published to [docs.reticle.sh](https://docs.reticle.sh) by `d
 | [install-manual.mdx](install-manual.mdx) | wiring the MCP server and SDK by hand, per agent and framework |
 | [getting-started.md](getting-started.md) | install it, connect an agent, verify something |
 | [usage.md](usage.md) | every tool, every argument — the reference |
-| [tools-overview.mdx](tools-overview.mdx) | the 16 advertised tools, the 32 in the cold tail, and why |
+| [tools-overview.mdx](tools-overview.mdx) | the 18 advertised tools, the 30 in the cold tail, and why |
+| [tools-snapshot.mdx](tools-snapshot.mdx) | `reticle_snapshot` — three modes, from full tree to a 25-token route check |
 | [tools-query.mdx](tools-query.mdx) | `reticle_query` — find elements by testing-library semantics |
 | [tools-inspect.mdx](tools-inspect.mdx) | `reticle_inspect` — one element, down to source and design tokens |
+| [tools-navigate.mdx](tools-navigate.mdx) | `reticle_navigate` — and why `ok` does not mean the page arrived |
+| [tools-act.mdx](tools-act.mdx) | `reticle_act` — acts, proves nothing, and says so |
+| [tools-act-and-wait.mdx](tools-act-and-wait.mdx) | `reticle_act_and_wait` — the tool that produces a verdict |
+| [tools-act-sequence.mdx](tools-act-sequence.mdx) | `reticle_act_sequence` — batch a form into one round trip |
+| [tools-observe.mdx](tools-observe.mdx) | `reticle_observe` — the whole timeline when you don't know what broke |
 | [tools-network.mdx](tools-network.mdx) | `reticle_network` — the request log, redaction, and buffer honesty |
+| [tools-console.mdx](tools-console.mdx) | `reticle_console` — and an empty result that proves it looked |
 | [tools-state.mdx](tools-state.mdx) | `reticle_state` — what the app believes, not what it drew |
+| [tools-wait-for.mdx](tools-wait-for.mdx) | `reticle_wait_for` — for consequences you did not cause |
+| [tools-assert.mdx](tools-assert.mdx) | `reticle_assert` — verdicts, and a real failure explained |
+| [tools-sessions.mdx](tools-sessions.mdx) | `reticle_sessions` — the health fields that decide if driving works |
+| [tools-tools-and-run.mdx](tools-tools-and-run.mdx) | `reticle_tools` / `reticle_run` — reaching the other 30 |
+| [tools-session-and-feedback.mdx](tools-session-and-feedback.mdx) | `reticle_session` / `reticle_feedback` — the human boundary |
 | [agent-cheatsheet.md](agent-cheatsheet.md) | the condensed version an agent keeps in context |
 | [for-agents.md](for-agents.md) | how to fetch these docs as Markdown or `llms.txt` |
 | [architecture.md](architecture.md) | how it works, and why it is built this way |

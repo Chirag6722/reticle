@@ -1,0 +1,63 @@
+---
+title: reticle_navigate
+description: Move the connected tab to a URL or reload it — and understand why ok does not mean the page arrived.
+icon: compass
+---
+
+```json
+{ "url": "/deployments" }
+```
+
+Real response:
+
+```json
+{
+  "ok": true,
+  "url": "http://localhost:4312/deployments",
+  "confirmed": false,
+  "note": "ok means the navigation was DISPATCHED, not that the page arrived — the SDK is torn down by the navigation itself, so nothing here can see the new document. Call reticle_sessions to confirm a session reconnected at the new URL before acting; if none appears, the page did not load or is not instrumented."
+}
+```
+
+## `confirmed: false` is the honest part
+
+A full navigation destroys the document the SDK was living in. Reticle cannot report on the new page from inside the old one, because the old one no longer exists. So it tells you what it actually knows: the navigation was dispatched.
+
+Most tools would return `ok: true` and let you assume arrival. When the page then fails to load, or loads without instrumentation, you get a confusing cascade of "element not found" errors several calls later, with nothing pointing at the real cause.
+
+## The pattern after navigating
+
+```json
+{ "url": "/deployments" }
+```
+
+then confirm a session reconnected:
+
+```json
+{}
+```
+
+with [`reticle_sessions`](/tools-sessions), and only then snapshot. If no session appears at the new URL, the page did not load or is not instrumented — and you know that immediately rather than three calls later.
+
+<Warning>
+  **Refs do not survive a navigation.** A new document means new refs. The same "Sign in" button was
+  `e5` before a navigation and `e103` after. Re-snapshot; never carry refs across.
+</Warning>
+
+## Arguments
+
+| Argument | What it does                          |
+| -------- | ------------------------------------- |
+| `url`    | Where to go. Relative paths work      |
+| `reload` | Reload in place instead of navigating |
+| `hard`   | With `reload`, bypass the cache       |
+
+## Client-side routing is different
+
+In a single-page app, clicking a link usually changes the route without destroying the document. That is a route change, not a navigation — refs survive, and you can assert it directly:
+
+```json
+{ "ref": "e19", "action": "click", "until": { "kind": "route", "path": "/deployments" } }
+```
+
+Use `reticle_navigate` for a genuine document load — a deep link, a hard reload, or the first visit.

@@ -1,0 +1,82 @@
+---
+title: reticle_act
+description: Perform an action without checking the result. Useful for setup steps, and dangerous as a final step, because ok means dispatched — not worked.
+icon: hand-pointer
+---
+
+`reticle_act` clicks, fills, types, selects, drags. It does exactly one thing and makes exactly one promise: the event was dispatched.
+
+<Warning>
+  `reticle_act` **proves nothing**. If the action is supposed to cause something, use
+  [`reticle_act_and_wait`](/tools-act-and-wait) and get the verdict in the same call. A drive that
+  ends on `reticle_act` has no result.
+</Warning>
+
+## Example
+
+```json
+{ "ref": "e102", "action": "fill", "args": { "value": "reticle" } }
+```
+
+Real response:
+
+```json
+{
+  "since": 28123,
+  "inputMode": "synthetic",
+  "dispatched": true,
+  "settled": false,
+  "settleReason": "timeout",
+  "result": {
+    "ok": true,
+    "ref": "e102",
+    "action": "fill",
+    "testid": "login-password",
+    "component": "Login",
+    "role": "textbox",
+    "name": "Password",
+    "effect": {
+      "visible": false,
+      "focusMoved": "null->e102",
+      "valueChanged": true,
+      "domMutatedWithin": 15
+    },
+    "source": { "file": "src/components/Login.tsx", "line": 59, "column": 8 }
+  }
+}
+```
+
+## Actions
+
+`click` · `dblclick` · `hover` · `focus` · `blur` · `fill` · `type` · `clear` · `select` · `check` · `uncheck` · `submit` · `press` · `upload` · `scrollIntoView` · `drag` · `webmcp`
+
+| Action           | Arguments                                                        |
+| ---------------- | ---------------------------------------------------------------- |
+| `fill`, `select` | `{ value }`                                                      |
+| `type`, `press`  | `{ text }` — for `press`, the key _name_, e.g. `Escape` or `Tab` |
+| `drag`           | `{ toRef }` — the ref to drop onto                               |
+| `upload`         | file arguments                                                   |
+
+## Reading the effect block
+
+This is where `act` earns its place even though it proves nothing.
+
+- **`valueChanged: true`** — the field actually took the value. `false` on a `fill` usually means the input is controlled and rejected it, or it's readonly.
+- **`focusMoved: "null->e102"`** — focus went where you expected.
+- **`domMutatedWithin: 15`** — something re-rendered within 15ms. A `fill` that mutates nothing often means no handler is attached.
+- **`defaultPrevented`** — a handler called `preventDefault()`, which is why your form didn't submit.
+- **`occluded` / `occludedBy`** — the click landed on something else. This is the answer to at least half of all "the button doesn't work" reports.
+
+## `settled: false` is not a failure
+
+`settleReason: "timeout"` means the page was still busy when Reticle stopped watching. On a `fill` that's normal and uninteresting. On a click you expected to complete something, it's a hint that you wanted `act_and_wait` with an explicit `until`.
+
+## `inputMode` tells you how real the input was
+
+`synthetic` means Reticle dispatched events programmatically. `real` means native CDP input, available under `reticle drive`. Synthetic input is fine for the overwhelming majority of apps; a few drag-and-drop and pointer-gesture libraries only respond to the real thing.
+
+<Warning>
+  When the tab is backgrounded, synthetic timers and pointer gestures can silently no-op. Every
+  response carries a `warning` when the tab is throttled. Pass `refuseWhenThrottled: true` to make
+  Reticle throw instead of pretending it acted.
+</Warning>

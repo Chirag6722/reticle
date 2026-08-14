@@ -80,10 +80,22 @@
                 "group": "Tools",
                 "pages": [
                   "tools-overview",
+                  "tools-snapshot",
                   "tools-query",
                   "tools-inspect",
+                  "tools-navigate",
+                  "tools-act",
+                  "tools-act-and-wait",
+                  "tools-act-sequence",
+                  "tools-observe",
                   "tools-network",
-                  "tools-state"
+                  "tools-console",
+                  "tools-state",
+                  "tools-wait-for",
+                  "tools-assert",
+                  "tools-sessions",
+                  "tools-tools-and-run",
+                  "tools-session-and-feedback"
                 ]
               },
               {

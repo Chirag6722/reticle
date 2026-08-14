@@ -1,0 +1,66 @@
+---
+title: reticle_wait_for
+description: Block until a predicate holds — or return immediately if it is already true in the recent buffer.
+icon: hourglass
+---
+
+`reticle_wait_for` takes the same predicate grammar as [`reticle_act_and_wait`](/tools-act-and-wait), without the action. Use it when the thing you are waiting for was triggered by something other than your own click — a timer, a websocket push, a background refresh.
+
+## Example
+
+```json
+{
+  "predicate": { "kind": "text", "value": "Invalid email or password" },
+  "timeout_ms": 3000
+}
+```
+
+Real response:
+
+```json
+{
+  "pass": true,
+  "evidence": [
+    {
+      "ref": "e104",
+      "role": "alert",
+      "name": "Invalid email or password",
+      "visible": false,
+      "source": "src/components/Login.tsx:72",
+      "states": ["present", "hidden", "enabled"]
+    }
+  ]
+}
+```
+
+The evidence is the element itself, with the file and line that rendered it.
+
+<Note>
+  Look at `visible: false` and `states: ["present", "hidden", "enabled"]`. The alert exists in the
+  DOM and is not visible. `wait_for` on a `text` predicate matches presence — if you need it on
+  screen, that is a different question, and [`reticle_inspect`](/tools-inspect) answers it.
+</Note>
+
+## It checks the buffer first
+
+`wait_for` does not always wait. If the predicate is already satisfied in the recent event buffer, it returns immediately. This means you can act, then wait, without racing — the event that happened while you were composing the second call is not lost.
+
+## Arguments
+
+| Argument | What it does |
+| --- | --- |
+| `predicate` (or `until`) | `{ kind, ...fields }` — see the [predicate grammar](/tools-act-and-wait) |
+| `timeout_ms` | Maximum wait |
+| `since` | Cursor from a prior act, to scope the wait |
+
+## Prefer `act_and_wait` when you caused it
+
+If your own action is supposed to trigger the thing, put the predicate in the action:
+
+```json
+{ "ref": "e103", "action": "click", "until": { "kind": "signal", "name": "auth:granted" } }
+```
+
+One call instead of two, no gap for an event to slip through, and — the part that matters — the expectation is recorded _before_ the action rather than chosen after it.
+
+Save `wait_for` for consequences you did not cause.

@@ -104,6 +104,34 @@ describe('docs/docs.json publishes every doc', () => {
     ).toEqual([]);
   });
 
+  it('every internal link resolves to a page or an image that exists', () => {
+    const slugs = new Set(markdownPages().map((file) => file.replace(/\.mdx?$/, '')));
+    const broken: string[] = [];
+
+    for (const file of markdownPages()) {
+      const source = readFileSync(join(DOCS, file), 'utf8');
+      const links = [
+        ...source.matchAll(/href="(\/[^"#]*)"/g),
+        ...source.matchAll(/\]\((\/[^)#]*)\)/g),
+      ].map((match) => match[1] ?? '');
+
+      for (const link of new Set(links)) {
+        if (link.startsWith('/images/')) {
+          if (!existsSync(join(DOCS, link))) broken.push(`${file} -> ${link} (missing image)`);
+          continue;
+        }
+        const slug = link.replace(/^\/|\/$/g, '');
+        if ('' !== slug && !slugs.has(slug)) broken.push(`${file} -> ${link} (no such page)`);
+      }
+    }
+
+    expect(
+      broken,
+      `These links 404 on the published site. A dead link in docs is silent — nothing throws, the ` +
+        `page renders, and the reader hits a wall: ${broken.join('; ')}`,
+    ).toEqual([]);
+  });
+
   it('every published page carries frontmatter and no duplicate H1', () => {
     const broken = publishedSlugs()
       .map((slug) => ({ slug, file: pageFile(slug) }))

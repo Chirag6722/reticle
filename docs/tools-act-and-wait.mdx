@@ -1,0 +1,123 @@
+---
+title: reticle_act_and_wait
+description: Act on an element and wait for a named consequence in one call. This is the tool that produces a verdict, and the one you should reach for by default.
+icon: circle-check
+---
+
+This is the tool Reticle exists for. It does the act, observe and assert steps in one round trip, and it makes you name the expected consequence **before** the action runs.
+
+That ordering is not a convenience. An agent that acts first and then decides what counts as success will always find something that counts. Naming the consequence up front is the difference between a check and a rationalisation.
+
+## Example
+
+```json
+{
+  "ref": "e5",
+  "action": "click",
+  "until": { "kind": "net", "method": "POST" }
+}
+```
+
+Real response, trimmed:
+
+```json
+{
+  "verified": "yes",
+  "verifiedReason": "proved",
+  "because": "assertion held at presence grade over a clean capture with no channel disagreeing",
+  "effect": {
+    "ok": true,
+    "testid": "login-submit",
+    "component": "Login",
+    "effect": { "domMutatedWithin": 7, "appeared": "Signing in…" },
+    "source": { "file": "src/components/Login.tsx", "line": 81, "column": 8 }
+  },
+  "verdict": {
+    "pass": true,
+    "evidence": {
+      "method": "POST",
+      "url": "http://localhost:8787/api/login",
+      "status": 200,
+      "durationMs": 67,
+      "requestBody": "{\"email\":\"admin@reticle.dev\",\"password\":\"[REDACTED]\"}"
+    }
+  },
+  "summary": {
+    "net": { "total": 1, "errors": 0 },
+    "consoleErrors": 0,
+    "stateDiffs": [{ "path": "auth", "from": null, "to": "{\"email\":\"admin@reticle.dev\"}" }],
+    "signals": ["auth:granted"]
+  },
+  "honesty": {
+    "grade": "presence",
+    "coverage": { "pct": 100, "partial": false },
+    "integrity": { "clean": true, "issues": [] }
+  }
+}
+```
+
+## The predicate grammar
+
+`until` takes `{ kind, ...fields }`. The kinds:
+
+| Kind                      | Asserts                                                         |
+| ------------------------- | --------------------------------------------------------------- |
+| `signal`                  | The app fired a named signal — the strongest evidence available |
+| `state`                   | A store path reached a value                                    |
+| `net`                     | A request matched; `count` asserts an **exact** number          |
+| `route`                   | The route **changed**                                           |
+| `element`                 | An element appeared; `absent: true` asserts it went away        |
+| `text`                    | Text appeared or, with `absent`, disappeared                    |
+| `console`                 | Something logged; `absent: true` asserts a clean console        |
+| `animation`               | An animation ran or finished                                    |
+| `settled`                 | The page went quiet                                             |
+| `allOf` / `anyOf` / `not` | Combine the above                                               |
+
+### Predicates that catch real bugs
+
+```json
+{ "until": { "kind": "net", "method": "POST", "count": 1 } }
+```
+
+Exactly one request. Double-submit fails this at two, and no screenshot will ever tell you.
+
+```json
+{ "until": { "kind": "console", "absent": true } }
+```
+
+The action completed **and** logged nothing. "It worked but threw a warning" stops passing.
+
+```json
+{ "until": { "kind": "signal", "name": "deploy:created" } }
+```
+
+The app itself declared success. This is the highest grade of evidence, and it requires [instrumenting your app](/integration-patterns) — which is the main reason to bother.
+
+## Reading `verified`
+
+<CardGroup cols={3}>
+  <Card title="yes" icon="circle-check">
+    The named consequence happened, with evidence attached.
+  </Card>
+  <Card title="no" icon="circle-xmark">
+    It did not. A finding, with a source pointer.
+  </Card>
+  <Card title="unknown" icon="circle-question">
+    Reticle could not tell. **Not a pass.** Report it as unknown.
+  </Card>
+</CardGroup>
+
+## The `honesty` block
+
+`grade` is how strong the evidence was — a fired signal outranks an element appearing. `coverage.partial: true` means Reticle did not observe the whole window. `integrity.clean: false` means something interfered with the capture and the verdict deserves less trust.
+
+A verification tool that cannot describe the quality of its own evidence is asking you to take its word for it, which is precisely the problem we started with.
+
+## Arguments
+
+| Argument                | What it does                             |
+| ----------------------- | ---------------------------------------- |
+| `ref`, `action`, `args` | As [`reticle_act`](/tools-act)           |
+| `until`                 | The predicate to wait for                |
+| `timeout_ms`            | Maximum wait                             |
+| `refuseWhenThrottled`   | Throw rather than act on a throttled tab |

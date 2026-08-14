@@ -1,0 +1,91 @@
+---
+title: reticle_session and reticle_feedback
+description: Hand the session back to the human, end it cleanly, and tell the maintainers when Reticle got something wrong.
+icon: comments
+---
+
+Two tools that are not about your app at all. One manages the boundary between agent and human; the other is how Reticle finds out it is broken.
+
+## reticle_session
+
+The presenter panel in your app shows a live transcript of what the agent is doing. It reads "live" until the agent says otherwise — so an agent that wanders off without a word leaves a panel claiming work is in progress forever.
+
+| Action  | What it does                                                             |
+| ------- | ------------------------------------------------------------------------ |
+| `yield` | Hand control back between turns. `mode: "waiting"` or `"ask"`. Revivable |
+| `end`   | The task is done. Frees the session; revives on the next action          |
+| `tune`  | Adjust session behaviour, such as the idle-end window                    |
+
+```json
+{ "action": "yield", "mode": "waiting" }
+```
+
+Reticle nudges you about this. Every response on a long-running session carries a reminder:
+
+```json
+"session_age_warning": "Session s7fe3a790… has been open for 15 minutes. If your task is complete, call reticle_session{action:\"end\"} now."
+```
+
+And each lease carries the rule in the payload itself:
+
+```json
+"session_lease": {
+  "IMPORTANT": "When you stop driving, call reticle_session {action:\"yield\", mode:\"waiting\"|\"ask\"} — the panel reads \"live\" until you do."
+}
+```
+
+<Tip>
+  `yield` when you are pausing and might come back. `end` when you are finished. Both revive on your
+  next action, so neither is destructive — the difference is what the human watching the panel is
+  told.
+</Tip>
+
+## reticle_feedback
+
+Reticle is built for agents, which creates an unusual problem: the primary user's experience vanishes the moment its context does. If an agent hits a gap and works around it silently, nobody ever learns the gap existed.
+
+```json
+{
+  "kind": "bug",
+  "text": "What I called, what I expected, what I got, and why Reticle is at fault.",
+  "currentApproach": "How I am working around it today.",
+  "impact": "What measurably improves if this is fixed."
+}
+```
+
+| `kind`            | Use it when                                                |
+| ----------------- | ---------------------------------------------------------- |
+| `bug`             | A tool returned a wrong or broken result                   |
+| `gap`             | Reticle could not observe something you needed at all      |
+| `ambiguity`       | The check ran but you could not tell what the answer meant |
+| `feature_request` | You wished a capability existed                            |
+| `improvement`     | It works, but costs too many calls                         |
+
+### It will tell you when it cannot send
+
+Feedback is not fire-and-forget, and it does not pretend to succeed:
+
+```json
+{
+  "sent": false,
+  "accepted": false,
+  "reason": "this is a Reticle source checkout, where telemetry is disabled by design — so feedback has nowhere to go. Open an issue at https://github.com/reticlehq/reticle/issues instead.",
+  "note": "NOT accepted (see reason). Tell the human what you found so it is not lost."
+}
+```
+
+That is a real response, captured while writing these docs. The instruction in `note` is the important part: when the report cannot be delivered, say so in your answer to the human rather than letting the finding evaporate.
+
+### From the shell, when the tools are unreachable
+
+The setup that failed to finish is exactly the setup that most needs reporting, and in that state the MCP tools do not exist:
+
+```bash
+reticle feedback --agent --kind gap "reticle init finished but no session ever connected"
+```
+
+<Note>
+  Report defects in **Reticle**. A bug you find in the app under test is Reticle working correctly,
+  and belongs in your answer to the user — not in a bug report to us. We get a surprising number of
+  those, and each one is quietly a compliment.
+</Note>
