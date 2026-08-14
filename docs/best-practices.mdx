@@ -96,6 +96,65 @@ Getting from `presence` to `signal` is roughly ten minutes of [instrumentation](
 
 **Emit failure signals too.** With `auth:denied` defined, a failed login reports `signals seen in this window: auth:denied` instead of just "never fired" — the app names its own outcome and the diagnosis lands in one response.
 
+## A signal-grade pass can still miss the bug
+
+This is the subtlest entry on the page, and it comes from a controlled A/B run against the same app minutes apart.
+
+Same login, same predicate — `until: { kind: "signal", name: "auth:granted" }` — run twice. Once against a healthy build, once against a build with a persistence bug injected, where the auth token is never written to storage.
+
+**Healthy:**
+
+```json
+{
+  "verified": "yes",
+  "honesty": { "grade": "signal", "integrity": { "clean": true } },
+  "summary": {
+    "signals": ["auth:granted"],
+    "stateDiffs": [{ "path": "auth", "from": null, "to": "{…}" }],
+    "storageKeysChanged": ["reticle.bench.authToken", "reticle.bench.sessionId"]
+  }
+}
+```
+
+**Broken:**
+
+```json
+{
+  "verified": "yes",
+  "honesty": { "grade": "signal", "integrity": { "clean": true } },
+  "summary": {
+    "signals": ["auth:granted"],
+    "stateDiffs": [{ "path": "auth", "from": null, "to": "{…}" }],
+    "storageKeysChanged": []
+  }
+}
+```
+
+Identical verdict. Identical grade. The signal fired in both, because the login genuinely did succeed — in memory. Reload the page and the second one is logged out.
+
+The only difference in the entire response is `storageKeysChanged`, and the assertion never asked about it.
+
+<Warning>
+  The lesson is not that signals are unreliable. It is that **a verdict answers the question you
+  asked**. `auth:granted` asked "did the app authenticate", and the honest answer was yes. Nobody
+  asked "does it survive a reload".
+</Warning>
+
+If persistence is part of what "it worked" means, assert it:
+
+```json
+{
+  "until": {
+    "allOf": [
+      { "kind": "signal", "name": "auth:granted" },
+      { "kind": "state", "store": "app", "path": "auth.email", "equals": "admin@reticle.dev" }
+    ]
+  }
+}
+```
+
+Reticle put the evidence in the response either way — `storageKeysChanged: []` was right there. Read the `summary` block, not just `verified`.
+
 ## Never weaken a check to make it pass
 
 The temptation, when an assertion fails, is to loosen it until it goes green. Sometimes the assertion really was wrong. Usually the app is.
