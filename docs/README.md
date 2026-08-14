@@ -53,6 +53,9 @@ Everything here is published to [docs.reticle.sh](https://docs.reticle.sh) by `d
 | [deploy-checks.md](deploy-checks.md) | running Reticle against a deployed build |
 | [token-efficiency.md](token-efficiency.md) | why it costs less than a screenshot loop |
 | [benchmarks.md](benchmarks.md) | how the numbers were measured, including where Reticle loses |
+| [vs-playwright-mcp.mdx](vs-playwright-mcp.mdx) | outside-in vs inside-out, and when Playwright is right |
+| [vs-chrome-devtools-mcp.mdx](vs-chrome-devtools-mcp.mdx) | cheaper per look, catches less — the trade, measured |
+| [vs-screenshots.mdx](vs-screenshots.mdx) | why a better vision model does not fix a non-visual bug |
 | [telemetry.md](telemetry.md) | what is collected, and how to turn it off |
 | [local-registry.md](local-registry.md) | installing an unpublished build |
 | [enterprise.md](enterprise.md) | the licensed surface |

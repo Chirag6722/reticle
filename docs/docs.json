@@ -72,6 +72,10 @@
                 "pages": ["architecture", "benchmarks", "token-efficiency"]
               },
               {
+                "group": "Compare",
+                "pages": ["vs-playwright-mcp", "vs-chrome-devtools-mcp", "vs-screenshots"]
+              },
+              {
                 "group": "Practice",
                 "pages": ["best-practices", "skill-file"]
               },
@@ -233,7 +237,9 @@
     },
     "organization": {
       "name": "Reticle",
-      "url": "https://github.com/reticlehq/reticle"
+      "url": "https://docs.reticle.sh",
+      "logo": "https://docs.reticle.sh/images/og.png",
+      "sameAs": ["https://github.com/reticlehq/reticle", "https://www.npmjs.com/org/reticlehq"]
     }
   },
   "errors": {
