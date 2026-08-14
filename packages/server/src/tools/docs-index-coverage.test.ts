@@ -221,6 +221,56 @@ describe('docs/docs.json publishes every doc', () => {
     ).toEqual([]);
   });
 
+  it("a tool page's first example is a call that tool would accept", () => {
+    // The `{ tool, args }` check above cannot see the direct form these pages use, where the
+    // arguments stand alone under a heading naming the tool. The convention that makes it checkable:
+    // in `tools-<x>.mdx`, the FIRST json block is the request. Every later block is a response.
+    //
+    // Without this, a typo in the headline example of a tool's own page is invisible — and that is
+    // the example most likely to be copied.
+    const allowed = new Map(
+      TOOLS.map((tool) => [tool.name, new Set(Object.keys(tool.inputSchema))]),
+    );
+
+    const problems: string[] = [];
+    for (const file of markdownPages()) {
+      if (!file.startsWith('tools-') || !file.endsWith('.mdx')) continue;
+      const text = readFileSync(join(DOCS, file), 'utf8');
+
+      // The tool this page documents, taken from its frontmatter title.
+      const title = /^title:\s*(.+)$/m.exec(text)?.[1] ?? '';
+      const named = [...title.matchAll(/reticle_[a-z0-9_]+/g)].map((m) => m[0]);
+      // Pages covering more than one tool (or none) have no single subject to validate against.
+      if (1 !== named.length) continue;
+      const names = allowed.get(named[0] ?? '');
+      if (undefined === names) continue;
+
+      const block = /```json\n([\s\S]*?)```/.exec(text)?.[1] ?? '';
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(block);
+      } catch {
+        continue; // multi-call or elided blocks are not a single request to check
+      }
+      if (null === parsed || 'object' !== typeof parsed || Array.isArray(parsed)) continue;
+
+      for (const key of Object.keys(parsed as Record<string, unknown>)) {
+        if (!names.has(key)) {
+          problems.push(
+            `${file}: the first example passes "${key}", which ${named[0] ?? ''} does not accept ` +
+              `(accepts: ${[...names].join(', ')})`,
+          );
+        }
+      }
+    }
+
+    expect(
+      problems,
+      `The headline example on a tool's own page is the one most likely to be copied, so it has to ` +
+        `be a call that tool would accept: ${problems.join('; ')}`,
+    ).toEqual([]);
+  });
+
   it('no page shows a predicate combinator in a shape that does not parse', () => {
     // `{ allOf: [ … ] }` reads perfectly and is rejected by the schema. Reticle refuses the whole
     // call rather than evaluating part of it, so a reader who copies one gets NO verdict, which is
