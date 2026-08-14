@@ -30,59 +30,65 @@
     "timestamp": true
   },
   "navigation": {
-    "tabs": [
+    "versions": [
       {
-        "tab": "Guides",
-        "groups": [
+        "version": "2.7.0",
+        "default": true,
+        "tabs": [
           {
-            "group": "Get started",
-            "pages": ["getting-started", "for-agents"]
-          },
-          {
-            "group": "Integrate",
-            "pages": [
-              "platform-integration",
-              "integration-patterns",
-              "desktop-apps",
-              "flows",
-              "testing",
-              "multi-agent-testing",
-              "human-control",
-              "deploy-checks"
+            "tab": "Guides",
+            "groups": [
+              {
+                "group": "Get started",
+                "pages": ["quickstart", "getting-started", "for-agents"]
+              },
+              {
+                "group": "Integrate",
+                "pages": [
+                  "platform-integration",
+                  "integration-patterns",
+                  "desktop-apps",
+                  "flows",
+                  "testing",
+                  "multi-agent-testing",
+                  "human-control",
+                  "deploy-checks"
+                ]
+              },
+              {
+                "group": "How it works",
+                "pages": ["architecture", "benchmarks", "token-efficiency"]
+              },
+              {
+                "group": "Trust & licensing",
+                "pages": ["telemetry", "enterprise"]
+              }
             ]
           },
           {
-            "group": "How it works",
-            "pages": ["architecture", "benchmarks", "token-efficiency"]
+            "tab": "Reference",
+            "groups": [
+              {
+                "group": "Reference",
+                "pages": ["agent-cheatsheet", "usage"]
+              }
+            ]
           },
           {
-            "group": "Trust & licensing",
-            "pages": ["telemetry", "enterprise"]
-          }
-        ]
-      },
-      {
-        "tab": "Reference",
-        "groups": [
-          {
-            "group": "Reference",
-            "pages": ["agent-cheatsheet", "usage"]
-          }
-        ]
-      },
-      {
-        "tab": "Contributing",
-        "groups": [
-          {
-            "group": "Working on Reticle",
-            "pages": [
-              "gates",
-              "gate-plan",
-              "debugging",
-              "system-map",
-              "telemetry-contract",
-              "fixtures",
-              "local-registry"
+            "tab": "Contributing",
+            "groups": [
+              {
+                "group": "Working on Reticle",
+                "pages": [
+                  "gates",
+                  "gate-plan",
+                  "debugging",
+                  "system-map",
+                  "telemetry-contract",
+                  "fixtures",
+                  "local-registry"
+                ]
+              }
             ]
           }
         ]
@@ -118,7 +124,7 @@
     "primary": {
       "type": "button",
       "label": "Get started",
-      "href": "/getting-started"
+      "href": "/quickstart"
     }
   },
   "footer": {
@@ -130,7 +136,7 @@
       {
         "header": "Docs",
         "items": [
-          { "label": "Getting started", "href": "/getting-started" },
+          { "label": "Quickstart", "href": "/quickstart" },
           { "label": "Usage guide", "href": "/usage" },
           { "label": "Agent cheat sheet", "href": "/agent-cheatsheet" },
           { "label": "For agents", "href": "/for-agents" }

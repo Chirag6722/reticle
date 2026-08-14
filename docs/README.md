@@ -12,6 +12,7 @@ Everything here is published to [docs.reticle.sh](https://docs.reticle.sh) by `d
 
 | Page | What it answers |
 | --- | --- |
+| [quickstart.mdx](quickstart.mdx) | five minutes to a real verdict — every response on it was captured live |
 | [getting-started.md](getting-started.md) | install it, connect an agent, verify something |
 | [usage.md](usage.md) | every tool, every argument — the reference |
 | [agent-cheatsheet.md](agent-cheatsheet.md) | the condensed version an agent keeps in context |

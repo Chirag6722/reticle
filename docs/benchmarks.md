@@ -47,7 +47,7 @@ That gives us our headline number:
 
 A **false positive** (or "false alarm") is crying wolf — flagging a bug when nothing is wrong. We require zero, because a tool you can't trust when it's quiet is a tool you'll learn to ignore.
 
-![Verification Efficiency: catches per 1,000 tokens, gated on 100% catch rate](../bench/artifacts/chart-detection.svg)
+![Verification Efficiency: catches per 1,000 tokens, gated on 100% catch rate](/images/chart-detection.svg)
 
 ---
 
@@ -99,7 +99,7 @@ Three of these (failed request, console error, hung request) are **categorically
 
 We ran this two ways on purpose: a **controlled toy app** (where we can inject exact bugs and measure detection) and a **real production app** (where the numbers are messy and honest). The story holds in both — and the real app is where it gets interesting.
 
-![One honest test, two apps — Reticle has the highest Verification Efficiency on the controlled app and the lowest observation cost on the real dashboard](../assets/readme/bench-two-apps.png)
+![One honest test, two apps — Reticle has the highest Verification Efficiency on the controlled app and the lowest observation cost on the real dashboard](/images/bench-two-apps.png)
 
 ### 5a — The controlled toy app (the demo)
 
@@ -119,7 +119,7 @@ Measured on the observation-cost pass (numbers regenerate from `bench/raw/`):
 
 A toy app is a fair lab, but it's small. The harder, more honest test is a **real, complex app** — the [Reticle](https://reticle.sh) dashboard itself: React 19, authentication, live data, ~15 routes, a node-graph view, virtualized lists. We embedded the SDK (the Vite plugin) and drove the authenticated app with all three tools. Observing it **once** (the primary snapshot + the network log):
 
-![Observing the real Reticle dashboard once — Reticle 1,023 tokens vs DevTools 1,357 vs Playwright 2,193, and Reticle alone asserts success via the app's own signal](../assets/readme/bench-complex-app.png)
+![Observing the real Reticle dashboard once — Reticle 1,023 tokens vs DevTools 1,357 vs Playwright 2,193, and Reticle alone asserts success via the app's own signal](/images/bench-complex-app.png)
 
 | Tool | Snapshot | Network | **Observe total** | Can it assert success? |
 | --- | --- | --- | --- | --- |
@@ -139,7 +139,7 @@ That is the whole thesis, demonstrated on a real app we didn't cherry-pick: **"l
 
 Cost is half the story; capability is the other half. The marks below are what's **first-class and built-in** to each tool (all three are good tools — they compose: drive with theirs, assert with Reticle):
 
-![Capability matrix — Reticle alone asserts via the app signal, reads program state, maps DOM to source, and replays deterministically; Playwright and DevTools win on driving sites you don't own and true pixels](../assets/readme/bench-capability.png)
+![Capability matrix — Reticle alone asserts via the app signal, reads program state, maps DOM to source, and replays deterministically; Playwright and DevTools win on driving sites you don't own and true pixels](/images/bench-capability.png)
 
 ### Where Reticle loses (stated plainly)
 
@@ -158,7 +158,7 @@ The numbers above are for **one** verification. But a test suite's real job is t
 
 That's a **~128–184× cost difference per re-run**, and it grows with how often you run. This is where the "much cheaper than screenshots" claim becomes dramatic rather than incremental.
 
-![Re-run cost: Reticle replays with no model; competitors re-drive every time](../bench/artifacts/chart-avg-tokens.svg)
+![Re-run cost: Reticle replays with no model; competitors re-drive every time](/images/chart-avg-tokens.svg)
 
 ### The large-page test (where the wedge is biggest)
 

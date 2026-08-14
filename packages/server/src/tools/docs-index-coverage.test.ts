@@ -25,12 +25,24 @@ const DOCS = join(REPO, 'docs');
 
 const INDEX = 'README.md';
 
+/** The site's own landing page. Mintlify serves it at `/` implicitly, so it is never in the nav. */
+const HOME = 'index.mdx';
+
 const docsIndex = () => readFileSync(join(DOCS, INDEX), 'utf8');
 
 const markdownPages = () =>
   readdirSync(DOCS)
-    .filter((f) => f.endsWith('.md'))
-    .filter((f) => f !== INDEX);
+    .filter((f) => f.endsWith('.md') || f.endsWith('.mdx'))
+    .filter((f) => f !== INDEX && f !== HOME);
+
+/** The file behind a nav slug, which may be authored as either `.md` or `.mdx`. */
+const pageFile = (slug: string): string | null => {
+  for (const ext of ['.md', '.mdx']) {
+    const path = join(DOCS, `${slug}${ext}`);
+    if (existsSync(path)) return path;
+  }
+  return null;
+};
 
 /** Slugs `docs.json` publishes, flattened out of the tab -> group -> pages nesting. */
 const publishedSlugs = (): string[] => {
@@ -71,7 +83,7 @@ describe('docs/README.md indexes every doc', () => {
 
 describe('docs/docs.json publishes every doc', () => {
   it('every page docs.json publishes actually exists', () => {
-    const missing = publishedSlugs().filter((page) => !existsSync(join(DOCS, `${page}.md`)));
+    const missing = publishedSlugs().filter((page) => null === pageFile(page));
 
     expect(
       missing,
@@ -82,7 +94,7 @@ describe('docs/docs.json publishes every doc', () => {
   it('every markdown page under docs/ is published by docs.json', () => {
     const published = new Set(publishedSlugs());
     const orphans = markdownPages()
-      .map((file) => file.replace(/\.md$/, ''))
+      .map((file) => file.replace(/\.mdx?$/, ''))
       .filter((slug) => !published.has(slug));
 
     expect(
@@ -94,11 +106,12 @@ describe('docs/docs.json publishes every doc', () => {
 
   it('every published page carries frontmatter and no duplicate H1', () => {
     const broken = publishedSlugs()
-      .filter((slug) => existsSync(join(DOCS, `${slug}.md`)))
-      .map((slug) => {
+      .map((slug) => ({ slug, file: pageFile(slug) }))
+      .filter((page): page is { slug: string; file: string } => null !== page.file)
+      .map(({ slug, file }) => {
         // Windows checkouts carry CRLF, which makes every `^---$` and `startsWith('---\n')`
         // below miss and reports all 24 pages as unfrontmattered. Normalise before parsing.
-        const source = readFileSync(join(DOCS, `${slug}.md`), 'utf8').replace(/\r\n/g, '\n');
+        const source = readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
         const [, frontmatter = '', body = ''] = source.split(/^---$/m);
         if (!source.startsWith('---\n')) return `${slug}: no frontmatter block`;
         if (!/^title:\s*\S/m.test(frontmatter)) return `${slug}: frontmatter has no title`;
