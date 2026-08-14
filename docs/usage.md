@@ -6,6 +6,10 @@ icon: book
 
 The full reference and cookbook. If you haven't set up Reticle yet, start with [Getting Started](getting-started.md).
 
+> **On the notation.** Examples here are written as `reticle_act({ ref, action })`, which is shorthand for "call that tool with these arguments". Over MCP you do not write JavaScript; your client sends the tool name and an arguments object. The shorthand is shorter to read, and the argument shapes are identical either way.
+>
+> If you want examples in the exact JSON your client sends, [Recipes](/recipes) has them, and every response on that page was captured from a running app.
+
 **Contents**
 
 1. [How Reticle helps you](#1-how-reticle-helps-you)

@@ -40,31 +40,27 @@
             "groups": [
               {
                 "group": "Get started",
-                "pages": ["quickstart", "why-reticle", "for-agents"]
+                "pages": ["quickstart", "why-reticle", "getting-started", "for-agents"]
               },
               {
                 "group": "Install",
-                "pages": ["install-agentic", "install-manual", "frameworks", "platform-integration"]
+                "pages": ["install-agentic", "install-manual", "frameworks"]
               },
               {
                 "group": "Instrument",
                 "pages": ["instrumentation", "state-management"]
               },
               {
-                "group": "When it goes wrong",
-                "pages": ["troubleshooting", "debugging"]
+                "group": "Verify and ship",
+                "pages": ["flows", "testing", "deploy-checks", "integration-patterns"]
               },
               {
-                "group": "Integrate",
-                "pages": [
-                  "getting-started",
-                  "integration-patterns",
-                  "flows",
-                  "testing",
-                  "multi-agent-testing",
-                  "human-control",
-                  "deploy-checks"
-                ]
+                "group": "Working with agents",
+                "pages": ["multi-agent-testing", "human-control", "platform-integration"]
+              },
+              {
+                "group": "When it goes wrong",
+                "pages": ["troubleshooting", "debugging"]
               }
             ]
           },

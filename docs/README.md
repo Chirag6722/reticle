@@ -2,7 +2,7 @@
 
 Two audiences share this directory — people using Reticle and people working on it. Every page carries a `description` in its frontmatter saying what it answers; this index is the shortcut when you want to scan all of them at once.
 
-Everything here is published to [docs.reticle.sh](https://docs.reticle.sh) by `docs.json`, which is the Mintlify config for this directory. Five tabs. **Guides** to learn in order, **Reference** to look one thing up, **Desktop** because Electron and Tauri are a different shape of problem and deserve their own front door, **Resources** to decide or to check a claim, and **Contributing** for people working on Reticle. Contributor docs sit in a tab rather than hidden — they were reachable by URL anyway, and an unlisted page is a page nobody finds.
+Everything here is published to [docs.reticle.sh](https://docs.reticle.sh) by `docs.json`, which is the Mintlify config for this directory. Five tabs. **Guides** to learn in order, grouped by what you are doing (get started, install, instrument, verify and ship, work with agents, and when it goes wrong). **Reference** to look one thing up. **Desktop** because Electron and Tauri are a different shape of problem and deserve their own front door, **Resources** to decide or to check a claim, and **Contributing** for people working on Reticle. Contributor docs sit in a tab rather than hidden — they were reachable by URL anyway, and an unlisted page is a page nobody finds.
 
 ---
 
