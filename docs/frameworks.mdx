@@ -1,0 +1,193 @@
+---
+title: Frameworks
+description: Which frameworks Reticle supports, which are wired but unverified, and the exact wiring for each one.
+icon: layer-group
+---
+
+The core of Reticle is framework-neutral. DOM, network, console, routing, animations and source mapping work anywhere JavaScript runs.
+
+What varies is two things: how `connect()` gets into your app, and whether you get component identity on top.
+
+## Where each framework stands
+
+We separate "we tested this" from "this should work". Four frameworks have an example app and a CI gate. The rest are wired and documented but nothing proves they still work.
+
+| Framework | `init` detects | Example app | CI gate | Status |
+| --- | :-: | :-: | :-: | --- |
+| **React + Vite** | yes | yes | yes | Supported |
+| **Next.js** | yes | yes | yes | Supported |
+| **Remix** | yes | yes | yes | Supported |
+| **Astro** | yes | yes | yes | Supported |
+| **SvelteKit** | yes | no | no | Wired, unverified |
+| **Nuxt** | yes | no | no | Wired, unverified |
+| **Create React App** | yes | no | no | Wired, unverified |
+| **Plain HTML** | yes | no | no | Wired, unverified |
+| **Vue (non-Nuxt)** | as Vite | no | no | Sensor plus a Pinia adapter |
+| **Preact** | as Vite | no | no | Sensor, React adapter via `preact/compat` |
+
+<Warning>
+  "Wired, unverified" means exactly that. The recipe exists and was written from a real integration,
+  but there is no app in CI exercising it, so nothing will tell us if it breaks. If one of these
+  does not register a session, that is a bug worth reporting.
+</Warning>
+
+`init` detects the UI library separately from the framework. That distinction exists because detection used to stop at "vite is in package.json", which installed the React adapter into Vue and Preact apps and reported all green with nothing attached.
+
+## React on Vite
+
+The shortest path, and the one with the most in it.
+
+```bash
+npm i -D @reticlehq/react @reticlehq/vite-plugin
+```
+
+```ts
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import { reticle } from '@reticlehq/vite-plugin';
+
+export default defineConfig({
+  plugins: [reticle(), react()],
+});
+```
+
+That is the whole install. The plugin injects `connect()` and stamps source locations, which is what turns a DOM node into `src/components/Login.tsx:81`.
+
+## Next.js
+
+Keeps SWC. No Babel migration.
+
+```bash
+npm i -D @reticlehq/react @reticlehq/next
+```
+
+```js
+const { withReticle } = require('@reticlehq/next');
+
+module.exports = withReticle({
+  /* your config */
+});
+```
+
+<Note>
+  `@reticlehq/next` is CommonJS on purpose. `next.config.js` is loaded by Node before any ESM
+  transform, so an ESM-only helper fails at the least helpful moment.
+</Note>
+
+## Remix and Astro
+
+Both run on Vite, so both use the Vite plugin exactly as React does. Astro needs the React integration if you want component identity in `.jsx` islands. Static `.astro` markup gets DOM, network and routing without it.
+
+## SvelteKit
+
+SvelteKit renders through `app.html` and never triggers Vite's `index.html` injection, so the plugin cannot auto-connect. A client hook is the reliable path, and it is what `init` writes.
+
+```ts
+// src/hooks.client.ts
+import { reticle } from '@reticlehq/browser';
+
+if (import.meta.env.DEV) reticle.connect();
+```
+
+The Vite plugin still stamps `data-reticle-source` into `.svelte` components, so verdicts carry `file:line`.
+
+For state, use the `svelteStore` adapter. See [State management](/state-management).
+
+## Nuxt
+
+Nuxt owns its own Vite instance and renders its own HTML. There is no `vite.config` to patch and no `index.html` to inject into. The idiom is a dev-only client plugin.
+
+```ts
+// plugins/reticle.client.ts
+export default defineNuxtPlugin(() => {
+  if (!import.meta.dev) return;
+  void import('@reticlehq/browser').then(({ reticle }) => {
+    reticle.connect();
+  });
+});
+```
+
+Three traps, all reported from the field rather than imagined:
+
+<AccordionGroup>
+  <Accordion title="The .client suffix is load-bearing">
+    It is what keeps the plugin out of the server bundle. Without it you are running the SDK during
+    SSR, where `window` does not exist.
+  </Accordion>
+  <Accordion title="Guard on import.meta.dev, never on hostname">
+    `window.location.hostname === 'localhost'` fails twice over here. `window` does not exist in
+    SSR, and the check is false on any hosts-file alias or LAN address. `import.meta.dev` resolves
+    at build time and does not care what host you develop on.
+  </Accordion>
+  <Accordion title="Restart the dev server">
+    A running dev server does not pick up a new plugin. It will not appear in
+    `.nuxt/plugins/client.mjs`, and the app comes up with no SDK at all and no error saying so.
+  </Accordion>
+</AccordionGroup>
+
+Use `@reticlehq/browser`, the framework-neutral sensor. You get DOM, network, console, routing and source `file:line`. What you do not get is React component identity, which is the only thing the React adapter adds.
+
+<Tip>
+  Developing on something other than `localhost`? Add `allowNonLocalhost: true` to the connect call.
+  Without it the SDK loads and then refuses, and the only sign is one line in the browser console.
+</Tip>
+
+## Vue
+
+Vue apps outside Nuxt are Vite apps, so `init` finds them. Install the sensor rather than the React kit.
+
+```bash
+npm i -D @reticlehq/browser
+```
+
+```ts
+import { reticle } from '@reticlehq/browser';
+if (import.meta.env.DEV) reticle.connect();
+```
+
+Pinia is a first-class store. See [State management](/state-management).
+
+## Preact
+
+Detected as its own UI library, because a Preact app using `preact/compat` aliases React and would otherwise be handed the React kit with nothing to attach to.
+
+The sensor works. If you use `preact/compat`, the React adapter can attach through the alias, but that path is not gated.
+
+## Create React App and plain bundlers
+
+No config file to patch, so `connect()` goes in your entry module.
+
+```ts
+// src/index.tsx
+import { reticle } from '@reticlehq/browser';
+if (process.env.NODE_ENV !== 'production') reticle.connect();
+```
+
+The same shape works for webpack, Parcel, and the Vue and Svelte CLIs.
+
+## Plain HTML
+
+```html
+<script type="module">
+  import { reticle } from '/node_modules/@reticlehq/browser/dist/index.js';
+  reticle.connect();
+</script>
+```
+
+Keep it out of your production template. Reticle self-disables when the build reports `NODE_ENV=production`, but a second lock on a door leading to your users is a reasonable number.
+
+## Desktop is a different shape
+
+Electron and Tauri invert the direction: your app dials the daemon, and there is no URL for an agent to open. Reticle also reaches the main-process and Rust IPC boundary, which the renderer cannot see.
+
+<Card title="Desktop apps" icon="display" href="/desktop">
+  Electron and Tauri, IPC observation, and the CSP trap whose failure is completely silent.
+</Card>
+
+## Not supported
+
+Angular and Solid appear in dependency detection but have no wiring, no adapter and no gate. The sensor may work if you call `connect()` yourself. Nothing proves it, so we are not going to list them as supported.
+
+<Card title="Something missing?" icon="comments" href="/tools-session-and-feedback">
+  A framework you need is a `gap` report. It is the signal that decides what gets built.
+</Card>

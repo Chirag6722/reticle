@@ -2,7 +2,7 @@
 
 Two audiences share this directory — people using Reticle and people working on it. Every page carries a `description` in its frontmatter saying what it answers; this index is the shortcut when you want to scan all of them at once.
 
-Everything here is published to [docs.reticle.sh](https://docs.reticle.sh) by `docs.json`, which is the Mintlify config for this directory. Four tabs, split by the kind of reading rather than by topic: **Guides** to learn in order, **Reference** to look one thing up, **Resources** to decide or to check a claim, and **Contributing** for people working on Reticle. Contributor docs sit in a tab rather than hidden — they were reachable by URL anyway, and an unlisted page is a page nobody finds.
+Everything here is published to [docs.reticle.sh](https://docs.reticle.sh) by `docs.json`, which is the Mintlify config for this directory. Five tabs. **Guides** to learn in order, **Reference** to look one thing up, **Desktop** because Electron and Tauri are a different shape of problem and deserve their own front door, **Resources** to decide or to check a claim, and **Contributing** for people working on Reticle. Contributor docs sit in a tab rather than hidden — they were reachable by URL anyway, and an unlisted page is a page nobody finds.
 
 ---
 
@@ -45,7 +45,10 @@ Everything here is published to [docs.reticle.sh](https://docs.reticle.sh) by `d
 | [for-agents.md](for-agents.md) | how to fetch these docs as Markdown or `llms.txt` |
 | [architecture.md](architecture.md) | how it works, and why it is built this way |
 | [platform-integration.md](platform-integration.md) | Vite, Next, Remix, Astro, plain HTML |
-| [desktop-apps.md](desktop-apps.md) | Electron and Tauri |
+| [desktop.mdx](desktop.mdx) | why desktop is different, and what only Reticle does there |
+| [desktop-apps.md](desktop-apps.md) | Electron and Tauri, in full |
+| [frameworks.mdx](frameworks.mdx) | what is supported, what is wired-but-unverified, and the wiring |
+| [state-management.mdx](state-management.mdx) | zustand, Redux, and eight adapters |
 | [instrumentation.mdx](instrumentation.mdx) | stores, signals, testids — how verdicts get stronger |
 | [troubleshooting.mdx](troubleshooting.mdx) | nothing connected, click did nothing, verdict says unknown |
 | [cli.mdx](cli.mdx) | every `reticle` command, with real output and measured exit codes |

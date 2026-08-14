@@ -44,16 +44,15 @@
               },
               {
                 "group": "Install",
-                "pages": [
-                  "install-agentic",
-                  "install-manual",
-                  "platform-integration",
-                  "desktop-apps"
-                ]
+                "pages": ["install-agentic", "install-manual", "frameworks", "platform-integration"]
               },
               {
                 "group": "Instrument",
-                "pages": ["instrumentation"]
+                "pages": ["instrumentation", "state-management"]
+              },
+              {
+                "group": "When it goes wrong",
+                "pages": ["troubleshooting", "debugging"]
               },
               {
                 "group": "Integrate",
@@ -66,10 +65,6 @@
                   "human-control",
                   "deploy-checks"
                 ]
-              },
-              {
-                "group": "When it goes wrong",
-                "pages": ["troubleshooting", "debugging"]
               }
             ]
           },
@@ -113,6 +108,15 @@
               {
                 "group": "Everything else",
                 "pages": ["agent-cheatsheet", "usage", "faq"]
+              }
+            ]
+          },
+          {
+            "tab": "Desktop",
+            "groups": [
+              {
+                "group": "Desktop apps",
+                "pages": ["desktop", "desktop-apps"]
               }
             ]
           },
