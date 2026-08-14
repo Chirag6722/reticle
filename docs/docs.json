@@ -52,6 +52,10 @@
                 ]
               },
               {
+                "group": "Instrument",
+                "pages": ["instrumentation"]
+              },
+              {
                 "group": "Integrate",
                 "pages": [
                   "getting-started",
@@ -97,6 +101,10 @@
                   "tools-tools-and-run",
                   "tools-session-and-feedback"
                 ]
+              },
+              {
+                "group": "CLI",
+                "pages": ["cli"]
               },
               {
                 "group": "Libraries",

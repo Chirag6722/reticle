@@ -1,0 +1,208 @@
+---
+title: CLI reference
+description: Every reticle command — what it does, what it prints, and what it exits with. Captured from real runs.
+icon: terminal
+---
+
+The CLI is mostly for you, not your agent. Your agent talks MCP; you use these to set things up, work out why nothing connected, and wire verification into CI.
+
+```bash
+npx @reticlehq/server <command>
+```
+
+<Note>
+  Every output block on this page was captured by running the command. Where an exit code is quoted,
+  it was measured, not assumed.
+</Note>
+
+## Setup and diagnosis
+
+### `reticle init`
+
+Wires Reticle into the project in the current directory.
+
+```
+reticle init  [--dry-run] [--port N] [--no-mcp] [--no-install] [--app <dir>]
+```
+
+<Card title="Full walkthrough with real output" icon="wand-magic-sparkles" href="/install-agentic">
+  What it writes, and how to read its four status marks.
+</Card>
+
+### `reticle doctor`
+
+The first thing to run when something is wrong. One command, the whole setup.
+
+```bash
+npx reticle doctor
+```
+
+```
+reticle doctor
+  node         v22.14.0
+  chromium     ✓ installed
+  daemon       ✓ running on :4400 (pid 24735, v2.7.0)
+  bridge port  4400  (your app must dial THIS port — not your dev-server port)
+  daemon log   /Users/you/.reticle/daemon-4400.log
+  tracing      RETICLE_TRACE=1 on the daemon for per-stage timings in that log
+```
+
+Exits `0`. That parenthetical about the bridge port is doing a lot of work — mixing it up with the dev-server port is the most common setup failure there is.
+
+### `reticle status`
+
+Whether the daemon is up and which apps have connected.
+
+```json
+{
+  "event": "reticle_status",
+  "port": 4400,
+  "running": true,
+  "pid": 24735,
+  "sessionCount": 1,
+  "sessions": [
+    {
+      "sessionId": "sece96901…",
+      "url": "http://localhost:4312/",
+      "throttled": true,
+      "stale": false
+    }
+  ]
+}
+```
+
+Exits `0`. A session in the list is the install genuinely finished — not a tick in a checklist, a connected app.
+
+### `reticle telemetry [status|enable|disable]`
+
+```bash
+npx reticle telemetry status
+```
+
+```
+telemetry    disabled  (this is a Reticle source checkout — developing it is not using it)
+policy       https://github.com/reticlehq/reticle/blob/main/docs/telemetry.md
+```
+
+<Card title="Exactly what is collected" icon="chart-line" href="/telemetry">
+  The complete list, and how to turn it off.
+</Card>
+
+## Running the app
+
+| Command | What it does |
+| --- | --- |
+| `reticle serve` | Start the daemon in the foreground. `--drive <url>`, `--headless`, `--http` |
+| `reticle stop` | Stop it |
+| `reticle open [url]` | Show the app — reuse the connected tab, or open one |
+| `reticle drive <url>` | Foreground mode, for debugging |
+| `reticle mcp` | The MCP stdio proxy. Auto-starts the daemon if needed. This is what your agent runs |
+
+<Warning>
+  `reticle drive` will fail with an `EADDRINUSE` stack trace if a daemon is already listening on the
+  port — which is the normal state once your agent has started one. `reticle mcp` reuses a running
+  daemon; `drive` currently does not.
+</Warning>
+
+## Verification
+
+### `reticle verify <url>`
+
+One-shot: drive the URL, replay the saved flows, exit `0` on pass. This is the command for CI when you do not want a model in the loop.
+
+```bash
+npx reticle verify http://localhost:5173 --timeout 60000
+```
+
+Options: `--headed`, `--timeout N`, `--storage-state <file>`. That last one is how you verify flows behind a login without scripting the login every time.
+
+### `reticle affected`
+
+Which saved flows must re-verify for a set of changed files.
+
+```bash
+npx reticle affected --since HEAD~1
+```
+
+```json
+{
+  "event": "reticle_affected",
+  "changedFiles": ["docs/README.md", "packages/server/src/tools/docs-index-coverage.test.ts"],
+  "affected": ["deploy-journey", "verify-modal", "verify-route", "…"],
+  "unknownProvenance": ["deploy-journey", "verify-modal", "…"]
+}
+```
+
+<Note>
+  `unknownProvenance` lists flows Reticle could not map to source files, so it includes them to be
+  safe. A flow recorded before provenance tracking existed has no file list, and Reticle would
+  rather re-run it than skip it and miss a regression. A large `unknownProvenance` means your flows
+  predate the feature — re-record the ones you care about to get precise selection.
+</Note>
+
+### `reticle gate`
+
+The CI gate. Exits non-zero unless passing artifacts cover the affected flows.
+
+```bash
+npx reticle gate --since HEAD~1
+```
+
+```json
+{
+  "event": "reticle_gate",
+  "pass": false,
+  "uncovered": ["deploy-journey", "verify-modal", "…"],
+  "quarantined": ["drift-demo", "qa2-flow"],
+  "coverage": { "pct": 9, "covered": 4, "total": 47 }
+}
+```
+
+Measured exit code: **`1`**. That run genuinely failed — 4 of 47 flows covered — which is what a gate is supposed to do when you have not verified anything yet.
+
+`quarantined` flows are excluded from the pass/fail decision. Quarantine is for a flow that is known flaky and being fixed; it is not a place to hide failures, because the list is printed on every run.
+
+### `reticle watch [url]`
+
+On save, report which saved flows must re-verify. The interactive companion to `affected`.
+
+## Maintenance
+
+| Command            | What it does                                        |
+| ------------------ | --------------------------------------------------- |
+| `reticle update`   | Install the latest server version and restart       |
+| `reticle rollback` | Restore the previous version and restart            |
+| `reticle license`  | Enterprise license status: active, eval, or missing |
+| `reticle version`  | Print the version                                   |
+| `reticle help`     | Usage for everything                                |
+
+<Tip>
+  `rollback` exists because an auto-updating dev tool that cannot go back is a dev tool that can
+  ruin your afternoon. It restores the previous version and restarts in one step.
+</Tip>
+
+## Feedback
+
+```bash
+# humans
+npx reticle feedback "what worked, what didn't"
+
+# agents, including from a setup that never finished
+npx reticle feedback --agent --kind <bug|gap|ambiguity|feature_request|improvement> "what happened"
+```
+
+The `--agent` form matters more than it looks: the setup that failed halfway is exactly the setup worth hearing about, and in that state the MCP tools do not exist yet.
+
+<Card title="How feedback is handled" icon="comments" href="/tools-session-and-feedback">
+  What each kind means, and what happens when a report cannot be delivered.
+</Card>
+
+## `reticle identify`
+
+Opt-in, and off by default:
+
+```bash
+npx reticle identify --context company|side_project|open_source|learning [--email E] [--forget]
+```
+
+Only useful if you want support or an enterprise trial. `--forget` removes it.

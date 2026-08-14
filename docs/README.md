@@ -41,6 +41,8 @@ Everything here is published to [docs.reticle.sh](https://docs.reticle.sh) by `d
 | [architecture.md](architecture.md) | how it works, and why it is built this way |
 | [platform-integration.md](platform-integration.md) | Vite, Next, Remix, Astro, plain HTML |
 | [desktop-apps.md](desktop-apps.md) | Electron and Tauri |
+| [instrumentation.mdx](instrumentation.mdx) | stores, signals, testids — how verdicts get stronger |
+| [cli.mdx](cli.mdx) | every `reticle` command, with real output and measured exit codes |
 | [integration-patterns.md](integration-patterns.md) | wiring it into a real codebase |
 | [flows.md](flows.md) | record → save → replay → heal |
 | [testing.md](testing.md) | `@reticlehq/test` — turning a session into a CI suite |
