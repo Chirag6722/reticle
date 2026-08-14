@@ -104,6 +104,42 @@ describe('docs/docs.json publishes every doc', () => {
     ).toEqual([]);
   });
 
+  it('every reticle_* tool the docs name still exists in the source', () => {
+    // A tool rename once left four e2e specs dead across a whole framework and nothing caught it.
+    // The docs are the same shape of victim: they name 50-odd tools, and a rename turns each mention
+    // into a lie that renders perfectly. Nothing throws, no test reddens, and an agent following the
+    // page calls a tool that is not there.
+    const TOOL = /\breticle_[a-z0-9_]+\b/g;
+
+    const sourceNames = new Set<string>();
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (entry.name.endsWith('.ts')) {
+          for (const name of readFileSync(full, 'utf8').match(TOOL) ?? []) sourceNames.add(name);
+        }
+      }
+    };
+    walk(join(REPO, 'packages', 'server', 'src'));
+    walk(join(REPO, 'packages', 'core', 'src'));
+
+    const unknown: string[] = [];
+    for (const file of markdownPages()) {
+      const mentioned = new Set(readFileSync(join(DOCS, file), 'utf8').match(TOOL) ?? []);
+      for (const name of mentioned) {
+        if (!sourceNames.has(name)) unknown.push(`${file} -> ${name}`);
+      }
+    }
+
+    expect(
+      unknown,
+      `These pages name a reticle_* tool that does not exist in the source. Either the tool was ` +
+        `renamed and the docs were not, or the page has a typo — both render perfectly and both send ` +
+        `an agent to call something that is not there: ${unknown.join('; ')}`,
+    ).toEqual([]);
+  });
+
   it('MDX components appear only in .mdx pages', () => {
     // Whether Mintlify renders JSX inside a plain `.md` file is not something this repo has
     // verified, and the failure mode if it does not is silent: the component renders as literal
