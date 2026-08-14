@@ -55,7 +55,7 @@ Measured live, all servers in one run, same tokenizer (`bench/harness/schema-tax
 
 There is one tool surface: the verify loop advertised directly, plus two meta-tools (`reticle_tools`, `reticle_run`) that reach every other tool on demand. Nothing is unreachable; the cold tail simply is not re-sent every turn.
 
-`RETICLE_ADVERTISE_ALL_TOOLS=1` advertises everything WITH output schemas — a verification switch for suites that call by name, not a mode to run agents in. It is roughly 7x the per-turn cost, which is why it is opt-in: measured, carrying output schemas on the default surface takes it from 18,183 to 41,117 bytes.
+`RETICLE_ADVERTISE_ALL_TOOLS=1` advertises everything WITH output schemas — a verification switch for suites that call by name, not a mode to run agents in. It is roughly 7x the per-turn cost, which is why it is opt-in: measured, carrying output schemas on the default surface takes it from 18,183 to 41,117 bytes. (That 18,183 was taken when the surface was 16 tools; a fresh `tools/list` read on 2026-08-14 puts the current 18-tool surface at **21,468 bytes**, and all 48 with output schemas at **134,368**. The shape of the gap holds; the absolute numbers move every time a tool is added, which is why they are asserted in `surface-sizes.test.ts` rather than trusted from prose.)
 
 The typed result object still travels as `structuredContent` either way; the default surface simply does not advertise the output schema, which an agent reading the `text` block never consumed.
 

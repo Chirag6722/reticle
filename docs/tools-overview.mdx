@@ -12,9 +12,10 @@ The other 30 tools are one call away, never unreachable. `reticle_tools` lists t
 
 <Note>
   Measured off the real wire on 2026-08-14, by reading `tools/list` from a fresh daemon: the default
-  surface is **18 tools, 21,468 bytes, ~5,400 tokens per turn**. Advertising all 48 costs **134,368
-  bytes, ~33,600 tokens** — 6.3x more, charged on every message. Re-measure before quoting these;
-  the surface grows.
+  surface is **18 tools at 21,468 bytes**, against **48 tools at 134,368 bytes** — 6.3x more,
+  charged on every message. In real tokenizer terms that is roughly **4,930** and **30,200** tokens
+  per turn ([measured by `bench/harness/schema-tax.mjs`](/token-efficiency), which puts every server
+  through one tokenizer in a single pass). Re-measure before quoting these; the surface grows.
 </Note>
 
 ## The default 18
