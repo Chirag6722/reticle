@@ -254,7 +254,7 @@ describe('docs/docs.json publishes every doc', () => {
       }
       if (null === parsed || 'object' !== typeof parsed || Array.isArray(parsed)) continue;
 
-      for (const key of Object.keys(parsed as Record<string, unknown>)) {
+      for (const key of Object.keys(parsed)) {
         if (!names.has(key)) {
           problems.push(
             `${file}: the first example passes "${key}", which ${named[0] ?? ''} does not accept ` +
