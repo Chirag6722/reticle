@@ -1,0 +1,177 @@
+---
+title: Agentic install
+description: Run npx reticle init and let your coding agent wire Reticle into the project. What it changes, what it asks, and how to read its report.
+icon: wand-magic-sparkles
+---
+
+The install is one command, and it's designed for the agent to run rather than you. The agent is about to be the primary user of this tool, so it may as well set up its own workspace.
+
+```bash
+npx reticle init
+```
+
+<Note>
+  Everything on this page is real output. It was captured by scaffolding a pristine `npm create
+  vite` React app and running `init` inside it while writing this.
+</Note>
+
+## See the plan before anything is written
+
+`--dry-run` prints exactly what would happen and touches nothing:
+
+```bash
+npx reticle init --dry-run
+```
+
+On a fresh Vite + React + TypeScript app, that produced:
+
+```
+reticle init (dry run — no files written)
+  in /tmp/initdemo
+
+  [·] MCP server (Claude, global) → global (claude user scope)
+      reticle already registered (install once, used by every project)
+  [·] MCP server (Cursor, global) → /Users/you/.cursor/mcp.json
+      reticle already in Cursor global config
+  [⚠] MCP server (Codex CLI) → /Users/you/.codex/config.toml
+      add this to /Users/you/.codex/config.toml by hand:
+      [mcp_servers.reticle]
+      command = "npx"
+      args = ["@reticlehq/server", "mcp"]
+
+  [✓] Agent verification rule → CLAUDE.md
+      teach the agent to verify features with Reticle after building them
+  [✓] The /reticle command → .claude/commands/reticle.md
+      type /reticle to verify one flow in the browser
+  [✓] Install dependencies → package.json
+      npm i -D @reticlehq/react@2.7.0 @reticlehq/vite-plugin@2.7.0
+  [✓] Reticle config → .reticle.json
+      write project config (framework + port)
+  [✓] Vite plugin → vite.config.ts
+      add reticle() to plugins (also injects connect())
+  [✓] Capabilities + store → src/reticle-dev.ts
+      no data-testid values yet; no state library detected
+```
+
+## Reading the marks
+
+There are four, and they mean different things. This is the part worth understanding, because a run full of green ticks can still leave you with a broken install.
+
+| Mark | Meaning                                                     | Do you need to act? |
+| ---- | ----------------------------------------------------------- | ------------------- |
+| `✓`  | Done, or would be done                                      | No                  |
+| `·`  | Already in place from a previous run or another project     | No                  |
+| `–`  | Deliberately skipped, usually by a flag you passed          | No                  |
+| `⚠`  | Could not be done automatically, with the exact fix printed | **Yes**             |
+| `ℹ`  | Done, but incomplete in a way that matters                  | **Yes, read it**    |
+
+<Warning>
+  A `⚠` is not cosmetic. In the run above, Reticle could not write the Codex CLI's TOML config, so
+  it printed the exact block to paste. Leave it and Codex simply never sees the tools.
+</Warning>
+
+That `ℹ` line is the one people skim past, so here it is in full:
+
+```
+  [ℹ] AGENT: finish the capabilities file → src/reticle-dev.ts
+      src/reticle-dev.ts was written but registers nothing, so `hasCapabilities` stays false
+      and reticle_state has nothing to read.
+```
+
+`init` wrote the file, but a brand-new Vite template has no testids and no state library, so there was nothing to register. Reticle tells you this instead of counting it as a win. See [Instrument your app](/integration-patterns) for what to put in it.
+
+## What it actually changes
+
+Four files in your project, none of them mysterious.
+
+<AccordionGroup>
+  <Accordion title=".reticle.json — project config">
+    ```json
+    {
+      "framework": "vite",
+      "projectId": "initdemo-308da9fe"
+    }
+    ```
+    The `projectId` is how Reticle scopes sessions to this project, so two apps running at once
+    don't get confused for each other.
+  </Accordion>
+
+  <Accordion title="vite.config.ts — the plugin">
+    ```ts
+    import { defineConfig } from 'vite'
+    import react from '@vitejs/plugin-react'
+    import { reticle } from '@reticlehq/vite-plugin';
+
+    export default defineConfig({
+      plugins: [reticle(), react()],
+    })
+    ```
+    One import, one entry. The plugin stamps source locations onto your elements — that's what turns
+    a DOM node into `src/components/Login.tsx:81` — and injects `connect()` so you don't have to
+    remember to.
+
+  </Accordion>
+
+  <Accordion title="src/reticle-dev.ts — your capabilities">
+    ```ts
+    // Dev-only. Imported automatically by @reticlehq/vite-plugin — you do not need to import it.
+    // Self-guards on import.meta.env.DEV, so it is a no-op in a production build.
+    import { registerCapabilities } from '@reticlehq/react';
+
+    if (import.meta.env.DEV) {
+      registerCapabilities({
+        testids: [], // none found — add data-testid to your key elements
+        signals: [], // names you pass to reticle.signal()
+        stores: [],  // the keys you registered above
+      });
+    }
+    ```
+    This is the file that decides how good your verdicts get. Empty, you still get DOM, network and
+    console. Filled in, your agent can check what the app *believes*, not just what it rendered.
+
+  </Accordion>
+
+  <Accordion title="CLAUDE.md and .claude/commands/reticle.md — agent rules">
+    A rule telling your agent to verify features after building them, and a `/reticle` command that
+    drives one flow. Skipped entirely with `--no-mcp`, because rules for tools the agent can't reach
+    are just noise in the context window.
+  </Accordion>
+</AccordionGroup>
+
+## Flags
+
+```
+reticle init  [--dry-run] [--port N] [--no-mcp] [--no-install] [--app <dir>]
+              --app picks WHICH app in a monorepo, when several are found
+              --no-mcp skips MORE than the server registration: also the agent rule files
+              (CLAUDE.md / AGENTS.md / .cursor) and the /reticle command, because all three
+              only make sense once the tools are reachable.
+```
+
+| Flag           | When you want it                                                           |
+| -------------- | -------------------------------------------------------------------------- |
+| `--dry-run`    | Always, the first time.                                                    |
+| `--app <dir>`  | Monorepos. Without it, `init` finds several apps and asks which you meant. |
+| `--no-mcp`     | Your MCP config is managed elsewhere (dotfiles, a team template).          |
+| `--no-install` | You want to add the dependencies yourself, at your own versions.           |
+| `--port N`     | Something else already owns the default port.                              |
+
+## Then restart two things
+
+This trips up almost everyone, so `init` says it twice and so will we.
+
+**Restart your dev server.** The Vite plugin is new; the running process doesn't have it.
+
+**Restart your agent.** Claude Code, or reload the window in Cursor, or hit Start in `.vscode/mcp.json` in VS Code. Your agent read its server list at startup, before Reticle existed, and no slash command re-reads it — `/mcp` manages servers already loaded, so it cannot pick up a new one. This is a once-per-machine annoyance: Reticle registers globally, so every later project starts with the tools already there.
+
+## Confirm it worked
+
+```bash
+npx reticle status
+```
+
+It confirms the app connected, or tells you exactly why it hasn't. A session in the list is the install actually finished — not a green tick, a connected app.
+
+<Card title="Something marked ⚠?" icon="screwdriver-wrench" href="/install-manual">
+  The manual install covers every step `init` can't automate, per agent and per framework.
+</Card>

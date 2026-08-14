@@ -40,14 +40,22 @@
             "groups": [
               {
                 "group": "Get started",
-                "pages": ["quickstart", "getting-started", "for-agents"]
+                "pages": ["quickstart", "why-reticle", "for-agents"]
+              },
+              {
+                "group": "Install",
+                "pages": [
+                  "install-agentic",
+                  "install-manual",
+                  "platform-integration",
+                  "desktop-apps"
+                ]
               },
               {
                 "group": "Integrate",
                 "pages": [
-                  "platform-integration",
+                  "getting-started",
                   "integration-patterns",
-                  "desktop-apps",
                   "flows",
                   "testing",
                   "multi-agent-testing",

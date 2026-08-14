@@ -8,11 +8,14 @@ Everything here is published to [docs.reticle.sh](https://docs.reticle.sh) by `d
 
 ## For people using Reticle
 
-**Start:** [getting-started.md](getting-started.md) → [usage.md](usage.md) (the full tool reference).
+**Start:** [quickstart.mdx](quickstart.mdx) → [usage.md](usage.md) (the full tool reference).
 
 | Page | What it answers |
 | --- | --- |
 | [quickstart.mdx](quickstart.mdx) | five minutes to a real verdict — every response on it was captured live |
+| [why-reticle.mdx](why-reticle.mdx) | the false-green problem, the measured case, and where we lose |
+| [install-agentic.mdx](install-agentic.mdx) | `npx reticle init` — what it writes and how to read its marks |
+| [install-manual.mdx](install-manual.mdx) | wiring the MCP server and SDK by hand, per agent and framework |
 | [getting-started.md](getting-started.md) | install it, connect an agent, verify something |
 | [usage.md](usage.md) | every tool, every argument — the reference |
 | [agent-cheatsheet.md](agent-cheatsheet.md) | the condensed version an agent keeps in context |
