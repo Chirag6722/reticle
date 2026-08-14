@@ -104,6 +104,23 @@ describe('docs/docs.json publishes every doc', () => {
     ).toEqual([]);
   });
 
+  it('MDX components appear only in .mdx pages', () => {
+    // Whether Mintlify renders JSX inside a plain `.md` file is not something this repo has
+    // verified, and the failure mode if it does not is silent: the component renders as literal
+    // text in the middle of a paragraph. Keep components where they are known to work.
+    const COMPONENT =
+      /<(Note|Tip|Warning|Info|Card|CardGroup|Columns|Accordion|AccordionGroup|Steps|Step|Frame|Tabs|Tab)\b/;
+    const offenders = markdownPages()
+      .filter((file) => file.endsWith('.md'))
+      .filter((file) => COMPONENT.test(readFileSync(join(DOCS, file), 'utf8')));
+
+    expect(
+      offenders,
+      `These .md pages use MDX components. Either rename the page to .mdx, or use plain markdown ` +
+        `(a blockquote reads fine and cannot fail): ${offenders.join(', ')}`,
+    ).toEqual([]);
+  });
+
   it('no page draws a diagram out of box-drawing characters', () => {
     // Box-drawing and arrow glyphs. ASCII diagrams were ruled out for the published docs: they
     // wrap badly on narrow screens, are unreadable to a screen reader, and read as unfinished.

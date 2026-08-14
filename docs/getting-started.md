@@ -4,6 +4,10 @@ description: 'Zero to your agent verifying your real app — step by step, with 
 icon: rocket
 ---
 
+> **Looking for the fast path?** [Quickstart](/quickstart) gets you to a real verdict in five minutes, and every response on it was captured live. [Agentic install](/install-agentic) and [Manual install](/install-manual) cover setup in detail, per agent and per framework.
+>
+> This page is the long-form walkthrough: the same ground, more slowly, plus per-framework wiring, multi-app setups and prerelease notes. Start here if you want the whole picture in one file rather than the fast route.
+
 This walks you from zero to your agent verifying your app — step by step, with real code for real frameworks. ~10 minutes.
 
 - [What you're setting up](#what-youre-setting-up)

@@ -47,6 +47,7 @@ Everything here is published to [docs.reticle.sh](https://docs.reticle.sh) by `d
 | [platform-integration.md](platform-integration.md) | Vite, Next, Remix, Astro, plain HTML |
 | [desktop-apps.md](desktop-apps.md) | Electron and Tauri |
 | [instrumentation.mdx](instrumentation.mdx) | stores, signals, testids — how verdicts get stronger |
+| [troubleshooting.mdx](troubleshooting.mdx) | nothing connected, click did nothing, verdict says unknown |
 | [cli.mdx](cli.mdx) | every `reticle` command, with real output and measured exit codes |
 | [integration-patterns.md](integration-patterns.md) | wiring it into a real codebase |
 | [flows.md](flows.md) | record → save → replay → heal |

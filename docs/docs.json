@@ -56,6 +56,10 @@
                 "pages": ["instrumentation"]
               },
               {
+                "group": "When it goes wrong",
+                "pages": ["troubleshooting", "debugging"]
+              },
+              {
                 "group": "Integrate",
                 "pages": [
                   "getting-started",
@@ -136,7 +140,6 @@
                 "pages": [
                   "gates",
                   "gate-plan",
-                  "debugging",
                   "system-map",
                   "telemetry-contract",
                   "fixtures",
