@@ -72,6 +72,10 @@
                 "pages": ["architecture", "benchmarks", "token-efficiency"]
               },
               {
+                "group": "Practice",
+                "pages": ["best-practices", "skill-file"]
+              },
+              {
                 "group": "Trust & licensing",
                 "pages": ["telemetry", "enterprise"]
               }

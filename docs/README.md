@@ -36,6 +36,8 @@ Everything here is published to [docs.reticle.sh](https://docs.reticle.sh) by `d
 | [tools-tools-and-run.mdx](tools-tools-and-run.mdx) | `reticle_tools` / `reticle_run` — reaching the other 30 |
 | [tools-session-and-feedback.mdx](tools-session-and-feedback.mdx) | `reticle_session` / `reticle_feedback` — the human boundary |
 | [packages.mdx](packages.mdx) | every library — what it does, why it exists, when you need it |
+| [best-practices.mdx](best-practices.mdx) | the habits that make a verdict worth trusting |
+| [skill-file.mdx](skill-file.mdx) | the paste-one-URL skill that teaches an agent Reticle |
 | [agent-cheatsheet.md](agent-cheatsheet.md) | the condensed version an agent keeps in context |
 | [for-agents.md](for-agents.md) | how to fetch these docs as Markdown or `llms.txt` |
 | [architecture.md](architecture.md) | how it works, and why it is built this way |
