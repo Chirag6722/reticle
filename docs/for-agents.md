@@ -18,6 +18,27 @@ curl https://docs.reticle.sh/agent-cheatsheet.md
 curl https://docs.reticle.sh/usage.md
 ```
 
+### What comes back
+
+Every Markdown page is prepended with two things before its content, so a single fetch orients you without a second call:
+
+```
+> ## Documentation Index
+> Fetch the complete documentation index at: https://docs.reticle.sh/llms.txt
+> Use this file to discover all available pages before exploring further.
+
+> ## Agent Instructions
+> Reticle is a dev-only, localhost-only verification layer for AI coding agents...
+> Only `reticle_act_and_wait` and `reticle_assert` produce a verdict...
+> A verdict of `verified: "unknown"` is not a pass...
+> Package names are scoped `@reticlehq/*` and the CLI is `reticle`...
+
+# reticle_query
+...
+```
+
+The four rules are the ones worth knowing before you drive anything, and they arrive whether or not you asked for them. You do not have to read this page first.
+
 The slug is the filename in [`docs/`](https://github.com/reticlehq/reticle/tree/main/docs) — so `docs/token-efficiency.md` in the repo is `/token-efficiency` on the site and `/token-efficiency.md` as raw text.
 
 ## Fetch the index, or everything
