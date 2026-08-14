@@ -17,7 +17,10 @@ Everything here is published to [docs.reticle.sh](https://docs.reticle.sh) by `d
 | [install-agentic.mdx](install-agentic.mdx) | `npx reticle init` — what it writes and how to read its marks |
 | [install-manual.mdx](install-manual.mdx) | wiring the MCP server and SDK by hand, per agent and framework |
 | [getting-started.md](getting-started.md) | install it, connect an agent, verify something |
-| [usage.md](usage.md) | every tool, every argument — the reference |
+| [usage.md](usage.md) | every tool, every argument — the long-form reference |
+| [predicates.mdx](predicates.mdx) | the predicate grammar, and which kinds actually prove something |
+| [actions.mdx](actions.mdx) | every action and its arguments, including `press` and its history |
+| [faq.mdx](faq.mdx) | production, frameworks, comparisons, and the honest limits |
 | [tools-overview.mdx](tools-overview.mdx) | the 18 advertised tools, the 30 in the cold tail, and why |
 | [tools-snapshot.mdx](tools-snapshot.mdx) | `reticle_snapshot` — three modes, from full tree to a 25-token route check |
 | [tools-query.mdx](tools-query.mdx) | `reticle_query` — find elements by testing-library semantics |

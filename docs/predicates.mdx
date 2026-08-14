@@ -1,0 +1,156 @@
+---
+title: Predicate reference
+description: The grammar for declaring what should be true — every kind, every field, and which ones actually prove something.
+icon: filter
+---
+
+A predicate declares what should be true. It is the argument to `until` on [`reticle_act_and_wait`](/tools-act-and-wait), and to `predicate` on [`reticle_assert`](/tools-assert) and [`reticle_wait_for`](/tools-wait-for).
+
+Every predicate is `{ kind, ...fields }`.
+
+## Not all predicates prove the same thing
+
+Reticle grades them, and it will tell you when you have chosen a weak one. This is a real response from a `text` assertion:
+
+```json
+{
+  "verified": "yes",
+  "pass": true,
+  "advice": "This predicate only checks element/text presence, not an observable consequence. A locator healed to the wrong element (or a stale render) can satisfy it while the feature is broken. Prefer a { signal } or { net } assertion — or allOf it with one — so green means the feature actually worked."
+}
+```
+
+Take the advice. `element` and `text` are convenient and weak; `signal`, `state` and `net` are what make a green trustworthy.
+
+| Kind               | Grade     | Proves                                                 |
+| ------------------ | --------- | ------------------------------------------------------ |
+| `signal`           | strongest | The app declared success in its own words              |
+| `state`            | strong    | A registered store actually changed                    |
+| `net`              | strong    | A specific request fired, with a countable cardinality |
+| `route`            | medium    | Navigation happened                                    |
+| `console`          | medium    | Something logged, or nothing did                       |
+| `element` / `text` | weak      | Something rendered. A mock renders too                 |
+
+## The leaves
+
+### element
+
+```json
+{
+  "kind": "element",
+  "query": { "role": "dialog", "name": "Confirm" },
+  "state": "visible"
+}
+```
+
+`query` accepts `role`, `name`, `text`, `label`, `placeholder`, `testid`, `alt`, `scope`. `state` is one of `visible`, `hidden`, `enabled`, `disabled`, `checked`, `expanded`, `focused`, `present`.
+
+Add `"absent": true` to assert something is **gone** — the predicate for a removal, a dismissed toast, or a regression check.
+
+### text
+
+```json
+{ "kind": "text", "contains": "Saved successfully", "visible": true }
+```
+
+Both `contains` and `value` are accepted. `absent: true` asserts the text is not present.
+
+### net
+
+```json
+{ "kind": "net", "method": "POST", "urlContains": "/api/order", "status": 200 }
+```
+
+The one that catches the expensive bug:
+
+```json
+{ "kind": "net", "method": "POST", "urlContains": "/api/order", "count": 1 }
+```
+
+**Exactly one.** Double-submit fails at two, and nothing on screen would have told you.
+
+### route
+
+```json
+{ "kind": "route", "pathname": "/success" }
+```
+
+`contains` also works.
+
+<Warning>
+  `route` asserts the route **changed**. Asserting the route you are already on always fails, and
+  the response says so: `expected: "a route change to /"`, `assertion: "route.changed"`.
+</Warning>
+
+### console
+
+```json
+{ "kind": "console", "level": "error", "absent": true }
+```
+
+"The flow completed and logged nothing." Worth attaching to most actions — plenty of features work while quietly throwing.
+
+### signal
+
+```json
+{ "kind": "signal", "name": "webhook:received", "dataMatches": { "provider": "stripe", "id": "*" } }
+```
+
+The app emitted a named signal via `reticle.signal()`. `dataMatches` is shallow JSON matching, and `*` means "present, any value".
+
+Nothing outranks this. A `200` proves the server was reachable; a rendered row proves React ran. A signal is the application itself saying the thing succeeded. See [instrumentation](/instrumentation) for how to emit them.
+
+### state
+
+```json
+{ "kind": "state", "store": "app", "path": "deployments.0.status", "equals": "live" }
+```
+
+Walks a dot-path, with numeric array indices. `equals` takes a literal, or an operator pattern:
+
+| Operator                  | Meaning                       |
+| ------------------------- | ----------------------------- |
+| `$gte` `$lte` `$gt` `$lt` | numeric comparison            |
+| `$contains`               | substring or array membership |
+| `$length`                 | collection size               |
+
+Omit `equals` entirely to assert presence.
+
+This is the predicate that catches a UI-versus-store desync — a deploy that only _looks_ shipped — deterministically, in one call, with no model involved. On a miss it names the real store value and the keys that were available, so a failure is legible rather than a blind "no".
+
+### animation
+
+```json
+{ "kind": "animation", "name": "dialog-in", "completed": true }
+```
+
+## Combinators
+
+```json
+{
+  "allOf": [
+    { "kind": "signal", "name": "order:placed" },
+    { "kind": "console", "absent": true }
+  ]
+}
+```
+
+```json
+{ "anyOf": [ … ] }
+{ "not": { … } }
+```
+
+`allOf` is the workhorse. "The signal fired **and** the console stayed clean **and** exactly one request went out" is a genuinely strong check, and it is one call.
+
+## Timing and scoping
+
+| Field | Where | What it does |
+| --- | --- | --- |
+| `timeout_ms` | `assert`, `wait_for`, `act_and_wait` | Wait up to N ms for it to become true |
+| `since` | `net` and `console` leaves, and the call itself | Only consider events after this cursor |
+
+The `since` cursor comes from a prior `reticle_act` response. Use it whenever you are asserting something an action was supposed to cause — without it, an assertion can pass on an event from two clicks ago.
+
+<Card title="Where predicates get used" icon="circle-check" href="/tools-act-and-wait">
+  Naming the consequence before the action is the whole point.
+</Card>

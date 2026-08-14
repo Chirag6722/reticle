@@ -1,0 +1,87 @@
+---
+title: FAQ
+description: Does it run in production, does it need React, does it replace Playwright, and the other questions people actually ask.
+icon: circle-question
+---
+
+## Does this run in production?
+
+No, and it is built so that it cannot easily be made to. Keep `reticle.connect()` behind a dev guard; the SDK is side-effect-free and tree-shakes out of production builds. The Vite plugin uses `apply: 'serve'`, which means it is not part of a production build at all.
+
+## Do I have to change my components?
+
+No, for look, act and observe. You get DOM, network, console and routing with zero changes.
+
+You get considerably better results by adding `data-testid` attributes and by [emitting signals](/instrumentation) — that is the difference between a verdict that says "something appeared" and one that says "the app declared success".
+
+## Does it work without React?
+
+The core is framework-agnostic: DOM, network, routing, console, animations, snapshots and actions are gated against a vanilla TypeScript app.
+
+Support beyond that is uneven, and we would rather say so than let you find out:
+
+| Framework | Status |
+| --- | --- |
+| React, Next.js, Remix, Astro | Supported, each with an app and a CI gate |
+| SvelteKit | Wired end to end — `init` writes the client hook, the plugin stamps `.svelte` source — but **no CI gate**, so unverified rather than supported |
+| Vue | A Pinia store adapter and nothing else. No detection, no `.vue` stamping, no gate |
+
+## Can it tell me whether my UI looks good?
+
+No. Reticle verifies behaviour, not aesthetics. Visual correctness and "does this feel right" remain a human job, or a visual-diff tool's.
+
+It does read design tokens — [`reticle_inspect`](/tools-inspect) reports whether a colour came from your theme or from someone's clipboard — but that is a consistency check, not taste.
+
+## Does it replace Playwright or Cypress?
+
+No. Those are your scripted CI suite. Reticle is for in-loop verification while an agent is coding, and for the flows you never got round to automating. They compose.
+
+<Card title="The full comparison" icon="masks-theater" href="/vs-playwright-mcp">
+  Where Playwright is the right choice, stated plainly.
+</Card>
+
+## How does it compare to Playwright MCP or Chrome DevTools MCP?
+
+Those drive a **separate** browser from the outside. Reticle verifies your **own running app** from the inside, with your real session and auth, and with assertions and regression as first-class.
+
+Measured on the same app: Reticle caught 10 of 10 injected bugs, Playwright MCP 9, Chrome DevTools MCP 8. DevTools MCP is about 7% cheaper per look on a simple page, and more expensive on a real one.
+
+## Can I run several apps or tabs at once?
+
+Yes. Each is a session. Pass `sessionId` to any tool when more than one is connected, and [`reticle_sessions`](/tools-sessions) lists them.
+
+Reticle scopes to your project and prefers the active tab, and it **refuses rather than guesses** when the choice is ambiguous — a refusal you can act on beats a silent pick of the wrong tab.
+
+## Why did I get `verified: "unknown"` on something that clearly worked?
+
+Because Reticle could not confirm it saw the whole story, and it will not call that a pass.
+
+The most common cause is a **throttled tab**: a backgrounded browser tab has its timers suppressed, which suppresses the quiescence detection used to decide the page has settled. Focus the tab, or drive a dedicated context.
+
+If you believe an `unknown` is wrong, report it. Reticle's own response says as much — "an unknown verdict is our defect, not yours".
+
+## Does my data leave the machine?
+
+Your app's data, no. Reticle is dev-only, localhost-only and offline. Credential-shaped values are redacted before they leave the page — you will see `[REDACTED]` in request bodies without configuring anything.
+
+Anonymous usage telemetry is sent separately and can be turned off with `reticle telemetry disable`.
+
+<Card title="Exactly what is collected" icon="chart-line" href="/telemetry">
+  The complete list. If it is not on that page, it is not sent.
+</Card>
+
+## Is Reticle proven to make agents fix more bugs?
+
+No, and we are not going to claim it. A controlled test of fix-rate did **not** show an improvement. The benchmark was confounded in ways we can point at, and we consider the question open.
+
+What is measured is detection: 10 of 10 injected regressions caught, with zero false alarms on a known-good control, against 9 and 8 for the alternatives.
+
+## Why are there 48 tools but only 18 in my agent?
+
+MCP re-sends every advertised tool definition on every turn, so the tool list is rent rather than a one-time cost. Measured: 18 tools is about 5,400 tokens per turn; all 48 is about 33,600.
+
+The other 30 are one call away via `reticle_tools` and `reticle_run`.
+
+<Card title="The surface, explained" icon="wrench" href="/tools-overview">
+  Which 18, and why each earned its slot.
+</Card>

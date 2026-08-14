@@ -119,8 +119,12 @@
                 "pages": ["packages"]
               },
               {
+                "group": "Grammar",
+                "pages": ["predicates", "actions"]
+              },
+              {
                 "group": "Everything else",
-                "pages": ["agent-cheatsheet", "usage"]
+                "pages": ["agent-cheatsheet", "usage", "faq"]
               }
             ]
           },
