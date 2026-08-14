@@ -163,7 +163,26 @@ try {
   );
 
   // ── screenshots through the main process ──────────────────────────────────────────────────────
-  const shot = await tool('reticle_screenshot', { name: 'electron-home' });
+  // The capture provider is registered by `installReticleCapture(win)` in the MAIN process, which is
+  // a different process from the renderer that dialed the bridge. Those two do not land in a fixed
+  // order, so the renderer can be connected and driveable while the provider is still absent — and
+  // this spec asserted on whichever side of that race the runner happened to land on. It failed
+  // intermittently in CI, always here, always on runs that changed no desktop code.
+  //
+  // Poll for the provider rather than hoping. Crucially this retries ONLY on `no-visual-provider`:
+  // any other failure (a capture that returned no image, a truncated PNG, a missing helper) returns
+  // immediately and still fails the gate, which is the whole point of these two assertions.
+  const screenshotOnceProviderReady = async (args) => {
+    let last;
+    for (let i = 0; i < 40; i++) {
+      last = await tool('reticle_screenshot', args);
+      if (last.reason !== 'no-visual-provider') return last;
+      await sleep(200);
+    }
+    return last;
+  };
+
+  const shot = await screenshotOnceProviderReady({ name: 'electron-home' });
   // Print the REASON, not only the byte count. This failed once in CI as "undefined bytes", which
   // says nothing: an empty capture, a missing helper and a capture that never ran all render
   // identically. The tool already reports a reason (`capture returned no image` and friends) and the
