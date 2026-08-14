@@ -104,6 +104,35 @@ describe('docs/docs.json publishes every doc', () => {
     ).toEqual([]);
   });
 
+  it('no page shows a predicate combinator in a shape that does not parse', () => {
+    // `{ allOf: [ … ] }` reads perfectly and is rejected by the schema. Reticle refuses the whole
+    // call rather than evaluating part of it, so a reader who copies one gets NO verdict, which is
+    // strictly worse than a failing one. Eight of these shipped across the docs before a sweep.
+    // The correct shape is `{ kind: "allOf", predicates: [ … ] }`.
+    const BARE = /(?:"(?:allOf|anyOf)"|\b(?:allOf|anyOf))\s*:\s*\[/;
+    // Lines that deliberately show the wrong shape, near a marker saying so.
+    const DISCLAIMER = /WRONG|does not parse|do(?:es)? not parse|neither does/i;
+
+    const offenders: string[] = [];
+    for (const file of markdownPages()) {
+      const lines = readFileSync(join(DOCS, file), 'utf8').split('\n');
+      lines.forEach((line, i) => {
+        if (!BARE.test(line)) return;
+        if (/"?kind"?\s*:\s*"(?:allOf|anyOf)"[\s\S]*?"?predicates"?\s*:/.test(line)) return;
+        const context = lines.slice(Math.max(0, i - 4), i + 2).join('\n');
+        if (DISCLAIMER.test(context)) return;
+        offenders.push(`${file}:${String(i + 1)}`);
+      });
+    }
+
+    expect(
+      offenders,
+      `A combinator needs its own kind and a \`predicates\` array: ` +
+        `{ kind: "allOf", predicates: [ … ] }. The bare form does not parse, and Reticle returns no ` +
+        `verdict at all rather than a failing one: ${offenders.join(', ')}`,
+    ).toEqual([]);
+  });
+
   it('every reticle_* tool the docs name still exists in the source', () => {
     // A tool rename once left four e2e specs dead across a whole framework and nothing caught it.
     // The docs are the same shape of victim: they name 50-odd tools, and a rename turns each mention
