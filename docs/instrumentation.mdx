@@ -1,6 +1,6 @@
 ---
 title: Instrument your app
-description: Register stores, emit signals, add testids — the three things that decide whether your verdicts say "the DOM changed" or "the app succeeded".
+description: Register stores, emit signals, add testids. The three things that decide whether your verdicts say "the DOM changed" or "the app succeeded".
 icon: wrench
 ---
 
@@ -10,7 +10,7 @@ But there is a ceiling, and this page is about raising it. Instrumentation is th
 
 ## The grade ladder
 
-Every verdict carries an `honesty.grade` — how strong the evidence actually was.
+Every verdict carries an `honesty.grade`. How strong the evidence actually was.
 
 <CardGroup cols={3}>
   <Card title="presence" icon="eye">
@@ -40,7 +40,7 @@ Same click. Better evidence. The only difference is that somebody spent ten minu
 
 ## Three things to add
 
-Everything lives in `src/reticle-dev.ts`, which `reticle init` creates for you and which is dev-only — it self-guards on `import.meta.env.DEV` and is a no-op in a production build.
+Everything lives in `src/reticle-dev.ts`, which `reticle init` creates for you and which is dev-only, it self-guards on `import.meta.env.DEV` and is a no-op in a production build.
 
 ### 1. Register your store
 
@@ -53,7 +53,7 @@ registerStore('queries', tanstackQueryStore(queryClient));
 
 <Warning>
 Pass the **store**, not `() => store.getState()`. The store form wires `subscribe`, so every mutation
-emits a state diff. The getter form is read-only and silently produces empty `stateDiffs` — which
+emits a state diff. The getter form is read-only and silently produces empty `stateDiffs`, which
 reads as "nothing changed" and actually means "I was never watching".
 </Warning>
 
@@ -97,7 +97,7 @@ export function emit(name: Sig, data: Record<string, unknown> = {}): void {
 }
 ```
 
-Then call `emit(Sig.AUTH_GRANTED, { email })` where the thing actually succeeds — not where you _think_ it succeeds. In the success branch, after the state update, not in the click handler.
+Then call `emit(Sig.AUTH_GRANTED, { email })` where the thing actually succeeds. Not where you _think_ it succeeds. In the success branch, after the state update, not in the click handler.
 
 **Emit the failures too.** `auth:denied` is as valuable as `auth:granted`, for a reason the next section demonstrates.
 
@@ -112,7 +112,7 @@ registerCapabilities({
 });
 ```
 
-This is what [`reticle_capabilities`](/tools-tools-and-run) returns — the app telling an agent what it considers testable, before the agent has looked at a single element. It is the cheapest and most truthful first call on an unfamiliar codebase.
+This is what [`reticle_capabilities`](/tools-tools-and-run) returns. The app telling an agent what it considers testable, before the agent has looked at a single element. It is the cheapest and most truthful first call on an unfamiliar codebase.
 
 ## Why emitting failure signals pays off
 
@@ -147,7 +147,9 @@ Read `observed` again:
 
 > signal 'auth:granted' never fired — **signals seen in this window: auth:denied**
 
-Without the failure signal, that line would have stopped at "never fired", and the agent would be guessing between a network problem, a broken handler and a wrong password. With it, the app has named its own outcome: the credentials were rejected. The 401 headline confirms it, `stateDiffs: []` proves nothing was written, and the whole diagnosis arrives in one response.
+Without the failure signal, that line would have stopped at "never fired", and the agent would be guessing between a network problem, a broken handler and a wrong password.
+
+With it, the app has named its own outcome: the credentials were rejected. The 401 headline confirms it, `stateDiffs: []` proves nothing was written, and the whole diagnosis arrives in one response.
 
 <Note>
   `capsule.firstDivergence` and `blastRadius` are saved to disk automatically on a failure, so the
@@ -195,7 +197,7 @@ Note the last field. When Reticle cannot tell what happened, it invites a bug re
 <button data-testid="login-submit">Sign in</button>
 ```
 
-Role and text queries survive refactors well. Testids survive redesigns, translations, and the day marketing rewrites every button label. Add them to the elements your important flows actually touch — not to everything, which is a chore nobody finishes.
+Role and text queries survive refactors well. Testids survive redesigns, translations, and the day marketing rewrites every button label. Add them to the elements your important flows actually touch. Not to everything, which is a chore nobody finishes.
 
 ## Keeping it honest
 
@@ -205,13 +207,13 @@ Signals rot the way every convention rots: someone adds a mutation, forgets the 
 npm i -D @reticlehq/eslint-plugin
 ```
 
-One rule — state changed, so a signal must fire — makes the signal layer self-enforcing. It is the only mechanism we have found that survives contact with a deadline.
+One rule. State changed, so a signal must fire, makes the signal layer self-enforcing. It is the only mechanism we have found that survives contact with a deadline.
 
 ## Start with one flow
 
 You do not need to describe the whole app, and trying to is the slow path that gets abandoned halfway.
 
-1. Pick your most important flow — the one that would be embarrassing to break.
+1. Pick your most important flow. The one that would be embarrassing to break.
 2. Register the store it reads.
 3. Emit a signal where it succeeds, and one where it fails.
 4. Add testids to the elements it touches.

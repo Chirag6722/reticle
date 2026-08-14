@@ -1,6 +1,6 @@
 ---
 title: reticle_assert
-description: Evaluate a predicate against what the app actually did, and get a verdict — including a clear explanation when it fails.
+description: Evaluate a predicate against what the app actually did, and get a verdict. Including a clear explanation when it fails.
 icon: gavel
 ---
 
@@ -39,15 +39,15 @@ Note also `expected` and `observed` side by side. A verdict that says only "fail
 
 ## Arguments
 
-| Argument                 | What it does                                                |
-| ------------------------ | ----------------------------------------------------------- |
-| `predicate` (or `until`) | `{ kind, ...fields }`                                       |
-| `timeout_ms`             | If above zero, wait this long before failing                |
-| `since`                  | Cursor from a prior act — scope to events after that action |
+| Argument                 | What it does                                               |
+| ------------------------ | ---------------------------------------------------------- |
+| `predicate` (or `until`) | `{ kind, ...fields }`                                      |
+| `timeout_ms`             | If above zero, wait this long before failing               |
+| `since`                  | Cursor from a prior act. Scope to events after that action |
 
 ## Scope it with `since`
 
-Without `since`, an assertion evaluates against the recent buffer, which may contain events from before your action. That can pass for the wrong reason — the request you are asserting fired, but it fired two clicks ago.
+Without `since`, an assertion evaluates against the recent buffer, which may contain events from before your action. That can pass for the wrong reason. The request you are asserting fired, but it fired two clicks ago.
 
 ```json
 { "predicate": { "kind": "net", "method": "POST" }, "since": 28123 }
@@ -64,7 +64,7 @@ Use [`reticle_act_and_wait`](/tools-act-and-wait) when you are performing the ac
 - you want to assert something extra about an action you already ran, using its `since` cursor.
 
 <Note>
-  `verified: "unknown"` means Reticle could not tell. It is not a pass, and it is not a failure — it
+  `verified: "unknown"` means Reticle could not tell. It is not a pass, and it is not a failure, it
   is a statement that the evidence was insufficient. Report it as unknown rather than rounding it in
   either direction.
 </Note>

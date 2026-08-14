@@ -4,7 +4,7 @@ description: Install Reticle, connect your coding agent, and get a real verdict 
 icon: rocket
 ---
 
-By the end of this page your agent will click a button in your app and prove what happened — the request that fired, the state that changed, and the file to open if it didn't.
+By the end of this page your agent will click a button in your app and prove what happened: the request that fired, the state that changed, and the file to open if it didn't.
 
 <Note>
   Every response on this page is real output, captured against a running app while writing it.
@@ -15,9 +15,9 @@ By the end of this page your agent will click a button in your app and prove wha
 
 - Node 20 or newer
 - A web app you can run locally, and its dev server
-- A coding agent that speaks MCP — Claude Code, Cursor, Codex, OpenCode, Windsurf, VS Code
+- A coding agent that speaks MCP (Claude Code, Cursor, Codex, OpenCode, Windsurf, VS Code)
 
-## Step 1 — Let your agent install it
+## Step 1. Let your agent install it
 
 The fastest path is to hand the job to the agent that will use it. In your project directory:
 
@@ -25,7 +25,7 @@ The fastest path is to hand the job to the agent that will use it. In your proje
 npx reticle init
 ```
 
-This registers the MCP server, installs the SDK, wires it into your app's entry point, and writes the agent rule files. It is idempotent — run it twice and the second run reports what was already done rather than doing it again.
+This registers the MCP server, installs the SDK, wires it into your app's entry point, and writes the agent rule files. It is idempotent. Run it twice and the second run reports what was already done rather than doing it again.
 
 Useful flags, from `reticle init` itself:
 
@@ -46,7 +46,7 @@ Start with `--dry-run` if you want to see the plan before anything is written.
 
 Prefer to wire it yourself? See [Manual install](/install-manual). It is about ten lines, and worth reading once even if you let the agent do it, because it explains what the agent actually changed.
 
-## Step 2 — Check the setup
+## Step 2. Check the setup
 
 ```bash
 reticle doctor
@@ -54,7 +54,7 @@ reticle doctor
 
 `doctor` diagnoses the whole setup in one command: Chromium, the daemon, the port. If something is wrong this is the page you want before you start debugging your app instead.
 
-## Step 3 — Start your app and open it
+## Step 3. Start your app and open it
 
 Start your dev server as usual, then:
 
@@ -66,12 +66,12 @@ This reuses the tab you already have open, or opens one if you don't. The SDK co
 
 <Warning>
   If the browser console says it "could not reach the bridge", your app and the daemon disagree
-  about the port. Set it explicitly — `VITE_RETICLE_WS_URL=ws://localhost:4400/reticle` for Vite, or
+  about the port. Set it explicitly: `VITE_RETICLE_WS_URL=ws://localhost:4400/reticle` for Vite, or
   `reticle.connect({url})`. This is the single most common setup problem, and the console message
   tells you the exact port it tried.
 </Warning>
 
-## Step 4 — Look at the page
+## Step 4. Look at the page
 
 Ask your agent to take a snapshot. This is what came back from a real app:
 
@@ -87,13 +87,13 @@ Ask your agent to take a snapshot. This is what came back from a real app:
 
 Three things to notice.
 
-The password is already `[REDACTED]`. Reticle redacts credential-shaped values before they leave the page, so your agent's context never holds your test password — let alone your real one.
+The password is already `[REDACTED]`. Reticle redacts credential-shaped values before they leave the page, so your agent's context never holds your test password, let alone your real one.
 
 The whole snapshot cost **61 tokens**. This is `mode: "interactive"`, which returns only the controls. A full accessibility-tree dump of a comparable page runs to thousands. Reticle is built to ask narrow questions, because the answer gets re-sent to the model on every turn.
 
-Each control has a `ref` like `e5`. That's the handle for the next step, and it stays valid until the element leaves the DOM — so no re-snapshot between actions.
+Each control has a `ref` like `e5`. That's the handle for the next step, and it stays valid until the element leaves the DOM, so you don't re-snapshot between actions.
 
-## Step 5 — Act, and prove it
+## Step 5. Act, and prove it
 
 Here is the whole idea of Reticle in one call. Your agent names the expected consequence **before** it acts:
 
@@ -147,15 +147,15 @@ The real response, trimmed for length:
 }
 ```
 
-![A real act_and_wait verdict, annotated — the verdict, the source pointer, the request evidence, the request count, the state diff, and the app's own signal](/images/verdict-annotated.png)
+![A real act_and_wait verdict, annotated. The verdict, the source pointer, the request evidence, the request count, the state diff, and the app's own signal](/images/verdict-annotated.png)
 
 Read what that actually proves:
 
 | Field | What it tells you |
 | --- | --- |
-| `verified: "yes"` | The named consequence happened. Not "the page looks different" — the specific thing. |
+| `verified: "yes"` | The named consequence happened. Not "the page looks different", the specific thing. |
 | `source.file` / `line` | The button lives at `src/components/Login.tsx:81`. If this had failed, your agent knows which file to open. |
-| `verdict.evidence` | The exact request: one `POST /api/login`, `200`, 67ms. Not a summary of it — the request. |
+| `verdict.evidence` | The exact request: one `POST /api/login`, `200`, 67ms. Not a summary of it. The request. |
 | `stateDiffs` | Application state moved from `null` to a real user. A mock that returns 200 without changing state is caught right here. |
 | `signals` | The app's own `auth:granted` fired. This is the strongest signal available, because the app declared success itself. |
 | `net.total: 1` | Exactly one request. Double-submit bugs show up as `2`. |

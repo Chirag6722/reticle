@@ -1,6 +1,6 @@
 ---
 title: reticle_observe
-description: The full timeline of everything the app did in a window — DOM, network, routing, console, animations and signals — with a summary.
+description: The full timeline of everything the app did in a window. DOM, network, routing, console, animations and signals, with a summary.
 icon: timeline
 ---
 
@@ -58,7 +58,7 @@ The `summary` block is the cheap answer. `consoleErrors: 0` and `network: 0` tel
 | Argument          | What it does                                                       |
 | ----------------- | ------------------------------------------------------------------ |
 | `window_ms`       | How far back to look                                               |
-| `since` / `until` | Cursors from a prior act — the precise way to scope                |
+| `since` / `until` | Cursors from a prior act. The precise way to scope                 |
 | `actionId`        | Only events attributed to one action: "what did that click cause?" |
 | `filters`         | Event-type allowlist. The cheapest way to shrink a big timeline    |
 | `max_events`      | Cap the timeline to the most recent N                              |
@@ -71,7 +71,7 @@ Every `reticle_act` response includes a `since` cursor. Passing it to `observe` 
 { "since": 28123 }
 ```
 
-This is more precise than `window_ms` and it does not drift when the machine is slow — which matters, because a timing-based window that works on your laptop and fails in CI is a flaky test waiting to happen.
+This is more precise than `window_ms` and it does not drift when the machine is slow. Which matters, because a timing-based window that works on your laptop and fails in CI is a flaky test waiting to happen.
 
 ## When to use it
 
@@ -79,10 +79,10 @@ Use `observe` when you do not yet know what went wrong. Use the narrow tools whe
 
 <CardGroup cols={2}>
   <Card title="Good use" icon="circle-check">
-    "Something broke after that click — show me everything that happened."
+    "Something broke after that click, show me everything that happened."
   </Card>
   <Card title="Wasteful use" icon="circle-xmark">
-    "Did a POST fire?" — [`reticle_network`](/tools-network) answers that far more cheaply.
+    "Did a POST fire?" [`reticle_network`](/tools-network) answers that far more cheaply.
   </Card>
 </CardGroup>
 

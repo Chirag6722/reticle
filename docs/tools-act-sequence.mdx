@@ -1,12 +1,12 @@
 ---
 title: reticle_act_sequence
-description: Run several actions in order in one round trip — fill, fill, submit — instead of paying a full turn for each step.
+description: Run several actions in order in one round trip. Fill, fill, submit. Instead of paying a full turn for each step.
 icon: layer-group
 ---
 
 A login is three actions. Driving it one call at a time costs three round trips and three turns of context. `reticle_act_sequence` does it in one.
 
-This tool exists because of a measured problem: agents were driving forms one call at a time, over and over. Those repeats were not retries — the calls succeeded and got repeated, because the batching tool was not advertised and so nobody knew it was there.
+This tool exists because of a measured problem: agents were driving forms one call at a time, over and over. Those repeats were not retries. The calls succeeded and got repeated, because the batching tool was not advertised and so nobody knew it was there.
 
 ## Example
 
@@ -75,7 +75,7 @@ Real response, trimmed:
 
 ## Read that response again
 
-`ok: true`. `count: 3`. Every step dispatched. And the login **failed** — look at `appeared`:
+`ok: true`. `count: 3`. Every step dispatched. And the login **failed**, look at `appeared`:
 
 ```
 "appeared": "Signing in… | Invalid email or password | Sign in"
@@ -111,10 +111,10 @@ Two calls instead of four, and the last one returns a verdict.
 
 ## What each step reports
 
-Every step comes back with the same `effect` fields as [`reticle_act`](/tools-act) — `valueChanged`, `focusMoved`, `domMutatedWithin`, `occluded` — plus its `testid`, `component` and `source`. When a sequence goes wrong, that per-step detail tells you which step, and which line of which file.
+Every step comes back with the same `effect` fields as [`reticle_act`](/tools-act): `valueChanged`, `focusMoved`, `domMutatedWithin`, `occluded`. Plus its `testid`, `component` and `source`. When a sequence goes wrong, that per-step detail tells you which step, and which line of which file.
 
 <Note>
   Steps run in order and do not stop on a soft failure, because "the field rejected the value" is
-  not an exception — it's a result you need to see. Read `effects[]` rather than assuming `ok: true`
+  not an exception. It's a result you need to see. Read `effects[]` rather than assuming `ok: true`
   means all three did what you wanted.
 </Note>

@@ -4,7 +4,7 @@ description: The failures that AI coding agents actually produce are invisible i
 icon: image
 ---
 
-**Short answer:** the information is not in the picture. Whether a request fired, what it returned, whether state changed, whether one click sent two requests — none of that is visible in a rendered frame, at any resolution, to any model.
+**Short answer:** the information is not in the picture. Whether a request fired, what it returned, whether state changed, whether one click sent two requests. None of that is visible in a rendered frame, at any resolution, to any model.
 
 ## The four failures a screenshot approves
 
@@ -54,13 +54,13 @@ Reticle runs inside the app and reads what actually happened:
 }
 ```
 
-Read what that rules out. `net.total: 1` kills double-submit. `stateDiffs` kills mock data — the store genuinely changed. `signals` is the app declaring success in its own words. `consoleErrors: 0` kills "it worked but threw".
+Read what that rules out. `net.total: 1` kills double-submit. `stateDiffs` kills mock data, the store genuinely changed. `signals` is the app declaring success in its own words. `consoleErrors: 0` kills "it worked but threw".
 
 No pixel in the world carries that.
 
 ## A real one, caught on the first run
 
-On the first drive of a real production dashboard, before any instrumentation, Reticle's network observation flagged two endpoints returning `500` — a database migration that had not been applied.
+On the first drive of a real production dashboard, before any instrumentation, Reticle's network observation flagged two endpoints returning `500`. A database migration that had not been applied.
 
 **The page rendered fine.** The sidebar loaded. Nothing looked broken. A screenshot agent would have called it done and moved on.
 
@@ -68,7 +68,7 @@ That is the thesis in one incident: "looks done" and "is done" are different pro
 
 ## When a screenshot is the right tool
 
-Screenshots are not useless — they are the correct instrument for a specific class of bug, and this page would be dishonest without saying so:
+Screenshots are not useless. They are the correct instrument for a specific class of bug, and this page would be dishonest without saying so:
 
 - A font that failed to load
 - A GPU or compositing glitch

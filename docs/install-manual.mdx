@@ -1,6 +1,6 @@
 ---
 title: Manual install
-description: Wire Reticle by hand — register the MCP server for your agent, add the SDK, and connect it. Every step init automates, written out.
+description: Wire Reticle by hand. Register the MCP server for your agent, add the SDK, and connect it. Every step init automates, written out.
 icon: screwdriver-wrench
 ---
 
@@ -13,7 +13,7 @@ You want both. Take them in that order.
   it doesn't register automatically. It handles Claude Code and Cursor on its own.
 </Tip>
 
-## Part 1 — Register the MCP server
+## Part 1. Register the MCP server
 
 There is no config file that all agents share. Each harness has its own path and its own schema, so write only the one you actually use.
 
@@ -35,7 +35,7 @@ Register once, globally, and every project has it:
 claude mcp add reticle -s user -- npx @reticlehq/server mcp
 ```
 
-Confirm with `claude mcp list` — `reticle` should be there.
+Confirm with `claude mcp list`. `reticle` should be there.
 
 If the `claude` CLI isn't available, merge one key into `mcpServers` in `~/.claude.json`. It is a large stateful file, so **merge, never rewrite**:
 
@@ -91,12 +91,12 @@ Note the flat command array and the required `type`:
 ```
 
 <Warning>
-  **Restart your agent afterwards.** It read its server list at startup and nothing re-reads it —
+  **Restart your agent afterwards.** It read its server list at startup and nothing re-reads it.
   `/mcp` manages servers that are already loaded, so it cannot discover a new one. Restart Claude
   Code, reload the Cursor window, or press Start in `.vscode/mcp.json`.
 </Warning>
 
-## Part 2 — Wire the SDK into your app
+## Part 2. Wire the SDK into your app
 
 ### Vite
 
@@ -114,7 +114,7 @@ export default defineConfig({
 });
 ```
 
-That's the whole web install. The plugin stamps source locations onto elements — the thing that turns a DOM node into `src/components/Login.tsx:81` — and injects `connect()` so you can't forget it.
+That's the whole web install. The plugin stamps source locations onto elements. The thing that turns a DOM node into `src/components/Login.tsx:81`. And injects `connect()` so you can't forget it.
 
 ### Anything without the plugin
 
@@ -127,12 +127,12 @@ if (import.meta.env.DEV) reticle.connect();
 ```
 
 <Note>
-  `connect()` is dev-only by design. Guard it with whatever your bundler gives you —
+  `connect()` is dev-only by design. Guard it with whatever your bundler gives you:
   `import.meta.env.DEV`, `process.env.NODE_ENV !== 'production'`, or a build flag. Reticle also
   self-guards, but two locks on a door that leads to your users is a reasonable number.
 </Note>
 
-### Tauri — and the step whose failure is silent
+### Tauri. and the step whose failure is silent
 
 The frontend is identical to any web app. The CSP is not optional:
 
@@ -148,8 +148,8 @@ The frontend is identical to any web app. The CSP is not optional:
 
 <Warning>
   Tauri's default CSP blocks the bridge WebSocket **before it opens**. Your app runs perfectly and
-  simply never connects, with no error to go on. Keep `ipc: http://ipc.localhost` in `connect-src` —
-  Tauri v2 needs it for `invoke` itself — and drop the `ws://` entries from your release config.
+  simply never connects, with no error to go on. Keep `ipc: http://ipc.localhost` in `connect-src`,
+  Tauri v2 needs it for `invoke` itself. And drop the `ws://` entries from your release config.
 </Warning>
 
 Screenshots and headless mode need the Rust crate, which is versioned independently of the npm packages:
@@ -165,19 +165,19 @@ tauri::Builder::default()
     .on_page_load(reticle_tauri::on_page_load)
 ```
 
-IPC observation needs nothing on the Rust side — an `invoke('load_todos')` already reaches Reticle as `ipc://load_todos`.
+IPC observation needs nothing on the Rust side. An `invoke('load_todos')` already reaches Reticle as `ipc://load_todos`.
 
 <Card title="Electron, and the rest of desktop" icon="display" href="/desktop-apps">
   Main-process and renderer wiring, IPC observation, and what differs from the web install.
 </Card>
 
-## Part 3 — Prove it
+## Part 3. Prove it
 
 ```bash
 npx reticle status
 ```
 
-A session in the output means the app connected. That — not a tick in a checklist — is the install finished.
+A session in the output means the app connected. That. Not a tick in a checklist, is the install finished.
 
 If it says nothing connected, the usual cause is a port disagreement between your app and the daemon. The browser console will name the exact port it tried; set it explicitly with `VITE_RETICLE_WS_URL=ws://localhost:4400/reticle` or `reticle.connect({ url })`.
 

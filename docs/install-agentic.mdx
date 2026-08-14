@@ -85,7 +85,7 @@ That `ℹ` line is the one people skim past, so here it is in full:
 Four files in your project, none of them mysterious.
 
 <AccordionGroup>
-  <Accordion title=".reticle.json — project config">
+  <Accordion title=".reticle.json (project config)">
     ```json
     {
       "framework": "vite",
@@ -96,7 +96,7 @@ Four files in your project, none of them mysterious.
     don't get confused for each other.
   </Accordion>
 
-  <Accordion title="vite.config.ts — the plugin">
+  <Accordion title="vite.config.ts (the plugin)">
     ```ts
     import { defineConfig } from 'vite'
     import react from '@vitejs/plugin-react'
@@ -106,13 +106,13 @@ Four files in your project, none of them mysterious.
       plugins: [reticle(), react()],
     })
     ```
-    One import, one entry. The plugin stamps source locations onto your elements — that's what turns
-    a DOM node into `src/components/Login.tsx:81` — and injects `connect()` so you don't have to
-    remember to.
+    One import, one entry. The plugin stamps source locations onto your elements, which is what turns a DOM node into
+
+`src/components/Login.tsx:81`. It also injects `connect()` so you don't have to remember to.
 
   </Accordion>
 
-  <Accordion title="src/reticle-dev.ts — your capabilities">
+  <Accordion title="src/reticle-dev.ts (your capabilities)">
     ```ts
     // Dev-only. Imported automatically by @reticlehq/vite-plugin — you do not need to import it.
     // Self-guards on import.meta.env.DEV, so it is a no-op in a production build.
@@ -131,7 +131,7 @@ Four files in your project, none of them mysterious.
 
   </Accordion>
 
-  <Accordion title="CLAUDE.md and .claude/commands/reticle.md — agent rules">
+  <Accordion title="CLAUDE.md and the /reticle command (agent rules)">
     A rule telling your agent to verify features after building them, and a `/reticle` command that
     drives one flow. Skipped entirely with `--no-mcp`, because rules for tools the agent can't reach
     are just noise in the context window.
@@ -162,7 +162,7 @@ This trips up almost everyone, so `init` says it twice and so will we.
 
 **Restart your dev server.** The Vite plugin is new; the running process doesn't have it.
 
-**Restart your agent.** Claude Code, or reload the window in Cursor, or hit Start in `.vscode/mcp.json` in VS Code. Your agent read its server list at startup, before Reticle existed, and no slash command re-reads it — `/mcp` manages servers already loaded, so it cannot pick up a new one. This is a once-per-machine annoyance: Reticle registers globally, so every later project starts with the tools already there.
+**Restart your agent.** Claude Code, or reload the window in Cursor, or hit Start in `.vscode/mcp.json` in VS Code. Your agent read its server list at startup, before Reticle existed, and no slash command re-reads it. `/mcp` manages servers already loaded, so it cannot pick up a new one. This is a once-per-machine annoyance: Reticle registers globally, so every later project starts with the tools already there.
 
 ## Confirm it worked
 
@@ -170,7 +170,7 @@ This trips up almost everyone, so `init` says it twice and so will we.
 npx reticle status
 ```
 
-It confirms the app connected, or tells you exactly why it hasn't. A session in the list is the install actually finished — not a green tick, a connected app.
+It confirms the app connected, or tells you exactly why it hasn't. A session in the list is the install actually finished. Not a green tick. A connected app.
 
 <Card title="Something marked ⚠?" icon="screwdriver-wrench" href="/install-manual">
   The manual install covers every step `init` can't automate, per agent and per framework.

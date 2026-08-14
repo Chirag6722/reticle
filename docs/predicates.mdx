@@ -1,6 +1,6 @@
 ---
 title: Predicate reference
-description: The grammar for declaring what should be true — every kind, every field, and which ones actually prove something.
+description: The grammar for declaring what should be true. Every kind, every field, and which ones actually prove something.
 icon: filter
 ---
 
@@ -45,7 +45,7 @@ Take the advice. `element` and `text` are convenient and weak; `signal`, `state`
 
 `query` accepts `role`, `name`, `text`, `label`, `placeholder`, `testid`, `alt`, `scope`. `state` is one of `visible`, `hidden`, `enabled`, `disabled`, `checked`, `expanded`, `focused`, `present`.
 
-Add `"absent": true` to assert something is **gone** — the predicate for a removal, a dismissed toast, or a regression check.
+Add `"absent": true` to assert something is **gone**. The predicate for a removal, a dismissed toast, or a regression check.
 
 ### text
 
@@ -88,7 +88,7 @@ The one that catches the expensive bug:
 { "kind": "console", "level": "error", "absent": true }
 ```
 
-"The flow completed and logged nothing." Worth attaching to most actions — plenty of features work while quietly throwing.
+"The flow completed and logged nothing." Worth attaching to most actions. Plenty of features work while quietly throwing.
 
 ### signal
 
@@ -116,7 +116,7 @@ Walks a dot-path, with numeric array indices. `equals` takes a literal, or an op
 
 Omit `equals` entirely to assert presence.
 
-This is the predicate that catches a UI-versus-store desync — a deploy that only _looks_ shipped — deterministically, in one call, with no model involved. On a miss it names the real store value and the keys that were available, so a failure is legible rather than a blind "no".
+This is the predicate that catches a UI-versus-store desync. A deploy that only _looks_ shipped. Deterministically, in one call, with no model involved. On a miss it names the real store value and the keys that were available, so a failure is legible rather than a blind "no".
 
 ### animation
 
@@ -149,7 +149,7 @@ This is the predicate that catches a UI-versus-store desync — a deploy that on
 | `timeout_ms` | `assert`, `wait_for`, `act_and_wait` | Wait up to N ms for it to become true |
 | `since` | `net` and `console` leaves, and the call itself | Only consider events after this cursor |
 
-The `since` cursor comes from a prior `reticle_act` response. Use it whenever you are asserting something an action was supposed to cause — without it, an assertion can pass on an event from two clicks ago.
+The `since` cursor comes from a prior `reticle_act` response. Use it whenever you are asserting something an action was supposed to cause. Without it, an assertion can pass on an event from two clicks ago.
 
 <Card title="Where predicates get used" icon="circle-check" href="/tools-act-and-wait">
   Naming the consequence before the action is the whole point.

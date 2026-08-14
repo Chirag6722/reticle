@@ -1,13 +1,13 @@
 ---
 title: Packages
-description: Every Reticle package — what it does, why it exists, when you actually need it, and what it depends on.
+description: Every Reticle package. What it does, why it exists, when you actually need it, and what it depends on.
 icon: cubes
 ---
 
 Reticle is eleven packages, and most people install two. This page exists so you can tell which two, and so that the ones you skip stop looking mysterious.
 
 <Note>
-  Ten npm packages ship together at the same version — all at **2.7.0**, verified against the
+  Ten npm packages ship together at the same version, all at **2.7.0**, verified against the
   registry. The Rust crate is versioned **independently** and is currently **0.1.0**. That is
   deliberate, not drift.
 </Note>
@@ -16,7 +16,7 @@ Reticle is eleven packages, and most people install two. This page exists so you
 
 <CardGroup cols={2}>
   <Card title="A React app on Vite" icon="bolt">
-    `@reticlehq/react` + `@reticlehq/vite-plugin`. That's it — two dev dependencies.
+    `@reticlehq/react` + `@reticlehq/vite-plugin`. That's it, two dev dependencies.
   </Card>
   <Card title="A React app on Next.js" icon="n">
     `@reticlehq/react` + `@reticlehq/next`. Keeps SWC; no Babel migration.
@@ -29,7 +29,7 @@ Reticle is eleven packages, and most people install two. This page exists so you
   </Card>
 </CardGroup>
 
-You never install `@reticlehq/server` — your agent runs it with `npx`.
+You never install `@reticlehq/server`. Your agent runs it with `npx`.
 
 ## The architecture in one rule
 
@@ -48,9 +48,9 @@ Those rules are why the browser SDK cannot accidentally pull in a filesystem cal
 
 ## @reticlehq/core
 
-**The wire contract.** Every constant and zod schema that crosses a boundary — browser to bridge, bridge to agent — is defined here.
+**The wire contract.** Every constant and zod schema that crosses a boundary. Browser to bridge, bridge to agent, is defined here.
 
-**Why it exists:** without one shared definition, the browser and the server drift. One renames a field, the other keeps reading the old one, and the failure is silent — a verdict that quietly stops carrying evidence. Core makes that a type error instead.
+**Why it exists:** without one shared definition, the browser and the server drift. One renames a field, the other keeps reading the old one, and the failure is silent. A verdict that quietly stops carrying evidence. Core makes that a type error instead.
 
 **Depends on:** `zod`, and nothing else. That is the whole point; it sits at the bottom of the graph so everything can depend on it without cycles.
 
@@ -69,7 +69,7 @@ Those rules are why the browser SDK cannot accidentally pull in a filesystem cal
 
 **Why it exists:** this is the part that makes Reticle different from a browser-automation tool. Because it runs _inside_ the app rather than driving it from outside, it can see a state mutation and a fired signal, not just a rendered pixel.
 
-**Depends on:** `@reticlehq/core`, `@testing-library/dom` — the latter is why [`reticle_query`](/tools-query) speaks role, label and testid rather than CSS selectors.
+**Depends on:** `@reticlehq/core`, `@testing-library/dom`. The latter is why [`reticle_query`](/tools-query) speaks role, label and testid rather than CSS selectors.
 
 **Install it directly when** you are not on React, or you want `connect()` under your own control:
 
@@ -98,7 +98,7 @@ npx @reticlehq/server mcp
 
 ## @reticlehq/react
 
-**The kit most React users install.** It re-exports the browser sensor — so one install gives you both `reticle` and `registerCapabilities` — and maps a DOM node to its React component and source file through the fiber tree.
+**The kit most React users install.** It re-exports the browser sensor. So one install gives you both `reticle` and `registerCapabilities`. And maps a DOM node to its React component and source file through the fiber tree.
 
 **Why it exists:** this is the package that turns "the button is broken" into `src/components/Login.tsx:81`. Finding a bug is half the job. Reticle's answer to the other half lives here.
 
@@ -133,7 +133,7 @@ export default defineConfig({ plugins: [reticle(), react()] });
 
 **Depends on:** nothing. **Peer:** `@babel/core`.
 
-**Do you install it?** Only directly if you are wiring Babel yourself — the Vite and Next packages both pull it in.
+**Do you install it?** Only directly if you are wiring Babel yourself. The Vite and Next packages both pull it in.
 
 ---
 
@@ -153,7 +153,7 @@ module.exports = withReticle({
 ```
 
 <Note>
-  This one is CommonJS on purpose — `next.config.js` is loaded by Node before any ESM transform, so
+  This one is CommonJS on purpose. `next.config.js` is loaded by Node before any ESM transform, so
   an ESM-only helper would fail at the least helpful moment.
 </Note>
 
@@ -163,7 +163,7 @@ module.exports = withReticle({
 
 **The spec runner for CI.** `reticleTest` registers declarative specs and runs them against Reticle's tools directly, with no MCP or stdio in the loop.
 
-**Why it exists:** driving interactively is reconnaissance. At some point you want the same checks to run on every pull request without an agent — and without paying model tokens to re-derive them.
+**Why it exists:** driving interactively is reconnaissance. At some point you want the same checks to run on every pull request without an agent. And without paying model tokens to re-derive them.
 
 **Depends on:** `@reticlehq/core`, `@reticlehq/server`. **Peer:** `vitest`.
 
@@ -177,7 +177,7 @@ module.exports = withReticle({
 
 **One rule: state changed, so a signal must fire.**
 
-**Why it exists:** signals are the strongest evidence Reticle can use, and they rot the way all conventions rot — someone adds a mutation, forgets the signal, and every verdict for that flow quietly drops a grade. Nothing breaks. The tests still pass. The evidence just gets weaker.
+**Why it exists:** signals are the strongest evidence Reticle can use, and they rot the way all conventions rot. Someone adds a mutation, forgets the signal, and every verdict for that flow quietly drops a grade. Nothing breaks. The tests still pass. The evidence just gets weaker.
 
 A lint rule makes the signal layer self-enforcing, which is the only way a convention survives contact with a deadline.
 
@@ -189,7 +189,7 @@ A lint rule makes the signal layer self-enforcing, which is the only way a conve
 
 **Reaches the two places the renderer cannot.**
 
-**Why it exists:** in Electron, the interesting failures often happen across the IPC boundary — the renderer asks the main process for something and the main process quietly fails. The renderer-side SDK cannot see that. This package makes main-process IPC observable and the window screenshottable.
+**Why it exists:** in Electron, the interesting failures often happen across the IPC boundary. The renderer asks the main process for something and the main process quietly fails. The renderer-side SDK cannot see that. This package makes main-process IPC observable and the window screenshottable.
 
 **Depends on:** `@reticlehq/core`. **Peer:** `electron`.
 
@@ -197,7 +197,7 @@ A lint rule makes the signal layer self-enforcing, which is the only way a conve
 
 ## reticle-tauri
 
-**The Rust crate**, on crates.io, currently **0.1.0** — versioned independently of the npm packages.
+**The Rust crate**, on crates.io, currently **0.1.0**. Versioned independently of the npm packages.
 
 **Why it exists:** Tauri IPC observation needs nothing on the Rust side; an `invoke('load_todos')` already reaches Reticle as `ipc://load_todos`. You only need this crate for screenshots and headless mode.
 

@@ -10,7 +10,7 @@ icon: masks-theater
 
 Playwright MCP drives a browser **from the outside**. Reticle runs **inside** your app.
 
-That single architectural choice explains every difference below. An outside-in tool can go anywhere and see anything rendered. An inside-out tool needs to be installed, and in exchange it can read things that were never rendered at all — application state, emitted signals, the exact requests that fired.
+That single architectural choice explains every difference below. An outside-in tool can go anywhere and see anything rendered. An inside-out tool needs to be installed, and in exchange it can read things that were never rendered at all. Application state, emitted signals, the exact requests that fired.
 
 ## Measured, on the same app at the same moment
 
@@ -48,24 +48,24 @@ This is not a courtesy section. There are real cases where Playwright is the cor
 - **Assert on the app's own success signal.** When your app emits `auth:granted`, Reticle can require that exact signal. Playwright can check that a DOM element appeared, which a mock also does.
 - **Read application state.** `stateDiffs` shows `auth` moving from `null` to a real user. A POST that returns `200` without touching state is caught here and nowhere else.
 - **Map a DOM node to source.** `src/components/Login.tsx:81`, via the React fiber tree. Playwright can tell you the selector; it cannot tell you the file.
-- **Grade its own evidence.** Every verdict reports `honesty.grade` — `presence`, `state` or `signal` — plus whether the capture was clean and complete.
+- **Grade its own evidence.** Every verdict reports `honesty.grade`: `presence`, `state` or `signal`. Plus whether the capture was clean and complete.
 - **Say "unknown".** Reticle distinguishes "did not happen" from "I could not tell". That third state is the difference between a check and a coin flip.
 
 ## The false-green case
 
 Here is the failure both tools face, and only one catches reliably.
 
-Your agent adds a "save" button. It calls an API. The API returns `200`. A row appears in the table. Reload the page and the row is gone — nothing was ever persisted.
+Your agent adds a "save" button. It calls an API. The API returns `200`. A row appears in the table. Reload the page and the row is gone, nothing was ever persisted.
 
 Playwright MCP sees the row appear. That is a pass by every DOM-based check you could write.
 
-Reticle sees `stateDiffs: []` — the store never changed — and fails the assertion, with the file and line of the button that lied.
+Reticle sees `stateDiffs: []`. The store never changed. And fails the assertion, with the file and line of the button that lied.
 
 ## Use both
 
 They compose cleanly, and the combination is better than either alone:
 
-- **Drive with Playwright** when you need a browser context it is better at — a third-party OAuth flow, a cross-browser check, a genuine pixel diff.
+- **Drive with Playwright** when you need a browser context it is better at. A third-party OAuth flow, a cross-browser check, a genuine pixel diff.
 - **Assert with Reticle** when the question is "did my app actually do the thing".
 
 Reticle also has a driven mode (`reticle drive`) that provides real CDP input and screenshots, so a lot of teams do not need both. Start with whichever matches the question you ask most often.

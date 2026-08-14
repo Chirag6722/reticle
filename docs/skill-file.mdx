@@ -1,10 +1,10 @@
 ---
 title: The SKILL file
-description: One URL you paste into any coding agent to teach it Reticle — how it works, what it contains, and when you need it at all.
+description: One URL you paste into any coding agent to teach it Reticle. How it works, what it contains, and when you need it at all.
 icon: graduation-cap
 ---
 
-`SKILL.md` is a single document you hand to a coding agent. It teaches the agent to install Reticle, wire it into your app, and then drive a verification loop properly — without you explaining any of it.
+`SKILL.md` is a single document you hand to a coding agent. It teaches the agent to install Reticle, wire it into your app, and then drive a verification loop properly. Without you explaining any of it.
 
 ```
 https://raw.githubusercontent.com/reticlehq/reticle/main/SKILL.md
@@ -39,14 +39,14 @@ One document, two jobs, no flag for you to remember. The second time you invoke 
 | Save the skill | Store it as `/reticle` so the loop is one word away from then on |
 | Run `init` | Without asking you questions it can answer itself |
 | Manual fallbacks | Per-agent MCP config, per-framework SDK wiring, for anything `init` marked `⚠` |
-| Validate | Confirm a session actually connected — not that a checklist went green |
+| Validate | Confirm a session actually connected. Not that a checklist went green |
 | Prove it | Drive one real flow while you watch, so the install ends in evidence |
 
 That last row is the one that matters. Plenty of installs "succeed" and then nothing works. The skill does not consider itself finished until a real flow has produced a real verdict.
 
 ## What Test mode actually does
 
-Five phases: connect, orient, decide what to test, run the tests, report. The reporting format is specified, which matters more than it sounds — an agent left to summarise freely will summarise optimistically.
+Five phases: connect, orient, decide what to test, run the tests, report. The reporting format is specified, which matters more than it sounds. An agent left to summarise freely will summarise optimistically.
 
 The rules it operates under are the same ones these docs keep repeating:
 
@@ -56,7 +56,7 @@ The rules it operates under are the same ones these docs keep repeating:
 
 ## Feedback is the first section, on purpose
 
-Before setup, before anything, the document tells the agent that reporting problems is part of the job — and that this applies **during** setup, which is where Reticle is most likely to break and least likely to hear about it.
+Before setup, before anything, the document tells the agent that reporting problems is part of the job. And that this applies **during** setup, which is where Reticle is most likely to break and least likely to hear about it.
 
 It even covers the case where nothing is installed yet:
 
@@ -84,7 +84,7 @@ Handy in a sandbox with no outbound network, which is an increasingly common pla
 
 ## Should you read it?
 
-Probably not, unless you are curious. It is roughly 60 KB and written for an agent, which means it is exhaustive in the way a runbook is exhaustive — every fallback, every framework, every failure mode spelled out rather than summarised.
+Probably not, unless you are curious. It is roughly 60 KB and written for an agent, which means it is exhaustive in the way a runbook is exhaustive. Every fallback, every framework, every failure mode spelled out rather than summarised.
 
 If you want the human version of the same material, you are already in it:
 

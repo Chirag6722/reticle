@@ -16,21 +16,21 @@ Reticle advertises 18 tools and ships 48. These two meta-tools are how your agen
 
 Returns every tool with a one-line summary. A sample of what lives in the cold tail:
 
-| Tool | What it does |
-| --- | --- |
-| `reticle_capabilities` | The app's advertised testable surface — testids, signals, stores, flows |
-| `reticle_flow_verify` | Replay every saved flow, return one consolidated suite verdict |
-| `reticle_screenshot` | Pixel screenshot of the driven page, saved as a visual baseline |
-| `reticle_visual_diff` | Perceptually diff the live page against that baseline |
-| `reticle_network_mock` | Force a 500, go offline, or delay a response |
-| `reticle_viewport` | Pin the viewport so screenshots are reproducible across machines |
-| `reticle_crawl` | Click every reachable control and report anomalies, with no script |
-| `reticle_clock` | Freeze time or fast-forward timers — toasts, debounces, auto-dismiss |
-| `reticle_storage` | localStorage, sessionStorage and readable cookies |
-| `reticle_coverage` | Which controls you have driven this session, and which you have not |
-| `reticle_verify_change` | Give it the files you edited; it replays the flows that cover them |
-| `reticle_reconcile` | Compare what the API returned against what the page actually renders |
-| `reticle_scroll_to` | Find a row in a virtualised list that has not rendered yet |
+| Tool                    | What it does                                                           |
+| ----------------------- | ---------------------------------------------------------------------- |
+| `reticle_capabilities`  | The app's advertised testable surface, testids, signals, stores, flows |
+| `reticle_flow_verify`   | Replay every saved flow, return one consolidated suite verdict         |
+| `reticle_screenshot`    | Pixel screenshot of the driven page, saved as a visual baseline        |
+| `reticle_visual_diff`   | Perceptually diff the live page against that baseline                  |
+| `reticle_network_mock`  | Force a 500, go offline, or delay a response                           |
+| `reticle_viewport`      | Pin the viewport so screenshots are reproducible across machines       |
+| `reticle_crawl`         | Click every reachable control and report anomalies, with no script     |
+| `reticle_clock`         | Freeze time or fast-forward timers, toasts, debounces, auto-dismiss    |
+| `reticle_storage`       | localStorage, sessionStorage and readable cookies                      |
+| `reticle_coverage`      | Which controls you have driven this session, and which you have not    |
+| `reticle_verify_change` | Give it the files you edited; it replays the flows that cover them     |
+| `reticle_reconcile`     | Compare what the API returned against what the page actually renders   |
+| `reticle_scroll_to`     | Find a row in a virtualised list that has not rendered yet             |
 
 The response also tells you which surface is active:
 
@@ -59,7 +59,7 @@ Summaries are enough to choose a tool, not to call one. Load the full parameters
 { "names": ["reticle_network_mock", "reticle_clock"] }
 ```
 
-This is the point of the design — schemas arrive when they are needed, rather than on every turn forever.
+This is the point of the design. Schemas arrive when they are needed, rather than on every turn forever.
 
 ## Invoking
 
@@ -108,7 +108,7 @@ Real response from an instrumented app, trimmed:
 
 That `reticle_capabilities` output is the single best first call on an unfamiliar app. It is the app telling you what it considers testable: the elements worth driving, the signals that mean success, and the flows somebody already thought were important.
 
-Compared with snapshotting the page and guessing from element names, it is both cheaper and more truthful — `auth:granted` is what the app means by "logged in", and no amount of looking at the DOM will tell you that.
+Compared with snapshotting the page and guessing from element names, it is both cheaper and more truthful. `auth:granted` is what the app means by "logged in", and no amount of looking at the DOM will tell you that.
 
 ```json
 { "tool": "reticle_network_mock", "args": { "urlContains": "/api/deploys", "status": 500 } }
@@ -118,5 +118,5 @@ Then drive the flow and see whether your error state actually works. Most do not
 
 <Note>
   `reticle_run` returns whatever the invoked tool returns, unchanged. It is a transport, not a
-  wrapper — so a tool that produces a verdict still produces one through `run`.
+  wrapper. So a tool that produces a verdict still produces one through `run`.
 </Note>

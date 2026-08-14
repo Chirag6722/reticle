@@ -1,6 +1,6 @@
 ---
 title: reticle_state
-description: Read live framework state directly from the running app — what it believes, not just what it rendered — without the app broadcasting anything.
+description: Read live framework state directly from the running app. What it believes, not just what it rendered, without the app broadcasting anything.
 icon: database
 ---
 
@@ -29,7 +29,7 @@ Real response:
 }
 ```
 
-`depth: 2` collapsed the contents to size markers — `{…30 keys}` rather than thirty keys of JSON. On a large store this is the difference between a cheap look and a very expensive one.
+`depth: 2` collapsed the contents to size markers: `{…30 keys}` rather than thirty keys of JSON. On a large store this is the difference between a cheap look and a very expensive one.
 
 ## Arguments
 
@@ -58,7 +58,7 @@ registerCapabilities({
 
 <Warning>
 Pass the **store**, not `() => store.getState()`. The store form wires `subscribe` too, so every
-mutation emits a state diff. The getter form is read-only and silently produces empty diffs — which
+mutation emits a state diff. The getter form is read-only and silently produces empty diffs, which
 looks like "nothing changed" and is really "I was never watching".
 </Warning>
 

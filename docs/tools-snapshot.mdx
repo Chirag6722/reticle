@@ -1,6 +1,6 @@
 ---
 title: reticle_snapshot
-description: A semantic accessibility snapshot of the page or a subtree, in three sizes — from the full tree down to a 25-token route check.
+description: A semantic accessibility snapshot of the page or a subtree, in three sizes. From the full tree down to a 25-token route check.
 icon: camera
 ---
 
@@ -14,7 +14,7 @@ icon: camera
 | `interactive` | Only clickable and focusable elements | **65 tokens**         |
 | `full`        | Every element                         | Depends on the page   |
 
-### `status` — the cheapest possible check
+### `status`. the cheapest possible check
 
 ```json
 { "mode": "status" }
@@ -31,7 +31,7 @@ icon: camera
 
 Ninety-eight bytes to answer "where am I?". Use it after a navigation instead of re-reading the page.
 
-### `interactive` — the default working view
+### `interactive`. the default working view
 
 ```json
 { "mode": "interactive" }
@@ -72,4 +72,4 @@ After the first snapshot, ask only for the delta. On a page where one row appear
 
 ## Refs change across documents
 
-Refs are stable while the element is in the DOM. A full navigation builds a new document, so refs are re-issued — the same "Sign in" button was `e5` before a navigation and `e103` after. Snapshot after navigating; don't reuse refs across one.
+Refs are stable while the element is in the DOM. A full navigation builds a new document, so refs are re-issued. The same "Sign in" button was `e5` before a navigation and `e103` after. Snapshot after navigating; don't reuse refs across one.

@@ -1,6 +1,6 @@
 ---
 title: reticle_console
-description: The console log, filtered by level — and an empty result that tells you it is a real reading rather than a missing one.
+description: The console log, filtered by level, and an empty result that tells you it is a real reading rather than a missing one.
 icon: terminal
 ---
 
@@ -28,8 +28,8 @@ Real response from a page with a clean console:
 
 An empty array is ambiguous in almost every tool that returns one. Did nothing happen, or did the observation not run? Reticle answers both:
 
-- **`observed: true`** with that `note` — the observation ran and genuinely found nothing. You may treat a clean console as a fact.
-- **`buffer.dropped: 571`** — older events were evicted. If you are asking about something from a while ago, the honest answer is "not in what I still have", not "it didn't happen".
+- **`observed: true`** with that `note`. The observation ran and genuinely found nothing. You may treat a clean console as a fact.
+- **`buffer.dropped: 571`**, older events were evicted. If you are asking about something from a while ago, the honest answer is "not in what I still have", not "it didn't happen".
 
 Read both fields together. `observed: true` with a large `dropped` count means _recently_ clean, which is usually what you wanted but is not the same as _always_ clean.
 

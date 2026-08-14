@@ -8,7 +8,9 @@ Your agent says it works. Reticle checks.
 
 AI-written code has a specific failure mode: it looks right and silently doesn't work. The POST returns 200 and nothing persists. The button is wired to a handler that never fires. One click sends two requests. A screenshot shows all of this as a perfectly nice page.
 
-Reticle reads the program from **inside** your running app — network, state, console, routing, framework internals — and answers the only question that matters: did the change actually work? On React it also tells your agent which file to open.
+Reticle reads the program from **inside** your running app. Network, state, console, routing, framework internals.
+
+It answers the only question that matters: did the change actually work? On React it also tells your agent which file to open.
 
 <CardGroup cols={2}>
   <Card title="Quickstart" icon="rocket" href="/quickstart">
@@ -33,7 +35,7 @@ Reticle reads the program from **inside** your running app — network, state, c
 
 ## What it looks like
 
-Your agent names the expected consequence _before_ it acts. That ordering is the whole trick — it is the difference between a check and a rationalisation.
+Your agent names the expected consequence _before_ it acts. That ordering is the whole trick. It is the difference between a check and a rationalisation.
 
 ```json
 { "ref": "e4", "action": "click", "until": { "network": "POST /api/todos" } }

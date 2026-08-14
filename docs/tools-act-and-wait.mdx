@@ -60,18 +60,18 @@ Real response, trimmed:
 
 `until` takes `{ kind, ...fields }`. The kinds:
 
-| Kind                      | Asserts                                                         |
-| ------------------------- | --------------------------------------------------------------- |
-| `signal`                  | The app fired a named signal — the strongest evidence available |
-| `state`                   | A store path reached a value                                    |
-| `net`                     | A request matched; `count` asserts an **exact** number          |
-| `route`                   | The route **changed**                                           |
-| `element`                 | An element appeared; `absent: true` asserts it went away        |
-| `text`                    | Text appeared or, with `absent`, disappeared                    |
-| `console`                 | Something logged; `absent: true` asserts a clean console        |
-| `animation`               | An animation ran or finished                                    |
-| `settled`                 | The page went quiet                                             |
-| `allOf` / `anyOf` / `not` | Combine the above                                               |
+| Kind                      | Asserts                                                        |
+| ------------------------- | -------------------------------------------------------------- |
+| `signal`                  | The app fired a named signal, the strongest evidence available |
+| `state`                   | A store path reached a value                                   |
+| `net`                     | A request matched; `count` asserts an **exact** number         |
+| `route`                   | The route **changed**                                          |
+| `element`                 | An element appeared; `absent: true` asserts it went away       |
+| `text`                    | Text appeared or, with `absent`, disappeared                   |
+| `console`                 | Something logged; `absent: true` asserts a clean console       |
+| `animation`               | An animation ran or finished                                   |
+| `settled`                 | The page went quiet                                            |
+| `allOf` / `anyOf` / `not` | Combine the above                                              |
 
 ### Predicates that catch real bugs
 
@@ -91,7 +91,7 @@ The action completed **and** logged nothing. "It worked but threw a warning" sto
 { "until": { "kind": "signal", "name": "deploy:created" } }
 ```
 
-The app itself declared success. This is the highest grade of evidence, and it requires [instrumenting your app](/instrumentation) — which is the main reason to bother.
+The app itself declared success. This is the highest grade of evidence, and it requires [instrumenting your app](/instrumentation). Which is the main reason to bother.
 
 ## Reading `verified`
 
@@ -109,7 +109,7 @@ The app itself declared success. This is the highest grade of evidence, and it r
 
 ## The `honesty` block
 
-`grade` is how strong the evidence was — a fired signal outranks an element appearing. `coverage.partial: true` means Reticle did not observe the whole window. `integrity.clean: false` means something interfered with the capture and the verdict deserves less trust.
+`grade` is how strong the evidence was. A fired signal outranks an element appearing. `coverage.partial: true` means Reticle did not observe the whole window. `integrity.clean: false` means something interfered with the capture and the verdict deserves less trust.
 
 A verification tool that cannot describe the quality of its own evidence is asking you to take its word for it, which is precisely the problem we started with.
 

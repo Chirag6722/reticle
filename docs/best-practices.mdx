@@ -1,6 +1,6 @@
 ---
 title: Best practices
-description: The habits that make a verdict worth trusting — and the specific mistakes that produce a confident, wrong pass.
+description: The habits that make a verdict worth trusting, and the specific mistakes that produce a confident, wrong pass.
 icon: star
 ---
 
@@ -20,7 +20,7 @@ Not this:
 
 ...followed by looking around for something that seems fine.
 
-An agent that acts first and then decides what counts as success will always find something that counts. Stating the expectation up front is the entire difference between a check and a rationalisation, and it costs no extra calls — [`reticle_act_and_wait`](/tools-act-and-wait) does both in one hop.
+An agent that acts first and then decides what counts as success will always find something that counts. Stating the expectation up front is the entire difference between a check and a rationalisation, and it costs no extra calls: [`reticle_act_and_wait`](/tools-act-and-wait) does both in one hop.
 
 ## A drive that ends on `reticle_act` proved nothing
 
@@ -40,13 +40,13 @@ This is not pedantry. Here is a real `act_sequence` response:
 
 `verified: "unknown"` is not a pass, not a failure, and not a rounding error. It means Reticle drove the app and could not tell.
 
-We hit one writing the instrumentation page: a login that genuinely succeeded — signal fired, state changed, `verdict.pass: true` — and still came back `unknown`, because the page never settled inside the observation window.
+We hit one writing the instrumentation page: a login that genuinely succeeded, signal fired, state changed, `verdict.pass: true`. And still came back `unknown`, because the page never settled inside the observation window.
 
 ```json
 { "verified": "unknown", "verifiedReason": "unsettled", "verdict": { "pass": true } }
 ```
 
-Report it as unknown. If you believe it is wrong, [say so](/tools-session-and-feedback) — Reticle calls an unknown verdict its own defect, and the response literally invites the report.
+Report it as unknown. If you believe it is wrong, [say so](/tools-session-and-feedback). Reticle calls an unknown verdict its own defect, and the response literally invites the report.
 
 ## Focus the tab
 
@@ -74,11 +74,11 @@ Believe it. Pass `refuseWhenThrottled: true` if you would rather fail loudly tha
 { "until": { "kind": "net", "method": "POST", "count": 1 } }
 ```
 
-"A POST fired" passes when two fired. Double-submit is one of the most expensive bugs on this list — it charges customers twice — and it is completely invisible on screen. The exact count is free to ask for.
+"A POST fired" passes when two fired. Double-submit is one of the most expensive bugs on this list. It charges customers twice. And it is completely invisible on screen. The exact count is free to ask for.
 
 ## Scope assertions with `since`
 
-Without a cursor, an assertion evaluates against the recent buffer, which may contain events from before your action. That passes for the wrong reason: the request you asserted did fire — two clicks ago.
+Without a cursor, an assertion evaluates against the recent buffer, which may contain events from before your action. That passes for the wrong reason: the request you asserted did fire, two clicks ago.
 
 Every `act` response returns a `since`. Use it.
 
@@ -94,13 +94,13 @@ Every verdict reports `honesty.grade`. Aim for `signal`.
 
 Getting from `presence` to `signal` is roughly ten minutes of [instrumentation](/instrumentation) per flow, and it is the highest-leverage work available.
 
-**Emit failure signals too.** With `auth:denied` defined, a failed login reports `signals seen in this window: auth:denied` instead of just "never fired" — the app names its own outcome and the diagnosis lands in one response.
+**Emit failure signals too.** With `auth:denied` defined, a failed login reports `signals seen in this window: auth:denied` instead of just "never fired". The app names its own outcome and the diagnosis lands in one response.
 
 ## A signal-grade pass can still miss the bug
 
 This is the subtlest entry on the page, and it comes from a controlled A/B run against the same app minutes apart.
 
-Same login, same predicate — `until: { kind: "signal", name: "auth:granted" }` — run twice. Once against a healthy build, once against a build with a persistence bug injected, where the auth token is never written to storage.
+Same login, same predicate, `until: { kind: "signal", name: "auth:granted" }`, run twice. Once against a healthy build, once against a build with a persistence bug injected, where the auth token is never written to storage.
 
 **Healthy:**
 
@@ -130,7 +130,7 @@ Same login, same predicate — `until: { kind: "signal", name: "auth:granted" }`
 }
 ```
 
-Identical verdict. Identical grade. The signal fired in both, because the login genuinely did succeed — in memory. Reload the page and the second one is logged out.
+Identical verdict. Identical grade. The signal fired in both, because the login genuinely did succeed, in memory. Reload the page and the second one is logged out.
 
 The only difference in the entire response is `storageKeysChanged`, and the assertion never asked about it.
 
@@ -153,7 +153,7 @@ If persistence is part of what "it worked" means, assert it:
 }
 ```
 
-Reticle put the evidence in the response either way — `storageKeysChanged: []` was right there. Read the `summary` block, not just `verified`.
+Reticle put the evidence in the response either way. `storageKeysChanged: []` was right there. Read the `summary` block, not just `verified`.
 
 ## Never weaken a check to make it pass
 
@@ -185,11 +185,11 @@ Sessions accumulate. Four stale ones pointing at dev servers you restarted an ho
 { "action": "yield", "mode": "waiting" }
 ```
 
-`yield` when you are pausing, `end` when you are done. Both revive on your next action, so neither is destructive — the difference is what the human watching the panel is told. The panel reads "live" until you say otherwise.
+`yield` when you are pausing, `end` when you are done. Both revive on your next action, so neither is destructive. The difference is what the human watching the panel is told. The panel reads "live" until you say otherwise.
 
 ## Confirm a navigation landed
 
-`reticle_navigate` returns `confirmed: false` by design — a navigation destroys the document the SDK lives in, so it can only report dispatch. Check [`reticle_sessions`](/tools-sessions) for a session at the new URL before acting, and re-snapshot: refs do not survive a new document.
+`reticle_navigate` returns `confirmed: false` by design. A navigation destroys the document the SDK lives in, so it can only report dispatch. Check [`reticle_sessions`](/tools-sessions) for a session at the new URL before acting, and re-snapshot: refs do not survive a new document.
 
 ## Start with what the app says about itself
 
@@ -197,7 +197,7 @@ Sessions accumulate. Four stale ones pointing at dev servers you restarted an ho
 { "tool": "reticle_capabilities" }
 ```
 
-On an unfamiliar app this beats snapshotting and guessing. It returns the testids, signals, stores and named flows the app advertises — what the team considered testable, rather than what you inferred from element names.
+On an unfamiliar app this beats snapshotting and guessing. It returns the testids, signals, stores and named flows the app advertises. What the team considered testable, rather than what you inferred from element names.
 
 <CardGroup cols={2}>
   <Card title="Instrument your app" icon="wrench" href="/instrumentation">

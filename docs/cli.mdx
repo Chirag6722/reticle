@@ -1,6 +1,6 @@
 ---
 title: CLI reference
-description: Every reticle command — what it does, what it prints, and what it exits with. Captured from real runs.
+description: Every reticle command. What it does, what it prints, and what it exits with. Captured from real runs.
 icon: terminal
 ---
 
@@ -47,7 +47,7 @@ reticle doctor
   tracing      RETICLE_TRACE=1 on the daemon for per-stage timings in that log
 ```
 
-Exits `0`. That parenthetical about the bridge port is doing a lot of work — mixing it up with the dev-server port is the most common setup failure there is.
+Exits `0`. That parenthetical about the bridge port is doing a lot of work. Mixing it up with the dev-server port is the most common setup failure there is.
 
 ### `reticle status`
 
@@ -71,7 +71,7 @@ Whether the daemon is up and which apps have connected.
 }
 ```
 
-Exits `0`. A session in the list is the install genuinely finished — not a tick in a checklist, a connected app.
+Exits `0`. A session in the list is the install genuinely finished. Not a tick in a checklist, a connected app.
 
 ### `reticle telemetry [status|enable|disable]`
 
@@ -94,13 +94,13 @@ policy       https://github.com/reticlehq/reticle/blob/main/docs/telemetry.md
 | --- | --- |
 | `reticle serve` | Start the daemon in the foreground. `--drive <url>`, `--headless`, `--http` |
 | `reticle stop` | Stop it |
-| `reticle open [url]` | Show the app — reuse the connected tab, or open one |
+| `reticle open [url]` | Show the app. Reuse the connected tab, or open one |
 | `reticle drive <url>` | Foreground mode, for debugging |
 | `reticle mcp` | The MCP stdio proxy. Auto-starts the daemon if needed. This is what your agent runs |
 
 <Warning>
   `reticle drive` will fail with an `EADDRINUSE` stack trace if a daemon is already listening on the
-  port — which is the normal state once your agent has started one. `reticle mcp` reuses a running
+  port. Which is the normal state once your agent has started one. `reticle mcp` reuses a running
   daemon; `drive` currently does not.
 </Warning>
 
@@ -137,7 +137,7 @@ npx reticle affected --since HEAD~1
   `unknownProvenance` lists flows Reticle could not map to source files, so it includes them to be
   safe. A flow recorded before provenance tracking existed has no file list, and Reticle would
   rather re-run it than skip it and miss a regression. A large `unknownProvenance` means your flows
-  predate the feature — re-record the ones you care about to get precise selection.
+  predate the feature. Re-record the ones you care about to get precise selection.
 </Note>
 
 ### `reticle gate`
@@ -158,7 +158,7 @@ npx reticle gate --since HEAD~1
 }
 ```
 
-Measured exit code: **`1`**. That run genuinely failed — 4 of 47 flows covered — which is what a gate is supposed to do when you have not verified anything yet.
+Measured exit code: **`1`**. That run genuinely failed, with 4 of 47 flows covered, which is what a gate is supposed to do when you have not verified anything yet.
 
 `quarantined` flows are excluded from the pass/fail decision. Quarantine is for a flow that is known flaky and being fixed; it is not a place to hide failures, because the list is printed on every run.
 

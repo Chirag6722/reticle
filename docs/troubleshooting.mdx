@@ -1,6 +1,6 @@
 ---
 title: Troubleshooting
-description: Nothing connected, the click did nothing, the verdict says unknown — the failures people actually hit, and the diagnostic for each.
+description: Nothing connected, the click did nothing, the verdict says unknown. The failures people actually hit, and the diagnostic for each.
 icon: stethoscope
 ---
 
@@ -26,7 +26,7 @@ One command, the whole setup. If this is clean and things still fail, the proble
 
 ## "No browser session connected"
 
-By far the most common. Reticle's own diagnostic is unusually good here — it tells you whether the wiring was ever correct:
+By far the most common. Reticle's own diagnostic is unusually good here. It tells you whether the wiring was ever correct:
 
 ```json
 {
@@ -35,7 +35,7 @@ By far the most common. Reticle's own diagnostic is unusually good here — it t
 }
 ```
 
-Read the `why`. "One WAS connected earlier" means stop debugging your config — just reopen the tab.
+Read the `why`. "One WAS connected earlier" means stop debugging your config, just reopen the tab.
 
 If nothing ever connected:
 
@@ -77,7 +77,7 @@ A backgrounded browser tab has its timers suppressed. Synthetic pointer gestures
 
 Three fixes, in order of preference:
 
-1. **Drive a lease** — a context Reticle owns, never backgrounded:
+1. **Drive a lease**. A context Reticle owns, never backgrounded:
 
    ```json
    { "tool": "reticle_lease", "args": { "action": "acquire", "url": "http://localhost:4312/" } }
@@ -86,7 +86,7 @@ Three fixes, in order of preference:
    Release it when you finish: `{ "action": "release", "sessionId": "lease-…" }`.
 
 2. **Focus the tab.**
-3. **Fail loudly** instead of pretending — pass `refuseWhenThrottled: true` to your action.
+3. **Fail loudly** instead of pretending. Pass `refuseWhenThrottled: true` to your action.
 
 If the tab is fine, check `occluded` on the element. A click that lands on a modal overlay is the other half of "the button doesn't work":
 
@@ -107,7 +107,7 @@ This is Reticle protecting you, not failing. Re-query for a fresh ref.
 Better: use `reticle_act_and_wait { until }` for actions that change the page, so the next ref is taken after things settle.
 
 <Warning>
-  Refs never survive a full navigation. A new document means new refs — the same button was `e5`
+  Refs never survive a full navigation. A new document means new refs, the same button was `e5`
   before a navigation and `e103` after.
 </Warning>
 
@@ -117,7 +117,7 @@ Better: use `reticle_act_and_wait { until }` for actions that change the page, s
 
 The usual cause is a throttled tab: throttling suppresses the quiescence detection used to decide the page has settled, so even a successful action can come back unsettled. Drive a lease and try again.
 
-If it persists on an unthrottled context, that is worth reporting — Reticle's own response says so:
+If it persists on an unthrottled context, that is worth reporting. Reticle's own response says so:
 
 ```json
 "feedback_invite": "Reticle could not tell what happened here. If you expected otherwise, reticle_feedback — an unknown verdict is our defect, not yours"
@@ -137,7 +137,7 @@ Before concluding "no request fired", read the buffer note:
 
 - `reticle_snapshot { mode: "interactive" }` shows everything actionable.
 - Add a `data-testid` for a stable handle.
-- Narrow with `scope` — a CSS selector or a ref.
+- Narrow with `scope`. A CSS selector or a ref.
 
 ## Assertions are flaky on async UIs
 
@@ -150,12 +150,12 @@ Before concluding "no request fired", read the buffer note:
 
 <Warning>
 Pass the **store**, not `() => store.getState()`. The getter form is read-only and silently produces
-empty `stateDiffs` — which reads as "nothing changed" and means "I was never watching".
+empty `stateDiffs`. Which reads as "nothing changed" and means "I was never watching".
 </Warning>
 
 ## Source file is not resolving on React 19
 
-React 19 dropped `_debugSource`. Wire up `@reticlehq/babel-plugin` — or just use `@reticlehq/vite-plugin` or `@reticlehq/next`, which both include it. Without it you get component identity but no `file:line`.
+React 19 dropped `_debugSource`. Wire up `@reticlehq/babel-plugin`. Or just use `@reticlehq/vite-plugin` or `@reticlehq/next`, which both include it. Without it you get component identity but no `file:line`.
 
 ## `ERESOLVE` installing next to a prerelease
 

@@ -1,6 +1,6 @@
 ---
 title: reticle_act
-description: Perform an action without checking the result. Useful for setup steps, and dangerous as a final step, because ok means dispatched — not worked.
+description: Perform an action without checking the result. Useful for setup steps, and dangerous as a final step, because ok means dispatched, not worked.
 icon: hand-pointer
 ---
 
@@ -50,22 +50,22 @@ Real response:
 
 `click` · `dblclick` · `hover` · `focus` · `blur` · `fill` · `type` · `clear` · `select` · `check` · `uncheck` · `submit` · `press` · `upload` · `scrollIntoView` · `drag` · `webmcp`
 
-| Action           | Arguments                                                        |
-| ---------------- | ---------------------------------------------------------------- |
-| `fill`, `select` | `{ value }`                                                      |
-| `type`, `press`  | `{ text }` — for `press`, the key _name_, e.g. `Escape` or `Tab` |
-| `drag`           | `{ toRef }` — the ref to drop onto                               |
-| `upload`         | file arguments                                                   |
+| Action           | Arguments                                                       |
+| ---------------- | --------------------------------------------------------------- |
+| `fill`, `select` | `{ value }`                                                     |
+| `type`, `press`  | `{ text }`. For `press`, the key _name_, e.g. `Escape` or `Tab` |
+| `drag`           | `{ toRef }`. The ref to drop onto                               |
+| `upload`         | file arguments                                                  |
 
 ## Reading the effect block
 
 This is where `act` earns its place even though it proves nothing.
 
-- **`valueChanged: true`** — the field actually took the value. `false` on a `fill` usually means the input is controlled and rejected it, or it's readonly.
-- **`focusMoved: "null->e102"`** — focus went where you expected.
-- **`domMutatedWithin: 15`** — something re-rendered within 15ms. A `fill` that mutates nothing often means no handler is attached.
-- **`defaultPrevented`** — a handler called `preventDefault()`, which is why your form didn't submit.
-- **`occluded` / `occludedBy`** — the click landed on something else. This is the answer to at least half of all "the button doesn't work" reports.
+- **`valueChanged: true`**. The field actually took the value. `false` on a `fill` usually means the input is controlled and rejected it, or it's readonly.
+- **`focusMoved: "null->e102"`**, focus went where you expected.
+- **`domMutatedWithin: 15`**, something re-rendered within 15ms. A `fill` that mutates nothing often means no handler is attached.
+- **`defaultPrevented`**. A handler called `preventDefault()`, which is why your form didn't submit.
+- **`occluded` / `occludedBy`**. The click landed on something else. This is the answer to at least half of all "the button doesn't work" reports.
 
 ## `settled: false` is not a failure
 

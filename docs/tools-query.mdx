@@ -1,10 +1,10 @@
 ---
 title: reticle_query
-description: Find elements by Testing-Library semantics — role, text, label, placeholder, testid, alt, or React component — including inside open shadow roots.
+description: Find elements by Testing-Library semantics. Role, text, label, placeholder, testid, alt, or React component, including inside open shadow roots.
 icon: magnifying-glass
 ---
 
-`reticle_query` answers "where is the thing I mean?" without dumping the whole page into your context window. It queries the way a testing library does — by role, label, text, testid — so your agent binds to meaning rather than to DOM structure that a refactor will move.
+`reticle_query` answers "where is the thing I mean?" without dumping the whole page into your context window. It queries the way a testing library does. By role, label, text, testid. So your agent binds to meaning rather than to DOM structure that a refactor will move.
 
 ## Example
 
@@ -49,10 +49,10 @@ Seven buttons, each with a `ref` to act on and a source file to open, for 235 to
 | ------------ | -------------------------------------------------------------------------- |
 | `by`         | `role` · `text` · `label` · `placeholder` · `testid` · `alt` · `component` |
 | `value`      | The query value for that strategy                                          |
-| `name`       | Accessible-name filter — narrows a broad `role` query                      |
+| `name`       | Accessible-name filter. Narrows a broad `role` query                       |
 | `scope`      | CSS selector or ref, to search inside a subtree                            |
 | `limit`      | Cap the descriptors returned. Cuts tokens hard on broad queries            |
-| `count_only` | Return just `{ count }` — around 30x smaller                               |
+| `count_only` | Return just `{ count }`, around 30x smaller                                |
 | `attrs`      | Extra attributes per match, e.g. `['href']` to inventory links             |
 | `self`       | Return the `scope` element itself instead of searching inside it           |
 
@@ -68,13 +68,13 @@ Every argument also has a predicate spelling, so `{ "role": "button" }` works as
 
 ## Reading the response
 
-`ref` is the handle for every other tool — `act`, `inspect`, `state`. It stays valid until the element leaves the DOM, so you do not need to re-snapshot between actions on the same element.
+`ref` is the handle for every other tool: `act`, `inspect`, `state`. It stays valid until the element leaves the DOM, so you do not need to re-snapshot between actions on the same element.
 
-`source` appears when `@reticlehq/react` is installed. Note that all five sidebar buttons above report `Sidebar.tsx:41` — that is the line where the component renders them in a loop, which is exactly the line you want to edit.
+`source` appears when `@reticlehq/react` is installed. Note that all five sidebar buttons above report `Sidebar.tsx:41`. That is the line where the component renders them in a loop, which is exactly the line you want to edit.
 
 `truncated: true` with `total: 7` means `limit` cut the list, not that Reticle ran out of room.
 
-`states` distinguishes `present` from `visible` from `enabled`. An element can be all three and still be covered by a modal — [`reticle_inspect`](/tools-inspect) reports `occluded` for that.
+`states` distinguishes `present` from `visible` from `enabled`. An element can be all three and still be covered by a modal. [`reticle_inspect`](/tools-inspect) reports `occluded` for that.
 
 <Tip>
   Query by `testid` when you can. Role and text queries survive refactors well; testids survive

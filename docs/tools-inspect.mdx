@@ -1,6 +1,6 @@
 ---
 title: reticle_inspect
-description: Everything about one element — accessibility properties, geometry, computed styles, design tokens, React component stack, and the exact source file and line.
+description: Everything about one element. Accessibility properties, geometry, computed styles, design tokens, React component stack, and the exact source file and line.
 icon: crosshairs
 ---
 
@@ -50,7 +50,7 @@ Real response:
 
 **`component`** is the payoff. The stack `["Sidebar", "App", "QueryClientProvider"]` tells your agent where this element lives in the tree, and `source` tells it which file to open. This needs `@reticlehq/react`; without it you still get everything else.
 
-**`theme`** catches a bug class most tools cannot see. `colorToken: "--muted"` means this colour came from your design system. `offTheme: false` means nothing here is a hardcoded hex that slipped past review. An agent that pastes `color: #939AA8` instead of using the token produces a change that looks identical and quietly forks your design system — this field is how that gets caught.
+**`theme`** catches a bug class most tools cannot see. `colorToken: "--muted"` means this colour came from your design system. `offTheme: false` means nothing here is a hardcoded hex that slipped past review. An agent that pastes `color: #939AA8` instead of using the token produces a change that looks identical and quietly forks your design system. This field is how that gets caught.
 
 **`occluded`** is the difference between "visible" and "actually clickable". An element can be present, visible and enabled while sitting under a modal overlay. `states` will look perfect; `occluded: true` is the honest answer.
 
@@ -76,5 +76,5 @@ Real response:
 
 <Note>
   `inspect` returns one element in detail. If you find yourself inspecting six things in a row, you
-  probably want [`reticle_query`](/tools-query) with `attrs` instead — one call, six answers.
+  probably want [`reticle_query`](/tools-query) with `attrs` instead, one call, six answers.
 </Note>

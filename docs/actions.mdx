@@ -10,17 +10,17 @@ icon: hand-pointer
 
 | Action | Arguments | Notes |
 | --- | --- | --- |
-| `click` / `dblclick` | — | Dispatches a real click |
-| `hover` | — | `mouseover` + `mouseenter`, so JS hover state triggers |
-| `focus` / `blur` | — |  |
+| `click` / `dblclick` | none | Dispatches a real click |
+| `hover` | none | `mouseover` + `mouseenter`, so JS hover state triggers |
+| `focus` / `blur` | none |  |
 | `fill` | `{ value }` | Sets value via a React-safe native setter, then `input` and `change` |
 | `type` | `{ text }` | **Appends** to the current value |
-| `clear` | — | Empties an input |
+| `clear` | none | Empties an input |
 | `select` | `{ value }` | For `<select>` |
-| `check` / `uncheck` | — | Checkbox and radio |
-| `submit` | — | Submits the element's `<form>` |
-| `press` | `{ text }` | The key **name** — `Escape`, `Tab`, `Enter` |
-| `scrollIntoView` | — |  |
+| `check` / `uncheck` | none | Checkbox and radio |
+| `submit` | none | Submits the element's `<form>` |
+| `press` | `{ text }` | The key **name**: `Escape`, `Tab`, `Enter` |
+| `scrollIntoView` | none |  |
 | `upload` | `{ name, content?, type? }` | Sets a file on `<input type="file">` |
 | `drag` | `{ toRef }` | Pointer-based drag (dnd-kit, react-beautiful-dnd) plus HTML5 DnD |
 | `webmcp` | `{ tool, params }` | Calls a `navigator.modelContext` tool, if the site exposes one |
@@ -31,20 +31,20 @@ icon: hand-pointer
 
 ## `press` takes `text`, not `key`
 
-Both are accepted today, and `text` wins when both are present. Use `text` — it is what the tool description documents.
+Both are accepted today, and `text` wins when both are present. Use `text`. It is what the tool description documents.
 
 <Warning>
 This one has history worth knowing. The implementation used to read `args.key` and **default to
-`Enter`**, so the documented call — `{ action: "press", args: { text: "Escape" } }` — silently sent
+`Enter`**, so the documented call, `{ action: "press", args: { text: "Escape" } }`, silently sent
 `Enter` and reported success.
 
-Three consequences, worst last: the requested key never arrived, so Escape-to-close and Tab-traversal went unverified while looking verified; nothing in the result said the argument had been ignored; and `Enter` is not a neutral substitute — on a focused field inside a form it **submits it**. A request to close a dialog could file the form behind it.
+Three consequences, worst last: the requested key never arrived, so Escape-to-close and Tab-traversal went unverified while looking verified; nothing in the result said the argument had been ignored; and `Enter` is not a neutral substitute. On a focused field inside a form it **submits it**. A request to close a dialog could file the form behind it.
 
 Two field reports were exactly this, both diagnosed as "synthetic events don't reach the app". Wrong root cause: the event reached the app perfectly well and simply said `Enter`.
 
 </Warning>
 
-That bug is fixed, and the reason it is written down here is that it is the exact shape of failure Reticle exists to catch — an action that reports success while doing something else.
+That bug is fixed, and the reason it is written down here is that it is the exact shape of failure Reticle exists to catch. An action that reports success while doing something else.
 
 ## Batching
 
@@ -68,7 +68,7 @@ Several actions in one round trip:
 
 ## Real versus synthetic input
 
-`inputMode` in the response says which you got. `synthetic` means events dispatched programmatically — correct for the overwhelming majority of apps. `real` means native CDP input, available under `reticle drive`, and needed by a few drag-and-drop and pointer-gesture libraries.
+`inputMode` in the response says which you got. `synthetic` means events dispatched programmatically. Correct for the overwhelming majority of apps. `real` means native CDP input, available under `reticle drive`, and needed by a few drag-and-drop and pointer-gesture libraries.
 
 <Warning>
   On a throttled tab, synthetic timers and pointer gestures can silently no-op. Pass
@@ -77,7 +77,7 @@ Several actions in one round trip:
 
 ## What every action reports
 
-`valueChanged`, `focusMoved`, `domMutatedWithin`, `defaultPrevented`, `occluded` and `occludedBy` — plus the element's `testid`, `component` and `source` file and line.
+`valueChanged`, `focusMoved`, `domMutatedWithin`, `defaultPrevented`, `occluded` and `occludedBy`. Plus the element's `testid`, `component` and `source` file and line.
 
 `occluded` is the answer to a large share of "the button doesn't work" reports: the click landed on the modal overlay sitting on top of it.
 

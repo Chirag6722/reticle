@@ -1,6 +1,6 @@
 ---
 title: reticle_navigate
-description: Move the connected tab to a URL or reload it — and understand why ok does not mean the page arrived.
+description: Move the connected tab to a URL or reload it, and understand why ok does not mean the page arrived.
 icon: compass
 ---
 
@@ -37,7 +37,7 @@ then confirm a session reconnected:
 {}
 ```
 
-with [`reticle_sessions`](/tools-sessions), and only then snapshot. If no session appears at the new URL, the page did not load or is not instrumented — and you know that immediately rather than three calls later.
+with [`reticle_sessions`](/tools-sessions), and only then snapshot. If no session appears at the new URL, the page did not load or is not instrumented. And you know that immediately rather than three calls later.
 
 <Warning>
   **Refs do not survive a navigation.** A new document means new refs. The same "Sign in" button was
@@ -54,10 +54,10 @@ with [`reticle_sessions`](/tools-sessions), and only then snapshot. If no sessio
 
 ## Client-side routing is different
 
-In a single-page app, clicking a link usually changes the route without destroying the document. That is a route change, not a navigation — refs survive, and you can assert it directly:
+In a single-page app, clicking a link usually changes the route without destroying the document. That is a route change, not a navigation. Refs survive, and you can assert it directly:
 
 ```json
 { "ref": "e19", "action": "click", "until": { "kind": "route", "path": "/deployments" } }
 ```
 
-Use `reticle_navigate` for a genuine document load — a deep link, a hard reload, or the first visit.
+Use `reticle_navigate` for a genuine document load. A deep link, a hard reload, or the first visit.
