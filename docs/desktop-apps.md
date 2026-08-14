@@ -18,11 +18,15 @@ Reticle verifies desktop apps the same way it verifies web apps — from **insid
 
 The usual question is _"it's a desktop app — what URL does the agent open?"_ None. The direction is reversed from what browser tooling trains you to expect:
 
-```text
-┌──────────────┐   MCP     ┌───────────────────┐   WebSocket    ┌───────────────────────┐
-│ coding agent │◀────────▶│  reticle daemon    │◀──────────────▶│ your Electron/Tauri   │
-│              │  stdio   │  (localhost:4400)  │   the app      │ window + the SDK      │
-└──────────────┘          └───────────────────┘   dials OUT    └───────────────────────┘
+```mermaid
+flowchart LR
+    A["coding agent"]
+    D["reticle daemon<br/>localhost:4400"]
+    W["your Electron / Tauri<br/>window + the SDK"]
+
+    A <-- "MCP over stdio" --> D
+    W -- "the app dials OUT<br/>over WebSocket" --> D
+    D -- "commands" --> W
 ```
 
 Your app **connects to the daemon**, not the other way round. So the workflow is:

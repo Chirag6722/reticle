@@ -26,11 +26,14 @@ This walks you from zero to your agent verifying your app — step by step, with
 
 Three pieces, each tiny:
 
-```text
-┌─────────────┐   MCP    ┌──────────────────────┐   WebSocket   ┌─────────────────────┐
-│ coding agent │◀───────▶│  reticle bridge + server │◀─────────────▶│ your app + the Reticle │
-│ (Claude Code)│  stdio  │  (npx @reticlehq/server)  │  localhost    │   SDK (dev only)    │
-└─────────────┘          └──────────────────────┘  :4400        └─────────────────────┘
+```mermaid
+flowchart LR
+    A["coding agent<br/>(Claude Code)"]
+    S["reticle bridge + server<br/>npx @reticlehq/server"]
+    B["your app<br/>+ the Reticle SDK<br/>(dev only)"]
+
+    A <-- "MCP over stdio" --> S
+    S <-- "WebSocket<br/>localhost:4400" --> B
 ```
 
 Three pieces, each from the package for its audience:

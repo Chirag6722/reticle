@@ -104,6 +104,22 @@ describe('docs/docs.json publishes every doc', () => {
     ).toEqual([]);
   });
 
+  it('no page draws a diagram out of box-drawing characters', () => {
+    // Box-drawing and arrow glyphs. ASCII diagrams were ruled out for the published docs: they
+    // wrap badly on narrow screens, are unreadable to a screen reader, and read as unfinished.
+    // Mermaid renders natively on Mintlify and is the replacement.
+    const ART = /[─-╿▲▼◄►]/;
+    const offenders = markdownPages().filter((file) =>
+      ART.test(readFileSync(join(DOCS, file), 'utf8')),
+    );
+
+    expect(
+      offenders,
+      `These pages contain box-drawing characters. Use a \`\`\`mermaid block instead — it renders as a ` +
+        `real diagram: ${offenders.join(', ')}`,
+    ).toEqual([]);
+  });
+
   it('every internal link resolves to a page or an image that exists', () => {
     const slugs = new Set(markdownPages().map((file) => file.replace(/\.mdx?$/, '')));
     const broken: string[] = [];

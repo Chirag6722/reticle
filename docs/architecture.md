@@ -12,14 +12,17 @@ icon: sitemap
 
 Your app, in dev, embeds a tiny **SDK** that instruments the page (DOM, network, console, routing, framework state) and opens a WebSocket to a local **bridge**. The bridge runs inside the Reticle **server**, which also exposes an **MCP server** — the standard protocol AI agents speak. Your coding agent calls MCP tools (`reticle_query`, `reticle_act`, `reticle_assert`, …); the server turns them into commands over the WebSocket; the SDK executes them in the page and streams back structured events. The agent thus **looks, acts, observes, and asserts** on the real running app — never on a screenshot.
 
-```
-┌─────────────────┐     MCP (stdio/SSE)     ┌──────────────────────────┐     WebSocket      ┌────────────────────┐
-│   AI agent      │ ──────────────────────► │   @reticlehq/server     │ ◄────────────────► │  @reticlehq/browser│
-│ (Claude Code,   │   reticle_query/act/...    │   bridge + MCP + CLI      │   commands/events  │  (SDK in your app)  │
-│  Cursor, ...)   │ ◄────────────────────── │   (Node)                 │                    │   (the DOM)         │
-└─────────────────┘     tool results        └──────────────────────────┘                    └────────────────────┘
-                                                       │
-                                              reads/writes .reticle/  (flows, baselines, runs, contract)
+```mermaid
+flowchart LR
+    A["AI agent<br/>Claude Code, Cursor, ..."]
+    S["@reticlehq/server<br/>bridge + MCP + CLI<br/>(Node)"]
+    B["@reticlehq/browser<br/>SDK in your app<br/>(the DOM)"]
+    D[(".reticle/<br/>flows · baselines<br/>runs · contract")]
+
+    A -- "MCP (stdio/SSE)<br/>reticle_query / act / assert" --> S
+    S -- "tool results" --> A
+    S <-- "WebSocket<br/>commands / events" --> B
+    S <--> D
 ```
 
 ---

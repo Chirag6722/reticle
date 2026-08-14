@@ -99,6 +99,10 @@
                 ]
               },
               {
+                "group": "Libraries",
+                "pages": ["packages"]
+              },
+              {
                 "group": "Everything else",
                 "pages": ["agent-cheatsheet", "usage"]
               }

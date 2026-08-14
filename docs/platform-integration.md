@@ -8,11 +8,14 @@ icon: plug
 
 ## The loop
 
-```
-generate / edit  →  boot the preview  →  Reticle verifies the critical flows  →  verdict + evidence + repair
-                                                                                │
-                                         PASS → ship & attach "verified ✓"      │
-                                         FAIL → gate the deploy, feed repair packets to the fixer agent
+```mermaid
+flowchart TB
+    G["generate / edit"] --> B["boot the preview"]
+    B --> V["Reticle verifies<br/>the critical flows"]
+    V --> R{"verdict + evidence"}
+    R -- "PASS" --> S["ship, and attach<br/>the verified marker"]
+    R -- "FAIL" --> F["gate the deploy<br/>feed repair packets<br/>to the fixer agent"]
+    F --> G
 ```
 
 One call replays the app's key journeys and asserts **program truth** — network cardinality, store/state, emitted signals, console — then returns a deterministic, un-hallucinatable verdict.
