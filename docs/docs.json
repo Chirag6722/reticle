@@ -223,7 +223,13 @@
   "seo": {
     "metatags": {
       "og:site_name": "Reticle Docs",
-      "og:type": "website"
+      "og:type": "website",
+      "og:image": "https://docs.reticle.sh/images/og.png",
+      "og:image:width": "2400",
+      "og:image:height": "1260",
+      "og:image:alt": "Reticle — your agent says it works. Reticle checks.",
+      "twitter:card": "summary_large_image",
+      "twitter:image": "https://docs.reticle.sh/images/og.png"
     },
     "organization": {
       "name": "Reticle",
