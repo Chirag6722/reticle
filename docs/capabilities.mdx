@@ -79,12 +79,28 @@ Freeze the clock, advance it by exactly the interval, assert the consequence. No
 ### Crawl: click everything, report anomalies
 
 ```json
-{ "tool": "reticle_crawl", "args": { "maxSteps": 25 } }
+{ "tool": "reticle_crawl", "args": { "maxSteps": 6 } }
 ```
 
-Autonomously clicks every reachable control and reports what went wrong. No script, no plan.
+```json
+{
+  "interactiveFound": 3,
+  "stepsRun": 3,
+  "anomalies": [],
+  "counts": { "consoleErrors": 0, "failedRequests": 0, "deadControls": 0, "contradictions": 0 },
+  "visited": ["- textbox \"Email\"", "- textbox \"Password\"", "- button \"Sign in\""],
+  "truncated": false
+}
+```
 
-This is the tool for an app you did not write and do not understand yet. It found real anomalies in both desktop demo apps.
+Autonomously clicks every reachable control and reports what went wrong. No script, no plan. The counts are the useful part: `deadControls` and `contradictions` are the two that indicate a real problem rather than a busy page.
+
+This is the tool for an app you did not write and do not understand yet.
+
+<Warning>
+  It clicks **everything**, so point it at a dev environment. `maxSteps` bounds it, defaulting to
+  25.
+</Warning>
 
 ### Reconcile: what the API said versus what rendered
 
@@ -176,10 +192,16 @@ Point `RETICLE_CDP_URL` at a Chrome started with `--remote-debugging-port`. That
 
 ```json
 { "tool": "reticle_screenshot", "args": { "name": "login-baseline" } }
-{ "tool": "reticle_visual_diff", "args": { "name": "login-baseline" } }
+{ "tool": "reticle_visual_diff", "args": { "baseline": "login-baseline" } }
 ```
 
-`fullPage` captures the whole scroll height. `ref` or `clip` scopes to one element or region.
+<Warning>
+  Note the asymmetry. `reticle_screenshot` names the baseline with **`name`**; `reticle_visual_diff`
+  refers to it with **`baseline`**. Passing `name` to the diff is rejected, and it is an easy
+  mistake to make twice.
+</Warning>
+
+`fullPage` captures the whole scroll height. `ref` or `clip` scopes to one element or region. `threshold` sets the pixel-difference tolerance, defaulting to `0.01`, and `masks` excludes regions that are expected to change.
 
 Reticle reads program truth, not pixels, so this is the deliberate exception: a font that failed to load or a compositing glitch is only visible in the actual frame.
 
@@ -286,6 +308,65 @@ Flows live in `.reticle/` as human-readable files, so they are reviewed in pull 
 <Card title="Flows in full" icon="repeat" href="/flows">
   Recording, replay, self-healing, and what lives in `.reticle/`.
 </Card>
+
+## Handing results to something else
+
+### The CI artifact
+
+```json
+{ "tool": "reticle_run_export" }
+```
+
+```json
+{
+  "schemaVersion": 1,
+  "runId": "11fd8ee9-2820-4bfa-bfe3-e4eeb111af26",
+  "durationMs": 41968,
+  "project": { "name": "reticle", "framework": "other" },
+  "agent": { "id": "reticle-mcp", "kind": "coding-agent" },
+  "flows": [
+    { "name": "suite-404", "status": "pass", "steps": 3, "oracle": "fault:injected" },
+    {
+      "name": "deploy-journey",
+      "status": "fail",
+      "steps": 1,
+      "failureReason": "testid \"login-submit\" not found"
+    }
+  ],
+  "verdict": { "status": "partial", "confidence": "high", "blockingRisks": 0 }
+}
+```
+
+A versioned, machine-readable record of a verification run. This is what you hand to CI, a dashboard, or a platform embedding Reticle in its pipeline.
+
+`oracle` on a passing flow names the consequence that made it a pass, so a green row says what it proved rather than only that it was green.
+
+### The capability contract
+
+```json
+{ "tool": "reticle_contract_save" }
+```
+
+```json
+{ "saved": true, "path": ".reticle/contract.json", "testidCount": 49, "signalCount": 16 }
+```
+
+Persists the app's live capability registry to a git-checked file. A fresh agent can read it without booting the app, and a diff shows when someone removes a signal something depended on.
+
+### Talking to the human
+
+```json
+{ "tool": "reticle_session", "args": { "action": "narrate", "text": "Checking the deploy flow." } }
+{ "tool": "reticle_session", "args": { "action": "review" } }
+```
+
+`narrate` writes a line into the presenter panel, so the person watching knows what you are doing. `review` drains the bugs they pinned on elements from that panel:
+
+```json
+{ "marks": [], "pendingCount": 0 }
+```
+
+An empty list here is a real reading, not a missing one.
 
 ## Discovering the rest
 
