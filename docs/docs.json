@@ -56,10 +56,6 @@
                 "pages": ["instrumentation"]
               },
               {
-                "group": "When it goes wrong",
-                "pages": ["troubleshooting", "debugging"]
-              },
-              {
                 "group": "Integrate",
                 "pages": [
                   "getting-started",
@@ -72,20 +68,8 @@
                 ]
               },
               {
-                "group": "How it works",
-                "pages": ["architecture", "benchmarks", "token-efficiency"]
-              },
-              {
-                "group": "Compare",
-                "pages": ["vs-playwright-mcp", "vs-chrome-devtools-mcp", "vs-screenshots"]
-              },
-              {
-                "group": "Practice",
-                "pages": ["best-practices", "skill-file"]
-              },
-              {
-                "group": "Trust & licensing",
-                "pages": ["telemetry", "enterprise"]
+                "group": "When it goes wrong",
+                "pages": ["troubleshooting", "debugging"]
               }
             ]
           },
@@ -129,6 +113,27 @@
               {
                 "group": "Everything else",
                 "pages": ["agent-cheatsheet", "usage", "faq"]
+              }
+            ]
+          },
+          {
+            "tab": "Resources",
+            "groups": [
+              {
+                "group": "How it works",
+                "pages": ["architecture", "benchmarks", "token-efficiency"]
+              },
+              {
+                "group": "Compare",
+                "pages": ["vs-playwright-mcp", "vs-chrome-devtools-mcp", "vs-screenshots"]
+              },
+              {
+                "group": "Practice",
+                "pages": ["best-practices", "skill-file"]
+              },
+              {
+                "group": "Trust & licensing",
+                "pages": ["telemetry", "enterprise"]
               }
             ]
           },
@@ -193,16 +198,31 @@
       {
         "header": "Docs",
         "items": [
-          { "label": "Quickstart", "href": "/quickstart" },
-          { "label": "Usage guide", "href": "/usage" },
-          { "label": "Agent cheat sheet", "href": "/agent-cheatsheet" },
-          { "label": "For agents", "href": "/for-agents" }
+          {
+            "label": "Quickstart",
+            "href": "/quickstart"
+          },
+          {
+            "label": "Usage guide",
+            "href": "/usage"
+          },
+          {
+            "label": "Agent cheat sheet",
+            "href": "/agent-cheatsheet"
+          },
+          {
+            "label": "For agents",
+            "href": "/for-agents"
+          }
         ]
       },
       {
         "header": "Project",
         "items": [
-          { "label": "GitHub", "href": "https://github.com/reticlehq/reticle" },
+          {
+            "label": "GitHub",
+            "href": "https://github.com/reticlehq/reticle"
+          },
           {
             "label": "Contributing",
             "href": "https://github.com/reticlehq/reticle/blob/main/CONTRIBUTING.md"
@@ -219,7 +239,13 @@
       }
     ]
   },
-  "redirects": [{ "source": "/README", "destination": "/getting-started", "permanent": true }],
+  "redirects": [
+    {
+      "source": "/README",
+      "destination": "/getting-started",
+      "permanent": true
+    }
+  ],
   "contextual": {
     "options": ["copy", "view", "claude", "chatgpt", "cursor", "vscode", "mcp", "add-mcp"]
   },
