@@ -33,9 +33,12 @@ Then it contradicts a UI that moved on regardless:
 
 The app said it loaded. One IPC call in the same window returned 500. Reticle puts both in front of the agent instead of believing the happier one.
 
+![Left, an app window showing three synced todo items and nothing wrong. Right, Reticle's view of the same moment: the todos:loaded signal, an ipc://todos:archive call returning 500, and a signal-contradicted finding naming both](/images/desktop-ipc.png)
+
 <Note>
-  Both blocks above are real output from the desktop battery, which starts a real Electron main
-  process and a **packaged** Tauri binary and drives them headless on every change.
+  The window on the left is an illustration. The JSON on the right is real output from the desktop
+  battery, which starts a real Electron main process and a **packaged** Tauri binary and drives them
+  headless on every change.
 </Note>
 
 ## What works, and what is proven
