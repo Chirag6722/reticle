@@ -337,7 +337,7 @@ reticle_query({ by: "role", value: "button", name: "Refresh" })   // → ref e12
 reticle_act({ ref: "e12", action: "click" })                       // → { since: 920 }
 
 // verifies the reaction
-reticle_assert({ timeout_ms: 2000, predicate: { allOf: [
+reticle_assert({ timeout_ms: 2000, predicate: { kind: "allOf", predicates: [
   { kind: "net", method: "GET", urlContains: "/api/dashboard", status: 200, since: 920 },
   { kind: "console", level: "error", absent: true }
 ]}})

@@ -35,6 +35,33 @@ One screen to get fluent. Reticle is the **proof layer for AI agents** — no sc
 | `{ kind: "element", role: "button", text: "Save" }` | `{ kind: "element", query: { role, text } }` |
 | `{ kind: "route", url: "/checkout" }` | `{ kind: "route", contains: "/checkout" }` |
 
+**Combinators take `predicates`, not a bare array.** This is the shape most often got wrong, and it is the one that produces no verdict at all:
+
+```jsonc
+// WRONG — neither of these parses
+{ "allOf": [ … ] }
+{ "kind": "allOf", "allOf": [ … ] }
+
+// RIGHT
+{ "kind": "allOf", "predicates": [ … ] }
+{ "kind": "anyOf", "predicates": [ … ] }
+{ "kind": "not",   "predicate":  { … } }
+```
+
+Each child reports its own evidence, in order:
+
+```jsonc
+{
+  "kind": "allOf",
+  "predicates": [
+    { "kind": "signal", "name": "auth:granted" },
+    { "kind": "net", "method": "POST", "urlContains": "/api/login", "count": 1 },
+    { "kind": "console", "level": "error", "absent": true },
+  ],
+}
+// -> evidence: [ { name: "auth:granted", … }, { matched: 1 }, { absent: true } ]
+```
+
 If a predicate is still rejected, the error names the fields **that kind** accepts — read it rather than guessing again, and note `state` spells its selector `path` while `route` spells its `pathname`.
 
 **Assert a consequence, not just presence.** `{ signal }` / `{ net }` prove the feature actually did something; `{ element }` / `{ text }` only prove something is on screen — which a stale render or a locator healed to the wrong element can fake. A _passing_ presence-only `reticle_assert` returns `advice` nudging you to a consequence; heed it on anything that matters.

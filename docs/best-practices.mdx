@@ -145,7 +145,8 @@ If persistence is part of what "it worked" means, assert it:
 ```json
 {
   "until": {
-    "allOf": [
+    "kind": "allOf",
+    "predicates": [
       { "kind": "signal", "name": "auth:granted" },
       { "kind": "state", "store": "app", "path": "auth.email", "equals": "admin@reticle.dev" }
     ]

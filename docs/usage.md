@@ -416,7 +416,7 @@ Each is phrased as the situation you're in, then how the agent verifies it.
 
 ```jsonc
 const { since } = reticle_act({ ref: iconBtn, action: "click" })
-reticle_assert({ timeout_ms: 2000, predicate: { allOf: [
+reticle_assert({ timeout_ms: 2000, predicate: { kind: "allOf", predicates: [
   { kind: "element", query: { role: "dialog" }, state: "visible" },
   { kind: "console", level: "error", absent: true }
 ]}})
@@ -426,7 +426,7 @@ reticle_assert({ timeout_ms: 2000, predicate: { allOf: [
 
 ```jsonc
 const { since } = reticle_act({ ref: saveBtn, action: "click" })
-reticle_assert({ timeout_ms: 3000, predicate: { allOf: [
+reticle_assert({ timeout_ms: 3000, predicate: { kind: "allOf", predicates: [
   { kind: "net", method: "PUT", urlContains: "/api/profile", status: 200, since },
   { kind: "text", contains: "Saved", visible: true }
 ]}})
@@ -473,12 +473,12 @@ reticle_assert({ timeout_ms: 3000, predicate: { kind: "element",
 reticle_act({ ref: emailRef, action: "fill", args: { value: "admin@acme.com" } })
 reticle_act({ ref: pwRef, action: "fill", args: { value: "•••••••" } })
 const { since } = reticle_act({ ref: submitRef, action: "click" })
-reticle_assert({ timeout_ms: 3000, predicate: { allOf: [
+reticle_assert({ timeout_ms: 3000, predicate: { kind: "allOf", predicates: [
   { kind: "net", method: "POST", urlContains: "/api/login", status: 200, since },
   { kind: "element", query: { role: "heading", name: "Dashboard" }, state: "visible" }
 ]}})
 // And the failure path:
-reticle_assert({ predicate: { allOf: [
+reticle_assert({ predicate: { kind: "allOf", predicates: [
   { kind: "net", urlContains: "/api/login", status: 401 },
   { kind: "element", query: { role: "alert" }, state: "visible" }
 ]}})
@@ -494,7 +494,7 @@ reticle_assert({ predicate: { kind: "console", level: "error", absent: true } })
 
 ```jsonc
 const { since } = reticle_act({ ref: generateBtn, action: "click" })
-reticle_assert({ timeout_ms: 15000, predicate: { allOf: [
+reticle_assert({ timeout_ms: 15000, predicate: { kind: "allOf", predicates: [
   { kind: "net", method: "POST", urlContains: "/api/generate", status: 200, since },
   { kind: "element", query: { testid: "script-output" }, state: "visible" }
 ]}})
@@ -505,7 +505,7 @@ reticle_assert({ timeout_ms: 15000, predicate: { allOf: [
 ```jsonc
 reticle_act({ ref: fileInput, action: "upload", args: { name: "pitch.mp4", type: "video/mp4" } })
 const { since } = reticle_act({ ref: analyzeBtn, action: "click" })
-reticle_assert({ timeout_ms: 15000, predicate: { allOf: [
+reticle_assert({ timeout_ms: 15000, predicate: { kind: "allOf", predicates: [
   { kind: "net", method: "POST", urlContains: "/api/score", status: 200, since },
   { kind: "element", query: { role: "dialog", name: "Score result" }, state: "visible" },
   { kind: "text", contains: "/ 100", visible: true }
