@@ -1,4 +1,8 @@
-# System map
+---
+title: System map
+description: 'How a tool call travels from a coding agent to your app and back, and which of those failures are silent.'
+icon: map
+---
 
 > How a tool call gets from a coding agent to your app and back, what each hop can do wrong, and which of those failures are **silent**. Written for anyone touching the transport, the daemon, the bridge, or a gate — and for contributors trying to work out where their change lives.
 >

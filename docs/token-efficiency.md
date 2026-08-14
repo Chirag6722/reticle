@@ -1,4 +1,8 @@
-# Token efficiency: Reticle vs. a full-tree snapshot (Playwright MCP)
+---
+title: Token efficiency
+description: Why asking narrow questions costs a fraction of feeding the whole accessibility tree to the model every step.
+icon: coins
+---
 
 Agent browser tools that feed the **whole accessibility tree** to the model every step get expensive fast. Playwright MCP's own ecosystem notes its snapshots _"can exceed 50,000 tokens on complex pages,"_ with a _typical task ~114,000 tokens through MCP._ Reticle is built to ask **narrow questions** instead, so the per-interaction cost stays tiny.
 

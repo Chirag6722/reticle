@@ -1,4 +1,8 @@
-# Integrating Reticle
+---
+title: Integrating Reticle
+description: 'Adopt Reticle on your own codebase, or embed it inside an AI app-builder’s generation pipeline.'
+icon: plug
+---
 
 > The one guide for adopting Reticle — for a team using a coding agent on its own app, and for an AI app-builder platform (Lovable / Emergent / Bolt) embedding Reticle in its generation pipeline. Reticle reads the program from _inside_ a running app and returns a **verdict with evidence** ("did it actually work?"), not a screenshot. Enterprise/premium access lives in [`enterprise.md`](./enterprise.md).
 

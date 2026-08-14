@@ -1,4 +1,8 @@
-# Testing with `@reticlehq/test` — declarative, signal-bound specs
+---
+title: Specs for CI
+description: 'Turn an interactive drive into a repeatable suite with @reticlehq/test — declarative specs bound to signals, never DOM structure.'
+icon: vial
+---
 
 Driving Reticle interactively is reconnaissance. To turn it into a **repeatable, CI-runnable** suite, write declarative specs with `@reticlehq/test`. Specs bind to **signals and testids — never DOM structure** — so they inherit Reticle's refactor-resistance.
 

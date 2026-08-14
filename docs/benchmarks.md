@@ -1,4 +1,8 @@
-# How we benchmark Reticle (and why you can trust the numbers)
+---
+title: Benchmarks
+description: 'How we measure Reticle, what each number actually means, and the places Reticle loses.'
+icon: chart-column
+---
 
 > This page assumes **zero** testing background. By the end you'll understand what software testing is, why AI coding agents made it urgent, how to tell a good verification tool from a bad one, and exactly how Reticle measures up against the main alternatives — including the places Reticle loses. If a term looks like jargon, it's defined the first time it appears.
 >

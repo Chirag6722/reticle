@@ -1,4 +1,8 @@
-# Reticle for enterprises
+---
+title: Enterprise
+description: 'Premium access and activation, what is gated, the security and data-handling posture, and the licensing model.'
+icon: building
+---
 
 > Premium access (how you get + activate it), what's gated, the security/data-handling posture, and the licensing model. Integration mechanics live in [`platform-integration.md`](./platform-integration.md).
 

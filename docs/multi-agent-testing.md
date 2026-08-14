@@ -1,4 +1,8 @@
-# Multi-agent & multi-project testing
+---
+title: 'Multi-agent and multi-project'
+description: 'Several apps at once, ports that shift between runs, and many agents driving the same app in parallel without a Chromium each.'
+icon: users
+---
 
 Reticle is built for the messy real world: several apps running at once, ports that shift between runs, and many agents driving different flows of the same app in parallel — without each one spinning up its own Chromium. This page explains how that works and how to use it.
 

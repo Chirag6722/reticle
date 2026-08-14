@@ -1,4 +1,8 @@
-# Reticle — Complete Usage Guide
+---
+title: Complete usage guide
+description: 'The full reference and cookbook — every tool, flag, and workflow, with worked examples.'
+icon: book
+---
 
 The full reference and cookbook. If you haven't set up Reticle yet, start with [Getting Started](getting-started.md).
 

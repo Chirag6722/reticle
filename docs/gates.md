@@ -1,4 +1,8 @@
-# Gates — what to run before you push
+---
+title: Gates
+description: 'I changed some files. Which command do I run before I push?'
+icon: shield-check
+---
 
 > **One question this file answers:** _I changed some files. Which command do I run?_
 >

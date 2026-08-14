@@ -1,4 +1,8 @@
-# Desktop apps: Electron & Tauri
+---
+title: Desktop apps
+description: 'Verify Electron and Tauri apps from inside, over a localhost WebSocket — no browser to open, no screenshot to interpret.'
+icon: display
+---
 
 Reticle verifies desktop apps the same way it verifies web apps — from **inside** the app, over a localhost WebSocket. There is no browser to open and no screenshot to interpret.
 

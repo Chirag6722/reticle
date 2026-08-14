@@ -1,0 +1,188 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "Reticle",
+  "description": "Reticle is the proof layer for AI agents — it verifies a running web app from the inside, without screenshots, and returns a verdict with evidence.",
+  "colors": {
+    "primary": "#8b7bff",
+    "light": "#a99bff",
+    "dark": "#6b5bdf"
+  },
+  "logo": {
+    "light": "/logo/light.svg",
+    "dark": "/logo/dark.svg"
+  },
+  "favicon": {
+    "light": "/favicon/light.svg",
+    "dark": "/favicon/dark.svg"
+  },
+  "appearance": {
+    "default": "system"
+  },
+  "styling": {
+    "eyebrows": "breadcrumbs",
+    "codeblocks": "dark"
+  },
+  "search": {
+    "prompt": "Search the Reticle docs"
+  },
+  "metadata": {
+    "timestamp": true
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Guides",
+        "groups": [
+          {
+            "group": "Get started",
+            "pages": ["getting-started", "for-agents"]
+          },
+          {
+            "group": "Integrate",
+            "pages": [
+              "platform-integration",
+              "integration-patterns",
+              "desktop-apps",
+              "flows",
+              "testing",
+              "multi-agent-testing",
+              "human-control",
+              "deploy-checks"
+            ]
+          },
+          {
+            "group": "How it works",
+            "pages": ["architecture", "benchmarks", "token-efficiency"]
+          },
+          {
+            "group": "Trust & licensing",
+            "pages": ["telemetry", "enterprise"]
+          }
+        ]
+      },
+      {
+        "tab": "Reference",
+        "groups": [
+          {
+            "group": "Reference",
+            "pages": ["agent-cheatsheet", "usage"]
+          }
+        ]
+      },
+      {
+        "tab": "Contributing",
+        "groups": [
+          {
+            "group": "Working on Reticle",
+            "pages": [
+              "gates",
+              "gate-plan",
+              "debugging",
+              "system-map",
+              "telemetry-contract",
+              "fixtures",
+              "local-registry"
+            ]
+          }
+        ]
+      }
+    ],
+    "global": {
+      "anchors": [
+        {
+          "anchor": "GitHub",
+          "href": "https://github.com/reticlehq/reticle",
+          "icon": "github"
+        },
+        {
+          "anchor": "npm",
+          "href": "https://www.npmjs.com/org/reticlehq",
+          "icon": "npm"
+        },
+        {
+          "anchor": "Changelog",
+          "href": "https://github.com/reticlehq/reticle/blob/main/CHANGELOG.md",
+          "icon": "clock-rotate-left"
+        }
+      ]
+    }
+  },
+  "navbar": {
+    "links": [
+      {
+        "type": "github",
+        "href": "https://github.com/reticlehq/reticle"
+      }
+    ],
+    "primary": {
+      "type": "button",
+      "label": "Get started",
+      "href": "/getting-started"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/reticlehq/reticle",
+      "website": "https://www.npmjs.com/org/reticlehq"
+    },
+    "links": [
+      {
+        "header": "Docs",
+        "items": [
+          { "label": "Getting started", "href": "/getting-started" },
+          { "label": "Usage guide", "href": "/usage" },
+          { "label": "Agent cheat sheet", "href": "/agent-cheatsheet" },
+          { "label": "For agents", "href": "/for-agents" }
+        ]
+      },
+      {
+        "header": "Project",
+        "items": [
+          { "label": "GitHub", "href": "https://github.com/reticlehq/reticle" },
+          {
+            "label": "Contributing",
+            "href": "https://github.com/reticlehq/reticle/blob/main/CONTRIBUTING.md"
+          },
+          {
+            "label": "Security",
+            "href": "https://github.com/reticlehq/reticle/blob/main/SECURITY.md"
+          },
+          {
+            "label": "License",
+            "href": "https://github.com/reticlehq/reticle/blob/main/LICENSE"
+          }
+        ]
+      }
+    ]
+  },
+  "redirects": [{ "source": "/README", "destination": "/getting-started", "permanent": true }],
+  "contextual": {
+    "options": ["copy", "view", "claude", "chatgpt", "cursor", "vscode", "mcp", "add-mcp"]
+  },
+  "markdown": {
+    "instructions": [
+      "Reticle is a dev-only, localhost-only verification layer for AI coding agents. It reads program truth (network, state, console, routing, animations, framework state) from inside a running web app and returns a deterministic verdict with evidence. It is not a screenshot tool and not a browser automation library.",
+      "Only `reticle_act_and_wait` and `reticle_assert` produce a verdict. Every other tool moves or reads the app and proves nothing. A drive that ends without one of those two has no result, however many tools it used.",
+      "A verdict of `verified: \"unknown\"` is not a pass. It means Reticle drove the app and could not tell what happened. Report it as unknown; never weaken a check to make it pass.",
+      "Package names are scoped `@reticlehq/*` and the CLI is `reticle`. Install with `npx reticle init`. The complete tool surface is on the `/usage` page; `/agent-cheatsheet` is the one-screen version."
+    ]
+  },
+  "seo": {
+    "metatags": {
+      "og:site_name": "Reticle Docs",
+      "og:type": "website"
+    },
+    "organization": {
+      "name": "Reticle",
+      "url": "https://github.com/reticlehq/reticle"
+    }
+  },
+  "errors": {
+    "404": {
+      "redirect": false,
+      "title": "No such page",
+      "description": "That page moved or never existed. Start at [Getting started](/getting-started), or search above."
+    }
+  }
+}

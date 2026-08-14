@@ -1,4 +1,8 @@
-# Telemetry
+---
+title: Telemetry
+description: 'The complete description of the anonymous usage data Reticle collects, what it is for, and how to turn it off.'
+icon: chart-line
+---
 
 Reticle collects a small amount of anonymous usage data to help us understand whether the tool is useful — which commands people run, which tools agents actually use, and whether people keep using Reticle after they try it. That's what this data is for, and all it is for: making the product better.
 

@@ -1,4 +1,8 @@
-# Fixture apps
+---
+title: Fixture apps
+description: 'Why the apps in apps/ cannot answer the one question that matters before a release, and what does.'
+icon: cubes
+---
 
 The apps in `apps/` are ours. We chose their defects, so passing against them says less than it looks like — and they are all wired to Reticle already, which makes them useless for the one question that matters before a release: **does the install still work on an app that has never seen Reticle?**
 

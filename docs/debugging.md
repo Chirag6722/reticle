@@ -1,4 +1,8 @@
-# Debugging Reticle itself
+---
+title: Debugging Reticle
+description: For people working on Reticle itself — how to work out why a flow behaved the way it did.
+icon: bug
+---
 
 > For people working **on** Reticle — and for an agent asked to explain why a flow behaved the way it did. If you are debugging **your app** with Reticle, you want [usage.md](usage.md) instead.
 

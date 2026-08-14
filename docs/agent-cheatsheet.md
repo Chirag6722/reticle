@@ -1,4 +1,8 @@
-# Reticle — agent cheat-sheet
+---
+title: Agent cheat sheet
+description: 'One screen to get fluent: the look → act → observe → assert loop, with the exact calls to make.'
+icon: bolt
+---
 
 One screen to get fluent. Reticle is the **proof layer for AI agents** — no screenshots, no vision model, evidence not prose. Everything below returns structured data. Full guide: [usage.md](usage.md).
 

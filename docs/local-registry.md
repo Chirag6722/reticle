@@ -1,4 +1,8 @@
-# Test unpublished Reticle changes in a real app (local registry)
+---
+title: Local registry
+description: 'Exercise local, unpublished Reticle changes in a real external app before they ship.'
+icon: box
+---
 
 > **For normal use, Reticle is on public npm** — just `npm i -D @reticlehq/react @reticlehq/vite-plugin` (see [Getting Started](getting-started.md)). You only need this guide to test **local, unpublished changes** to the Reticle packages in a real external app before they ship.
 

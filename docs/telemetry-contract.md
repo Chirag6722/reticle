@@ -1,4 +1,8 @@
-# The telemetry contract
+---
+title: Telemetry contract
+description: 'Read this before adding a tool, an event, a finding kind, or a failure path. Telemetry fails silently.'
+icon: file-contract
+---
 
 > For anyone — human or agent — adding a tool, an event, a finding kind, or a failure path to Reticle.
 >

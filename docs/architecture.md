@@ -1,4 +1,8 @@
-# Reticle architecture — how it works and why it's built this way
+---
+title: Architecture
+description: 'The moving parts, the data flow between them, and the design decisions behind each one.'
+icon: sitemap
+---
 
 > For engineers evaluating Reticle, integrating it at scale, or contributing. It explains the moving parts, the data flow, and the design decisions behind them. If you just want to get running, start with [getting-started.md](getting-started.md); come back here when you want to know _why_.
 

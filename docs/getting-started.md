@@ -1,4 +1,8 @@
-# Getting Started with Reticle
+---
+title: Getting started
+description: 'Zero to your agent verifying your real app — step by step, with working code for Vite, Next.js, React and plain HTML.'
+icon: rocket
+---
 
 This walks you from zero to your agent verifying your app — step by step, with real code for real frameworks. ~10 minutes.
 

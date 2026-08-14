@@ -1,4 +1,8 @@
-# Verification at the deploy choke point (Vercel / Netlify)
+---
+title: Deploy checks
+description: 'Enforce verification at the moment code becomes a preview URL, as a Vercel or Netlify check on the PR.'
+icon: circle-check
+---
 
 The strongest place to enforce verification is the moment code becomes a preview URL. Every deploy already produces one, and both Vercel and Netlify let a third party attach a **check** to it — pass/fail, shown on the PR, with no workflow file to write.
 

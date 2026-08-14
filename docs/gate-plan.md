@@ -1,4 +1,8 @@
-# The release gate — plan and status
+---
+title: Release gate plan
+description: 'What has to be true before a PR merges and before a release ships, and what is built so far.'
+icon: list-check
+---
 
 > What has to be true before a PR merges and before a release ships, why each piece exists, and what is built so far. Derived from [`system-map.md`](./system-map.md); the harness rules every tier obeys are in [`harness-rules.md`](../apps/e2e/harness-rules.md).
 

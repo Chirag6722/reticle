@@ -2,7 +2,7 @@
 
 Two audiences share this directory, which is why it looked like twenty-five unsorted files. Every page states its own audience in the first blockquote; this index is the shortcut.
 
-**User docs are published** to [reticle.sh](https://reticle.sh) via `mint.json`. **Contributor docs are not** — they are for people working _on_ Reticle, and they live here because they belong next to what they describe.
+Everything here is published to [docs.reticle.sh](https://docs.reticle.sh) by `docs.json`, which is the Mintlify config for this directory. User docs sit under the **Guides** and **Reference** tabs; contributor docs sit under **Contributing**, separated by tab rather than hidden — they were reachable by URL anyway, and an unlisted page is a page nobody finds.
 
 ---
 
@@ -15,6 +15,7 @@ Two audiences share this directory, which is why it looked like twenty-five unso
 | [getting-started.md](getting-started.md) | install it, connect an agent, verify something |
 | [usage.md](usage.md) | every tool, every argument — the reference |
 | [agent-cheatsheet.md](agent-cheatsheet.md) | the condensed version an agent keeps in context |
+| [for-agents.md](for-agents.md) | how to fetch these docs as Markdown or `llms.txt` |
 | [architecture.md](architecture.md) | how it works, and why it is built this way |
 | [platform-integration.md](platform-integration.md) | Vite, Next, Remix, Astro, plain HTML |
 | [desktop-apps.md](desktop-apps.md) | Electron and Tauri |
@@ -52,4 +53,6 @@ Two audiences share this directory, which is why it looked like twenty-five unso
 
 ---
 
-**Adding a page?** Put it in the right table above. If it is user-facing, add it to `mint.json` too — a page that is published but unlisted is a page nobody finds, and a page listed here but absent from `mint.json` is one users cannot reach at all.
+**Adding a page?** Three things, all required. Give it `title` + `description` frontmatter and no `# H1` — Mintlify renders the frontmatter title as the heading, so an H1 shows up twice. Add its slug to the right tab in `docs.json`. Add a row to the right table above. A page missing from `docs.json` is one nobody can reach; a page missing from this index is one no contributor knows exists.
+
+**Adding a second product?** Do not nest these files under a product folder pre-emptively — that renames every live URL to buy nothing. Mintlify supports `navigation.products`, where each product declares its own `directory`. When the second product exists, put its pages in `docs/<product>/`, switch `docs.json` from `tabs` to `products`, and give this product `"directory": ""` so today's URLs keep working.

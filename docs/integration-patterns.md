@@ -1,4 +1,8 @@
-# Reticle Integration Patterns
+---
+title: Integration patterns
+description: 'The recommended shape for a real codebase: a minimal production footprint and a signal layer that cannot silently drift.'
+icon: shapes
+---
 
 The basics in [Getting Started](getting-started.md) work with **zero app changes**. This doc is the _recommended_ shape for a real codebase: a minimal production footprint, a signal layer that can't silently drift, and an adoption path that starts paying off on day one — no rewrite required.
 

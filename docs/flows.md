@@ -1,4 +1,8 @@
-# Flows, the recorder & self-healing — record once, run forever
+---
+title: Flows and the recorder
+description: 'Record an interactive run once and replay it forever as a git-checked, self-healing program anchored on meaning, not selectors.'
+icon: repeat
+---
 
 Reticle turns an interactive run into a **git-checked, replayable program** stored under `.reticle/`. Flows are anchored on **meaning** (testid + signal), not volatile element refs or coordinates, so they survive refactors — and when an anchor does drift, Reticle tells you _why_ and can repair it. This is what makes Reticle "the project's living test suite a human seeds and an agent maintains."
 

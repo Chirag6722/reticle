@@ -1,4 +1,8 @@
-# Human-in-the-loop control — watch, steer, end the session
+---
+title: 'Human-in-the-loop control'
+description: 'Watch the agent’s live transcript, steer it mid-run, or end the session — from inside the page itself.'
+icon: hand
+---
 
 When you run with the presenter on (`reticle.connect({ present: true })`), the floating panel is a **two-way control surface**. You watch the agent's live transcript _and_ can steer it — pause it, send it a correction, or end the session — without leaving the page. There's also a clean, unmistakable "session ended" signal for both you and the agent.
 
