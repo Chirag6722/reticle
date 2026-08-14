@@ -111,7 +111,10 @@ That `reticle_capabilities` output is the single best first call on an unfamilia
 Compared with snapshotting the page and guessing from element names, it is both cheaper and more truthful. `auth:granted` is what the app means by "logged in", and no amount of looking at the DOM will tell you that.
 
 ```json
-{ "tool": "reticle_network_mock", "args": { "urlContains": "/api/deploys", "status": 500 } }
+{
+  "tool": "reticle_network_mock",
+  "args": { "mocks": [{ "urlContains": "/api/deploys", "status": 500 }] }
+}
 ```
 
 Then drive the flow and see whether your error state actually works. Most do not, which is the point.

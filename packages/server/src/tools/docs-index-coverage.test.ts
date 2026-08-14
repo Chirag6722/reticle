@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { TOOLS } from './tools.js';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
 const DOCS = join(REPO, 'docs');
@@ -101,6 +102,122 @@ describe('docs/docs.json publishes every doc', () => {
       orphans,
       `These docs are not in any docs.json tab, so they are unreachable from the site navigation: ${orphans.join(', ')}. ` +
         `Add each to the tab it belongs in — Guides, Reference, or Contributing.`,
+    ).toEqual([]);
+  });
+
+  it('every documented tool argument is one the tool actually accepts', () => {
+    // Six argument bugs shipped on this branch before this gate existed: `name` for
+    // `recordingName`, `name` for `flowName`, `name` for `baseline`, `testid` for `by`/`value`,
+    // top-level `urlContains`/`status` for `mocks`, and `key` for `text`. Every one was written from
+    // a neighbouring page or a plausible guess, and every one was caught only by calling the tool.
+    //
+    // Reticle refuses an unknown parameter rather than applying part of the call, so a reader who
+    // copies one gets an error, not a wrong result. That is the good outcome and it still costs a
+    // turn — and in a doc read by agents, a bad example is a bad example at scale.
+    const allowed = new Map(
+      TOOLS.map((tool) => [tool.name, new Set(Object.keys(tool.inputSchema))]),
+    );
+
+    /** Length of the object literal starting at `open`, so a scan cannot run into the next example. */
+    const objectLength = (text: string, open: number): number => {
+      let depth = 0;
+      let inString = false;
+      let escaped = false;
+      for (let i = open; i < text.length; i++) {
+        const ch = text[i] ?? '';
+        if (inString) {
+          if (escaped) escaped = false;
+          else if ('\\' === ch) escaped = true;
+          else if ('"' === ch) inString = false;
+          continue;
+        }
+        if ('"' === ch) inString = true;
+        else if ('{' === ch) depth++;
+        else if ('}' === ch) {
+          depth--;
+          if (0 === depth) return i - open + 1;
+        }
+      }
+      return text.length - open;
+    };
+
+    /** Top-level keys of the object literal starting at `open` (index of its `{`). */
+    const topLevelKeys = (text: string, open: number): string[] => {
+      const keys: string[] = [];
+      let depth = 0;
+      let inString = false;
+      let escaped = false;
+      let current = '';
+      for (let i = open; i < text.length; i++) {
+        const ch = text[i] ?? '';
+        if (inString) {
+          if (escaped) escaped = false;
+          else if ('\\' === ch) escaped = true;
+          else if ('"' === ch) {
+            inString = false;
+          } else if (1 === depth) current += ch;
+          continue;
+        }
+        if ('"' === ch) {
+          inString = true;
+          if (1 === depth) current = '';
+          continue;
+        }
+        if ('{' === ch || '[' === ch) depth++;
+        else if ('}' === ch || ']' === ch) {
+          depth--;
+          if (0 === depth) break;
+        } else if (':' === ch && 1 === depth && '' !== current) {
+          keys.push(current);
+          current = '';
+        }
+      }
+      return keys;
+    };
+
+    const problems: string[] = [];
+    for (const file of markdownPages()) {
+      const text = readFileSync(join(DOCS, file), 'utf8');
+      for (const match of text.matchAll(/"tool"\s*:\s*"(reticle_[a-z0-9_]+)"/g)) {
+        const tool = match[1] ?? '';
+        const names = allowed.get(tool);
+        if (undefined === names) continue; // meta-tools and non-tools are covered by another check
+        // Bound the search to the object that CONTAINS this "tool" key. Scanning forward without
+        // that bound picks up the next example's args and blames them on this tool.
+        const start = match.index ?? 0;
+        let objectStart = -1;
+        for (let i = start, depth = 0; i >= 0; i--) {
+          const ch = text[i] ?? '';
+          if ('}' === ch) depth++;
+          else if ('{' === ch) {
+            if (0 === depth) {
+              objectStart = i;
+              break;
+            }
+            depth--;
+          }
+        }
+        if (0 > objectStart) continue;
+        const object = text.slice(objectStart, objectStart + objectLength(text, objectStart));
+        const argsAt = object.search(/"args"\s*:\s*\{/);
+        if (0 > argsAt) continue; // this call takes no args
+        const rest = object;
+        const open = object.indexOf('{', argsAt + 6);
+        for (const key of topLevelKeys(rest, open)) {
+          if (!names.has(key)) {
+            problems.push(
+              `${file}: ${tool} does not accept "${key}" (accepts: ${[...names].join(', ')})`,
+            );
+          }
+        }
+      }
+    }
+
+    expect(
+      problems,
+      `These examples pass an argument the tool rejects. Reticle refuses the whole call rather than ` +
+        `applying part of it, so a reader who copies one gets "NOT applied, so any result would be ` +
+        `an answer to a different question": ${problems.join('; ')}`,
     ).toEqual([]);
   });
 
