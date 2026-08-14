@@ -1,0 +1,86 @@
+---
+title: reticle_network
+description: A filtered log of every request the app made, with bodies, status, timing, automatic credential redaction, and an honest note when evidence has expired.
+icon: satellite-dish
+---
+
+`reticle_network` is how an agent checks the thing a screenshot fundamentally cannot show: whether the request actually happened, what it sent, and what came back.
+
+## Example
+
+```json
+{ "limit": 3 }
+```
+
+Real response:
+
+```json
+{
+  "calls": [
+    {
+      "method": "POST",
+      "url": "http://localhost:8787/api/login",
+      "status": 200,
+      "statusText": "OK",
+      "contentType": "application/json; charset=utf-8",
+      "responseSize": 67,
+      "requestBody": "{\"email\":\"admin@reticle.dev\",\"password\":\"[REDACTED]\"}",
+      "responseBody": "{\"token\":\"[REDACTED]\",\"user\":{\"email\":\"admin@reticle.dev\"}}",
+      "ms": 67
+    }
+  ],
+  "buffer": {
+    "held": 15,
+    "dropped": 529,
+    "note": "event buffer evicted older events (age/size cap) — a negative result here may be a false negative; the evidence may have expired. Grade sooner or widen the buffer."
+  },
+  "cost": { "bytes": 547, "tokens": 137 }
+}
+```
+
+## Redaction is automatic
+
+Look at `requestBody`. The password is `[REDACTED]` and so is the returned token, without anyone configuring anything. Reticle strips credential-shaped values before they leave the page, so your agent's context — and any transcript of it — never holds them.
+
+The email is not redacted, because an email is not a credential. The line is drawn at secrets.
+
+## The buffer note is the important bit
+
+```json
+"buffer": { "held": 15, "dropped": 529, "note": "…the evidence may have expired…" }
+```
+
+Reticle keeps a bounded event buffer. When it overflows, older events are evicted — and if you then ask "did a POST to `/api/orders` happen?", the honest answer is not "no". It is "not in what I still have."
+
+Most tools would return an empty array and let you draw the wrong conclusion. This one tells you the result may be a false negative and suggests grading sooner or widening the buffer. Take that note seriously: a confident "no requests fired" built on evicted evidence is exactly the kind of false green Reticle exists to prevent.
+
+## Filters
+
+| Argument          | What it does                                                            |
+| ----------------- | ----------------------------------------------------------------------- |
+| `urlContains`     | Substring the URL must contain                                          |
+| `method`          | `GET` · `POST` · `PUT` · `DELETE` · `PATCH`                             |
+| `status`          | Exact status code, e.g. `500`                                           |
+| `ok`              | `false` keeps only failures — the fastest way to "did anything break?"  |
+| `limit`           | Most recent N. Older matches are dropped and counted                    |
+| `actionId`        | Only requests attributed to one action — "what did that click request?" |
+| `since` / `until` | Cursors from a prior act, to scope to a window between two actions      |
+
+## Catching a double submit
+
+The bug where one click fires two POSTs is invisible on screen and obvious here:
+
+```json
+{ "urlContains": "/api/orders", "method": "POST" }
+```
+
+If `calls` has two entries with near-identical timestamps, you have found it. Better still, assert it up front so the agent cannot rationalise it afterwards — `reticle_act_and_wait` accepts an exact count predicate, which turns "roughly one request" into a check that fails at two.
+
+## Checking that nothing fired
+
+`ok: false` on an empty result is a genuinely useful answer — provided the buffer note says nothing was dropped. Read both.
+
+<Card title="Prove it, don't just look at it" icon="circle-check" href="/quickstart">
+  `reticle_network` reads. It does not produce a verdict. Name the expected request in
+  `reticle_act_and_wait` instead.
+</Card>

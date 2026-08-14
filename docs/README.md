@@ -18,6 +18,11 @@ Everything here is published to [docs.reticle.sh](https://docs.reticle.sh) by `d
 | [install-manual.mdx](install-manual.mdx) | wiring the MCP server and SDK by hand, per agent and framework |
 | [getting-started.md](getting-started.md) | install it, connect an agent, verify something |
 | [usage.md](usage.md) | every tool, every argument — the reference |
+| [tools-overview.mdx](tools-overview.mdx) | the 16 advertised tools, the 32 in the cold tail, and why |
+| [tools-query.mdx](tools-query.mdx) | `reticle_query` — find elements by testing-library semantics |
+| [tools-inspect.mdx](tools-inspect.mdx) | `reticle_inspect` — one element, down to source and design tokens |
+| [tools-network.mdx](tools-network.mdx) | `reticle_network` — the request log, redaction, and buffer honesty |
+| [tools-state.mdx](tools-state.mdx) | `reticle_state` — what the app believes, not what it drew |
 | [agent-cheatsheet.md](agent-cheatsheet.md) | the condensed version an agent keeps in context |
 | [for-agents.md](for-agents.md) | how to fetch these docs as Markdown or `llms.txt` |
 | [architecture.md](architecture.md) | how it works, and why it is built this way |

@@ -1,0 +1,122 @@
+---
+title: Tools overview
+description: The 16 tools your agent sees every turn, the 32 more it can reach on demand, and why the surface is deliberately small.
+icon: wrench
+---
+
+Reticle ships 48 tools. Your agent is shown **16** of them.
+
+That is not a limitation, it's the design. MCP re-sends every advertised tool definition to the model on **every single turn**, so the tool list is not a menu you pay for once — it's rent. A wider surface costs tokens on every message and, less obviously, makes the model wander: give it forty ways to look at a page and it will try several before doing anything useful.
+
+The other 32 tools are one call away, never unreachable. `reticle_tools` lists them and `reticle_run` invokes them.
+
+<Note>
+  Measured off the real wire: the default surface is 16 tools at roughly 4,500 tokens per turn,
+  against roughly 32,000 for all 48. Treat those as the shape of the gap rather than today's exact
+  figures — the surface changes, and the numbers are re-measured in the test suite, not here.
+</Note>
+
+## The default 16
+
+Grouped by the job they do in the verify loop.
+
+<CardGroup cols={2}>
+  <Card title="Look" icon="magnifying-glass">
+    `reticle_snapshot` · `reticle_query` · `reticle_inspect` · `reticle_sessions`
+  </Card>
+  <Card title="Act" icon="hand-pointer">
+    `reticle_act` · `reticle_act_and_wait` · `reticle_act_sequence` · `reticle_navigate`
+  </Card>
+  <Card title="Observe" icon="satellite-dish">
+    `reticle_observe` · `reticle_network` · `reticle_console` · `reticle_state` · `reticle_wait_for`
+  </Card>
+  <Card title="Prove & discover" icon="circle-check">
+    `reticle_assert` · `reticle_tools` · `reticle_run`
+  </Card>
+</CardGroup>
+
+<Warning>
+  Only **`reticle_act_and_wait`** and **`reticle_assert`** produce a verdict. Everything else moves
+  or reads the app and proves nothing. A drive that ends without one of those two has no result,
+  however many tools it used and however confident the summary sounds.
+</Warning>
+
+## Why these 16 and not others
+
+Each one earned its slot, and a couple are there because of measured mistakes.
+
+`reticle_inspect` maps a DOM node to `src/components/Sidebar.tsx:41`. Finding a bug is half the job; knowing which file to open is the half that makes an agent useful. It used to sit in the cold tail, which meant an agent had to already know it existed to use it — so essentially nobody did.
+
+`reticle_act_sequence` batches a multi-step interaction into one round trip. It was also in the cold tail, and the consequence showed up in the data: agents drove login forms one call at a time, over and over. Those repeats were not retries — the calls succeeded and got repeated, because the batching tool was invisible. A tool an agent must already know about is a tool that never gets called.
+
+Direct `reticle_network` and `reticle_console` stay advertised even though `reticle_observe` can filter for both, because two obvious tools beat one clever tool with a filter grammar.
+
+<Tip>
+  Trimming further has a floor. An 8-tool cut measurably dropped real-agent accuracy — the model
+  loses scaffolding and wanders on harder flows. That reading is old enough to be dated evidence
+  rather than proof, and a fresh A/B against a leaner surface is still unrun. Small is good; empty
+  is not.
+</Tip>
+
+## Reaching the other 32
+
+```json
+{ "name": "reticle_flow_verify", "args": {} }
+```
+
+`reticle_run` takes a tool name and its arguments. `reticle_tools` lists what's available and returns the full argument grammar for any of them, so your agent can discover a tool mid-task without you having pre-loaded its schema.
+
+Notable residents of the cold tail: flow recording and replay, visual diffing and screenshots, network mocking, viewport pinning, coverage, autonomous crawling, and the human-in-the-loop session controls.
+
+## Every response carries its cost
+
+Reticle tells you what each answer cost, because a verification tool that quietly eats your context window is not saving you anything:
+
+```json
+"cost": { "bytes": 938, "tokens": 235 }
+```
+
+That is a real `reticle_query` response — seven buttons found, with source pointers, for 235 tokens.
+
+## Every response tells you when not to trust it
+
+This is the part we're proudest of and the part that makes demos slightly less shiny.
+
+When the browser tab is backgrounded, every response says so:
+
+```json
+"warning": "tab throttled; timer/rAF/pointer gestures may silently no-op — refocus before driving"
+```
+
+When the event buffer has evicted old events, a negative result might be a false negative, and it says that too:
+
+```json
+"buffer": {
+  "held": 15,
+  "dropped": 529,
+  "note": "event buffer evicted older events (age/size cap) — a negative result here may be a false negative; the evidence may have expired. Grade sooner or widen the buffer."
+}
+```
+
+A tool that says "no requests found" when it actually means "I lost the ones you asked about" is worse than useless — it's confidently wrong. Reticle would rather tell you its memory is imperfect.
+
+## Reference
+
+<CardGroup cols={2}>
+  <Card title="reticle_query" icon="magnifying-glass" href="/tools-query">
+    Find elements by Testing-Library semantics, with source pointers.
+  </Card>
+  <Card title="reticle_inspect" icon="crosshairs" href="/tools-inspect">
+    Everything about one element — component stack, source, box, design tokens.
+  </Card>
+  <Card title="reticle_network" icon="satellite-dish" href="/tools-network">
+    Filtered request log with bodies, timings and automatic redaction.
+  </Card>
+  <Card title="reticle_state" icon="database" href="/tools-state">
+    Read live framework state without the app broadcasting it.
+  </Card>
+</CardGroup>
+
+<Card title="The complete reference" icon="book" href="/usage">
+  Every tool, every argument, including the 32 in the cold tail.
+</Card>
