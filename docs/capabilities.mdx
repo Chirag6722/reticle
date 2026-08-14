@@ -96,6 +96,61 @@ Compares the data an endpoint returned against what the page actually displays.
 
 The bug it catches is specific and common: the API returned ten rows, the table shows nine, and nothing errored. Neither the network log nor the DOM is wrong on its own. Only the comparison is.
 
+### Domain: which of your flows actually prove anything
+
+The most useful tool nobody knows about.
+
+```json
+{ "tool": "reticle_domain" }
+```
+
+```json
+{
+  "flowCount": 47,
+  "coverage": { "asserted": 14, "presenceOnly": 2, "assertionFree": 31 },
+  "gaps": {
+    "declaredUntestedSignals": [
+      "deploy:created",
+      "deploy:shipped",
+      "modal:opened",
+      "toast:shown",
+      "…"
+    ],
+    "declaredUntestedTestids": ["deploy-submit", "drawer", "palette", "…"]
+  },
+  "summary": "47 flows: 14 asserted, 2 presence-only, 31 assertion-free. 13 declared signal(s) no flow asserts. 33 flow(s) assert no consequence."
+}
+```
+
+Read that summary again. Thirty-one of forty-seven flows **assert no consequence**, which means they replay green whatever the app does. That is a suite that looks like coverage and is not.
+
+Each flow comes back graded, with the consequence that must hold and a risk level:
+
+```json
+{
+  "name": "deploy-journey",
+  "grade": "asserted",
+  "mustHold": "nav:changed",
+  "risk": { "level": "high", "reason": "last run drifted", "lastStatus": "drift" }
+}
+```
+
+```json
+{
+  "name": "console-compose",
+  "grade": "assertion-free",
+  "warning": "This flow performs actions but asserts no observable consequence — it will pass even if the feature is broken. Add a consequence assertion with reticle_annotate (assert-signal / assert-net) or a success-state."
+}
+```
+
+`declaredUntestedSignals` is the other half: signals your app emits that no flow ever checks. It is a to-do list for your test suite, generated from what the app says about itself.
+
+<Tip>
+  Run this before writing a new flow. It tells you what is already covered, what is covered badly,
+  and which declared signal has never been asserted. All three are better starting points than
+  guessing.
+</Tip>
+
 ### Baselines: semantic snapshots, not pixels
 
 ```json
@@ -154,14 +209,79 @@ Most error states have never actually run. This is how you find out whether your
 The loop closer, and the reason Reticle is not only an interactive tool.
 
 ```json
-{ "tool": "reticle_record", "args": { "action": "start", "name": "ship-a-deploy" } }
-{ "tool": "reticle_record", "args": { "action": "stop" } }
+{ "tool": "reticle_record", "args": { "action": "start", "recordingName": "ship-a-deploy" } }
+{ "tool": "reticle_record", "args": { "action": "stop", "recordingName": "ship-a-deploy" } }
+{ "tool": "reticle_flow_save", "args": { "flowName": "ship-a-deploy" } }
 { "tool": "reticle_flow_verify" }
 ```
 
-`reticle_flow_verify` replays every saved flow and returns one consolidated verdict. Flows are stored in `.reticle/` as human-readable files, so they are reviewed in pull requests and diffed like code.
+<Warning>
+  The argument names are not interchangeable. `reticle_record` takes **`recordingName`**,
+  `reticle_flow_save` takes **`flowName`**, and neither accepts `name`. Reticle rejects the call
+  rather than guessing, which is the right call and still costs you a turn.
+</Warning>
 
-They anchor on meaning, a testid plus a signal, rather than volatile refs or coordinates. That is what lets them survive a refactor. When an anchor does drift, `reticle_flow_heal` proposes a rebind and tells you why it moved.
+Stopping a recording returns a **large** payload. A one-click recording came back at roughly 63,000 characters, and 69,000 of the 70,000 were the raw `events` array. There is currently no way to cap it: `max_events` and `filters` are rejected, even though the response's own `cost.recommendation` suggests them.
+
+The parts you actually want are tiny. Read these and ignore the rest:
+
+```json
+{
+  "program": { "name": "ship-a-deploy", "steps": [{ "tool": "reticle_act", "stable": true, "args": { … } }] },
+  "proposedConsequences": [
+    { "predicate": { "kind": "signal", "name": "auth:granted" }, "tier": 0, "label": "signal \"auth:granted\" fires" },
+    { "predicate": { "kind": "state", "store": "app", "path": "auth" }, "tier": 1, "label": "state \"app\" changes" },
+    { "predicate": { "kind": "net", "method": "POST", "urlContains": "/api/login", "status": 200 }, "tier": 1, "label": "POST /api/login responds" }
+  ],
+  "summary": { "total": 440, "network": 1, "consoleErrors": 0, "signals": 1 }
+}
+```
+
+`proposedConsequences` is the useful part and the reason to record at all. Reticle watched the interaction and worked out what would have proved it, ranked by strength. Tier 0 is the app's own signal. You do not have to invent the assertion; you pick one.
+
+### Saving and replaying
+
+```json
+{ "tool": "reticle_flow_save", "args": { "flowName": "ship-a-deploy" } }
+```
+
+```json
+{
+  "name": "ship-a-deploy",
+  "stepCount": 1,
+  "assertions": {
+    "grade": "assertion-free",
+    "warning": "This flow performs actions but asserts no observable consequence — it will pass even if the feature is broken."
+  }
+}
+```
+
+Reticle grades the flow as you save it, and tells you when you have just created a test that cannot fail. Take the warning seriously: an assertion-free flow replays green whatever the app does.
+
+A replay against a drifted app names what moved and where:
+
+```json
+{
+  "status": "drift",
+  "decision": {
+    "whatChanged": "testid \"login-submit\" not found",
+    "whereInSource": "src/components/Login.tsx:81",
+    "suggestedFix": "rebind the anchor to \"sign-out\" (closest survivor)"
+  }
+}
+```
+
+`reticle_flow_heal` proposes the rebind. It refuses when it is not confident:
+
+```json
+{
+  "status": "unhealable",
+  "applied": false,
+  "message": "drift found, but no nearest match cleared the confidence floor (HEAL_CONFIDENCE_MIN=0.5); file left untouched — add a data-testid or fix the flow by hand"
+}
+```
+
+Flows live in `.reticle/` as human-readable files, so they are reviewed in pull requests and diffed like code. They anchor on meaning, a testid plus a signal, rather than volatile refs or coordinates.
 
 <Card title="Flows in full" icon="repeat" href="/flows">
   Recording, replay, self-healing, and what lives in `.reticle/`.
