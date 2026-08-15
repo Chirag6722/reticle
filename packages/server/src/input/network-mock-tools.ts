@@ -89,7 +89,16 @@ export const NETWORK_MOCK_TOOLS: ToolDef[] = [
       'states without touching the backend ("verify the app handles a failed payment"). Pass `mocks` ' +
       '(first matching rule wins); pass an empty array or `clear: true` to turn mocking off.',
     inputSchema: {
-      mocks: z.array(ruleShape).optional().describe('Interception rules; omit/empty to clear.'),
+      // The rule fields each carry their own `.describe()` on `ruleShape`, but the params
+      // view reads only the top-level description of each entry, so those are flattened
+      // away before an agent sees them. Naming the shape here is what keeps the tool
+      // callable from its own description instead of by guessing and failing first.
+      mocks: z
+        .array(ruleShape)
+        .optional()
+        .describe(
+          'Interception rules, first match wins: { urlContains, method?, status?, body?, contentType?, delayMs?, abort? }. Omit or pass [] to clear.',
+        ),
       clear: z.boolean().optional().describe('Clear all active mocks (same as mocks: []).'),
       ...sessionIdShape,
     },

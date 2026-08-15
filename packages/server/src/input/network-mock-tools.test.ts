@@ -77,3 +77,43 @@ describe('reticle_network_mock tool', () => {
     expect(res.count).toBe(0);
   });
 });
+
+describe('the mocks description names the rule shape (#345)', () => {
+  /** Field names the `mocks` description advertises, e.g. `{ urlContains, method?, ... }`. */
+  function advertisedFields(description: string): string[] {
+    const shape = /\{([^}]*)\}/.exec(description);
+    const inner = shape?.[1];
+    if (undefined === inner) return [];
+    return inner
+      .split(',')
+      .map((f) => f.trim().replace(/\?$/, ''))
+      .filter((f) => f.length > 0);
+  }
+
+  function mocksDescription(): string {
+    const schema = tool().inputSchema['mocks'];
+    if (undefined === schema) throw new Error('no mocks param');
+    return schema.description ?? '';
+  }
+
+  it('names every field of the rule schema', () => {
+    // The params view flattens nested schemas, so the array's own description is
+    // the only place an agent can learn the shape. If a field is added to the rule
+    // schema and not named here, the tool becomes uncallable-without-guessing again.
+    const advertised = advertisedFields(mocksDescription());
+
+    expect(advertised).toEqual([
+      'urlContains',
+      'method',
+      'status',
+      'body',
+      'contentType',
+      'delayMs',
+      'abort',
+    ]);
+  });
+
+  it('still says how to clear, which is the other half of the contract', () => {
+    expect(mocksDescription()).toMatch(/clear/i);
+  });
+});
