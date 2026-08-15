@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import { CDP_NO_PROVIDER_REASON } from '@reticlehq/core';
 import { NETWORK_MOCK_TOOLS } from './network-mock-tools.js';
 import { ReticleTool } from '../tools/tool-names.js';
@@ -90,27 +91,34 @@ describe('the mocks description names the rule shape (#345)', () => {
       .filter((f) => f.length > 0);
   }
 
-  function mocksDescription(): string {
+  function mocksSchema(): z.ZodTypeAny {
     const schema = tool().inputSchema['mocks'];
     if (undefined === schema) throw new Error('no mocks param');
-    return schema.description ?? '';
+    return schema;
+  }
+
+  function mocksDescription(): string {
+    return mocksSchema().description ?? '';
+  }
+
+  /** The rule schema's own field names, read off the wired tool. */
+  function ruleFields(): string[] {
+    const mocks = mocksSchema();
+    const array: unknown = mocks instanceof z.ZodOptional ? mocks.unwrap() : mocks;
+    if (!(array instanceof z.ZodArray)) throw new Error('mocks is no longer an array schema');
+    const element: unknown = array.element;
+    if (!(element instanceof z.ZodObject)) throw new Error('mocks elements are no longer objects');
+    const shape: unknown = element.shape;
+    if (null === shape || 'object' !== typeof shape) throw new Error('rule schema has no shape');
+    return Object.keys(shape);
   }
 
   it('names every field of the rule schema', () => {
     // The params view flattens nested schemas, so the array's own description is
-    // the only place an agent can learn the shape. If a field is added to the rule
-    // schema and not named here, the tool becomes uncallable-without-guessing again.
-    const advertised = advertisedFields(mocksDescription());
-
-    expect(advertised).toEqual([
-      'urlContains',
-      'method',
-      'status',
-      'body',
-      'contentType',
-      'delayMs',
-      'abort',
-    ]);
+    // the only place an agent can learn the shape. Deriving the expectation from
+    // the schema is what makes this catch the direction that bites: a field added
+    // to the rule and never advertised. A hardcoded list only catches the reverse.
+    expect(advertisedFields(mocksDescription())).toEqual(ruleFields());
   });
 
   it('still says how to clear, which is the other half of the contract', () => {
