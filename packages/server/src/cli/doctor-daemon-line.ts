@@ -15,6 +15,7 @@
  */
 
 import { describeSkew } from '../version/version-skew.js';
+import { DoctorRow, doctorRow } from './doctor-rows.js';
 
 /** The fields of `/status` this line cares about. Both optional — an old daemon reports neither. */
 export interface DaemonIdentity {
@@ -62,6 +63,8 @@ export function daemonLine(
     { what: 'the daemon on this port', version: peer.version, contract: peer.contract, fix: FIX },
     self,
   );
-  const line: DaemonLine = { text: `  daemon       ✓ running on :${String(port)}${detail}` };
+  const line: DaemonLine = {
+    text: doctorRow(DoctorRow.DAEMON, `✓ running on :${String(port)}${detail}`),
+  };
   return skew === undefined ? line : { ...line, skew };
 }

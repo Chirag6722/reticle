@@ -13,6 +13,7 @@ import { SERVER_VERSION } from '../version/server-version.js';
 import { CONTRACT_FINGERPRINT } from '@reticlehq/core';
 import { diagnoseDesktop, isDesktopProject } from '../init/desktop-doctor.js';
 import { diagnosePortMismatch, readProjectPort } from './cli-port.js';
+import { DoctorRow, doctorRow } from './doctor-rows.js';
 
 /**
  * `reticle doctor` — collapse the ~6 independent first-run failure modes into one command. Checks the
@@ -43,11 +44,11 @@ export async function handleDoctor(port: number): Promise<void> {
     process.stdout.write(`${s}\n`);
   };
   line('reticle doctor');
-  line(`  node         ${process.version}`);
+  line(doctorRow(DoctorRow.NODE, process.version));
   // Filled in only on the daemon branch — there is nothing to ask when no daemon is answering, and
   // the branches below already say so in their own terms.
   let sessions: SessionsLine | undefined;
-  line(`  chromium     ${chromiumHint(await probeChromium())}`);
+  line(doctorRow(DoctorRow.CHROMIUM, chromiumHint(await probeChromium())));
   // Ask the PORT, not just the pid file. "not running on :4400" has been printed about a port that
   // was demonstrably occupied, which sends the reader to start a daemon that cannot bind. The three
   // states are genuinely different problems with different fixes, so doctor names which one it is.
@@ -64,7 +65,7 @@ export async function handleDoctor(port: number): Promise<void> {
       contract: CONTRACT_FINGERPRINT,
     });
     line(built.text);
-    if (built.skew !== undefined) line(`  version      ✗ ${built.skew}`);
+    if (built.skew !== undefined) line(doctorRow(DoctorRow.VERSION, `✗ ${built.skew}`));
     // The same payload already carries whether anything has CONNECTED, and doctor was reading
     // `version` off it and dropping the rest. Without this the command is silent on the one step the
     // funnel stalls on: wired correctly, daemon up, and no page has ever dialled in.
@@ -76,24 +77,40 @@ export async function handleDoctor(port: number): Promise<void> {
     // `pid` is what our pid file recorded for this port. When it matches the process actually
     // holding it, this is our OWN daemon wedged, not a stranger — and the fix is different.
     line(
-      `  daemon       ✗ ${describeForeignHolder(port, findPortHolder(port, captureLookup), pid)}`,
+      doctorRow(
+        DoctorRow.DAEMON,
+        `✗ ${describeForeignHolder(port, findPortHolder(port, captureLookup), pid)}`,
+      ),
     );
   } else {
     line(
-      `  daemon       ✗ not running on :${port} — your agent runs \`reticle mcp\` (or \`reticle serve\`)`,
+      doctorRow(
+        DoctorRow.DAEMON,
+        `✗ not running on :${port} — your agent runs \`reticle mcp\` (or \`reticle serve\`)`,
+      ),
     );
   }
   if (sessions !== undefined) line(sessions.text);
-  line(`  bridge port  ${port}  (your app must dial THIS port, not your dev-server port)`);
+  line(
+    doctorRow(
+      DoctorRow.BRIDGE_PORT,
+      `${port}  (your app must dial THIS port, not your dev-server port)`,
+    ),
+  );
   const projectPort = readProjectPort(process.cwd());
   const mismatch = diagnosePortMismatch(port, projectPort);
-  if (mismatch !== undefined) line(`  port check   ✗ ${mismatch}`);
+  if (mismatch !== undefined) line(doctorRow(DoctorRow.PORT_CHECK, `✗ ${mismatch}`));
   // Where to LOOK when something is wrong. The daemon has always written a structured log here and
   // nothing ever said so, so the first move in every investigation was reading source instead of
   // reading the log. `RETICLE_TRACE=1` turns the same stream into a per-stage trace — see
   // docs/debugging.md.
-  line(`  daemon log   ${join(reticleStateHome(), `daemon-${String(port)}.log`)}`);
-  line(`  tracing      ${ReticleEnv.TRACE}=1 on the daemon for per-stage timings in that log`);
+  line(doctorRow(DoctorRow.DAEMON_LOG, join(reticleStateHome(), `daemon-${String(port)}.log`)));
+  line(
+    doctorRow(
+      DoctorRow.TRACING,
+      `${ReticleEnv.TRACE}=1 on the daemon for per-stage timings in that log`,
+    ),
+  );
 
   // Below the checklist rather than inline: it is a paragraph, and a paragraph in the middle of a
   // column of one-line checks buries the checks under it. This is the daemon's own no-session
@@ -118,7 +135,10 @@ export async function handleDoctor(port: number): Promise<void> {
   if (desktop.length > 0) {
     line('');
     line(
-      `  desktop      ✗ ${String(desktop.length)} issue(s) — the app will look fine and not work:`,
+      doctorRow(
+        DoctorRow.DESKTOP,
+        `✗ ${String(desktop.length)} issue(s) — the app will look fine and not work:`,
+      ),
     );
     for (const finding of desktop) {
       line(`                 ${finding.file}`);
@@ -128,6 +148,6 @@ export async function handleDoctor(port: number): Promise<void> {
   } else if (isDesktopProject(readProjectFile)) {
     // Say so explicitly. Silence would read as "not checked", which is the same ambiguity the
     // findings above exist to remove.
-    line('  desktop      ✓ desktop wiring looks right');
+    line(doctorRow(DoctorRow.DESKTOP, '✓ desktop wiring looks right'));
   }
 }

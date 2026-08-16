@@ -1,4 +1,5 @@
 import { SELF_RECOVERING_MARKER } from '../session/no-session-diagnosis.js';
+import { DoctorRow, doctorRow } from './doctor-rows.js';
 
 /**
  * The line `doctor` was missing: is anything actually CONNECTED?
@@ -68,11 +69,16 @@ export function sessionsLine(facts: SessionFacts): SessionsLine {
     // An older daemon that does not report it. Saying "0 connected" here would be a claim about the
     // app made from a payload that never mentioned the app — the exact kind of confident wrong
     // sentence the no-session diagnosis exists to avoid.
-    return { text: '  sessions     ? this daemon did not report connected pages (older build)' };
+    return {
+      text: doctorRow(
+        DoctorRow.SESSIONS,
+        '? this daemon did not report connected pages (older build)',
+      ),
+    };
   }
   if (count > 0) {
     const plural = 1 === count ? 'page' : 'pages';
-    return { text: `  sessions     ✓ ${String(count)} ${plural} connected` };
+    return { text: doctorRow(DoctorRow.SESSIONS, `✓ ${String(count)} ${plural} connected`) };
   }
   const why =
     'string' === typeof facts.why && facts.why.length > 0 ? forAHuman(facts.why) : undefined;
@@ -80,7 +86,7 @@ export function sessionsLine(facts: SessionFacts): SessionsLine {
     // Deliberately ✗ rather than a neutral note. Zero connected pages is why somebody is running
     // doctor, and a ✓-coloured checklist that hides the one failing thing is how the old output
     // convinced people their setup was fine.
-    text: '  sessions     ✗ no page has connected to this daemon',
+    text: doctorRow(DoctorRow.SESSIONS, '✗ no page has connected to this daemon'),
     ...(why === undefined ? {} : { why }),
   };
 }

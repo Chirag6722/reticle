@@ -52,6 +52,7 @@ When nothing has connected, the `sessions` line fails and the daemon's own diagn
 | `daemon` | Whether the port holds a Reticle daemon, a foreign process (named where possible), or nothing. Adds a `version` line when the daemon's version or contract fingerprint disagrees with the CLI's |
 | `sessions` | Whether any page has actually connected. Zero is a FAILING check rather than a neutral note, because it is the state the setup most often stalls in: wired correctly, daemon up, nothing dialled in. When it is zero the daemon's own no-session diagnosis prints below the checklist |
 | `bridge port` | The port your app must dial, spelled out because mixing it up with the dev server port is the most common setup failure |
+| `port check` | Only when your project's configured port disagrees with the one the daemon is on. Prints the mismatch rather than leaving you to spot it across two lines |
 | `daemon log` | Where the structured daemon log lives |
 | `tracing` | How to turn that log into a per-stage trace |
 | `desktop` | Only on a desktop project. Every Electron and Tauri misconfiguration here fails silently, so it is diagnosed explicitly |
