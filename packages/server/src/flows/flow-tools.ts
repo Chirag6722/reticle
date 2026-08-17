@@ -287,7 +287,9 @@ export const FLOW_TOOLS: ToolDef[] = [
       'stale ref. On an anchor MISS returns legible DRIFT { step, anchor, drift:{ reasonKind, reason, ' +
       'nearest } } (the closest surviving testid) and stops — the "whose fault is it" contract. ' +
       'Returns { name, status: ok|drift|error, steps:[...] }; missing/malformed files and action ' +
-      'failures are status:error with a structured code (distinct from contract-changed drift).',
+      'failures are status:error with a structured code (distinct from contract-changed drift). ' +
+      'An ok replay of a flow that asserts no consequence also carries unverifiable:{reason} — it ' +
+      'would read ok even if the feature were broken, so do NOT treat that ok as proof.',
     inputSchema: {
       flow: z
         .string()
@@ -321,6 +323,14 @@ export const FLOW_TOOLS: ToolDef[] = [
           'Push-default deviation report over the replay segments: ranked deviations vs the learned envelope + a nominal count, or a fall-back note below 3 runs.',
         ),
       error: z.object({ code: z.string(), message: z.string() }).optional(),
+      // Declared here or a validating profile strips it -- the same way `name` was stripped once.
+      // A field the handler sets and the schema omits arrives as nothing, silently.
+      unverifiable: z
+        .object({ reason: z.string() })
+        .optional()
+        .describe(
+          'Set on an ok replay that cannot fail: the flow asserts no observable consequence, so it passes even when the feature is broken. Same reason reticle_flow_verify reports.',
+        ),
       decision: z
         .object({
           verdict: z.string(),

@@ -17,10 +17,11 @@ import {
   type FlowReplayResult,
 } from '@reticlehq/core';
 import { TOOLS, type ToolDeps } from '../tools/tools.js';
+import { buildSuiteVerdict } from './decision.js';
 import { ReticleTool } from '../tools/tool-names.js';
 import { BaselineStore } from '../project/baselines.js';
 import { RecordingStore } from './recordings.js';
-import { FlowStore } from './flows.js';
+import { FlowStore, type FlowAnnotations } from './flows.js';
 import { ProjectStore } from '../project/project-store.js';
 import { AnnotationStore } from './annotation-store.js';
 import { createNodeFileSystem, type FileSystemPort } from '../project/fs-port.js';
@@ -267,5 +268,100 @@ describe('reticle_flow_replay handler — temp dir, never touches the repo', () 
 
     expect(actArgs[0]).not.toHaveProperty(DANGEROUS_ACTION_CONFIRM_ARG);
     expect(actArgs[1]).toMatchObject({ [DANGEROUS_ACTION_CONFIRM_ARG]: true });
+  });
+});
+
+/**
+ * #341: a single-flow replay of a flow that asserts nothing returned a bare `ok`.
+ *
+ * `reticle_flow_verify` already refuses to count those as passes and says why. The single-flow
+ * tool did not, so an agent replaying one flow and reading `status: "ok"` had no way to learn the
+ * flow would read `ok` even if the feature were entirely broken.
+ *
+ * The status stays `ok` deliberately. `buildSuiteVerdict` reaches its unverifiable branch ONLY
+ * through `ReplayStatus.OK` and pushes everything else onto `failures`, so introducing an
+ * `unverifiable` status would make the suite report an unasserted flow as a FAILED one — a worse
+ * lie than the one being fixed, because it sends someone debugging an app that is fine.
+ */
+describe('reticle_flow_replay — a green that cannot go red (#341)', () => {
+  let dir: string;
+  let root: string;
+  let fs: FileSystemPort;
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'reticle-unverifiable-'));
+    root = join(dir, '.reticle');
+    fs = createNodeFileSystem();
+  });
+
+  afterEach(async () => {
+    await removeTempDir(dir);
+  });
+
+  async function save(
+    name: string,
+    steps: RecordedStep[],
+    annotations?: FlowAnnotations,
+  ): Promise<void> {
+    const res = await new FlowStore(fs, root, clock).save(program(name, steps), annotations);
+    if (!res.ok) throw new Error(`save failed: ${res.code}`);
+  }
+
+  function resolvingSession(): Partial<Session> {
+    return scriptedSession((testid) => ({ elements: [{ ref: `e-${testid}` }] }));
+  }
+
+  async function replay(name: string): Promise<FlowReplayResult> {
+    const deps = fakeDeps(fs, root, resolvingSession());
+    return (await tool(ReticleTool.FLOW_REPLAY).handler(deps, {
+      flowName: name,
+    })) as FlowReplayResult;
+  }
+
+  it('an assertion-free flow replays ok AND says it proved nothing', async () => {
+    await save('asserts-nothing', [actStep('login-submit')]);
+
+    const res = await replay('asserts-nothing');
+
+    // Still ok: the replay genuinely completed. That is the point — the status alone was never
+    // going to carry this, which is why a bare `ok` was misleading rather than wrong.
+    expect(res.status).toBe(ReplayStatus.OK);
+    expect(res.unverifiable?.reason).toBeDefined();
+    expect(res.unverifiable?.reason).toMatch(/asserts no observable consequence/);
+  });
+
+  it('a flow with a consequence assertion carries no such caveat', async () => {
+    // The control. Without it, a bug that attached the caveat unconditionally would pass every
+    // other assertion here — and would tell an agent that a genuinely verified flow proved nothing.
+    await save('asserts-something', [actStep('login-submit')], {
+      stepExpect: new Map(),
+      dynamic: [],
+      success: { signal: 'auth:logged-in' },
+    });
+
+    const res = await replay('asserts-something');
+
+    expect(res.unverifiable).toBeUndefined();
+  });
+
+  it('the single-flow result and the suite agree about the same flow', async () => {
+    // The actual invariant. Asserting the field exists in isolation would let the two tools drift
+    // apart again, which is the whole defect: two answers to one question about one flow.
+    await save('asserts-nothing', [actStep('login-submit')]);
+    const flow = await new FlowStore(fs, root, clock).load('asserts-nothing');
+    if (!flow.ok) throw new Error('load failed');
+
+    const single = await replay('asserts-nothing');
+    const suite = buildSuiteVerdict([{ replay: single, flow: flow.value }]);
+
+    expect(suite.status).toBe('unverifiable');
+    expect(suite.unverifiable?.[0]?.reason).toBe(single.unverifiable?.reason);
+  });
+
+  it('the reason is declared on the tool output schema, or a profile strips it', () => {
+    // `name` was omitted here once and arrived stripped, which is why this is asserted rather
+    // than trusted: a field the handler sets and the schema omits returns as nothing, silently.
+    const schema = tool(ReticleTool.FLOW_REPLAY).outputSchema;
+    expect(schema).toHaveProperty('unverifiable');
   });
 });

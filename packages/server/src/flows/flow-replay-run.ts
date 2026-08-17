@@ -14,7 +14,7 @@ import {
 import { asString } from '../tools/tools-helpers.js';
 import { replayFlow } from './flow-replay.js';
 import { assertSuccess, dynamicTestids, successLabel, SUCCESS_STEP_TOOL } from './flow-success.js';
-import { buildDecision } from './decision.js';
+import { buildDecision, unverifiableReason } from './decision.js';
 import { waitForPredicate } from '../events/predicate.js';
 import { computeSegments } from '../journal/rollups.js';
 import { AssertionTiersStore } from './assertion-tiers-store.js';
@@ -223,6 +223,12 @@ export async function replayNamedFlow(
     return errored;
   }
   const result: FlowReplayResult = { name, status, steps };
+  // A green that cannot go red is not a pass. `reticle_flow_verify` already refuses to count these,
+  // via this same function -- a single-flow caller saw a bare `ok` and had no way to learn the flow
+  // asserts nothing. Derived from the same helper on purpose: two copies of this judgement would
+  // drift, and the sibling tools would then disagree about the same flow.
+  const cannotFail = status === ReplayStatus.OK ? unverifiableReason(loaded.value) : undefined;
+  if (cannotFail !== undefined) result.unverifiable = { reason: cannotFail };
   if (status !== ReplayStatus.OK) result.decision = buildDecision(result, loaded.value);
   applyStartPathHint(result, startPathHint);
   if (deviation !== undefined) result.deviation = deviation;

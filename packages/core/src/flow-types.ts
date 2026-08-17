@@ -296,6 +296,14 @@ export interface FlowReplayResult {
   /** Set when status === 'error' (load failure or resolved action failure). */
   error?: { code: string; message: string };
   /**
+   * Set on an `ok` replay whose flow cannot fail: it asserts no observable consequence, or has no
+   * steps at all. The replay genuinely completed, so the status stays `ok` — but a bare `ok` read
+   * as proof the feature works is exactly the false confidence `flow-risk.ts` argues against, and
+   * `reticle_flow_verify` already refuses to count these as passes. This carries the same reason,
+   * from the same function, to the single-flow caller who would otherwise never see it.
+   */
+  unverifiable?: { reason: string };
+  /**
    * The confident rebind proposals aggregated across drifted steps (additive,
    * optional — present only when at least one drifted step has a confident nearest match).
    */

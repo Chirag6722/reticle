@@ -122,7 +122,7 @@ function suiteVerdictOf(status: ReplayStatus): 'pass' | 'drift' | 'fail' {
  * turned that warning into "all 1 flow pass", which is a false green in the exact feature sold as
  * the regression suite. Classified only when the flow file is available; never guessed.
  */
-function unverifiableReason(flow: FlowFile | undefined): string | undefined {
+export function unverifiableReason(flow: FlowFile | undefined): string | undefined {
   if (flow === undefined) return undefined;
   if (0 === flow.steps.length) {
     return 'the flow has no steps — it replays green whatever the app does. Record it again, or add steps with reticle_annotate.';
