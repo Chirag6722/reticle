@@ -9,7 +9,7 @@
  *   - it is best-effort and non-blocking: a send failure NEVER changes what the tool does.
  *
  * Events are `@reticlehq/core`'s `TelemetryEventSchema`, mapped at the wire into PostHog's capture
- * format (https://posthog.com/docs/api/capture) — PostHog is the analytics backend until Reticle Cloud
+ * format (https://posthog.com/docs/api/capture) — PostHog is the analytics backend until the hosted service
  * grows its own; a project API key is WRITE-ONLY by design, so embedding it in an OSS client is safe.
  * Everything here is wrapped so a telemetry bug can never surface to a user — a broken metric must not
  * break a verification.

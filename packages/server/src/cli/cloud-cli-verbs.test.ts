@@ -8,7 +8,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { runCloudCommand } from './cloud-cli.js';
 
 interface RecordedRequest {
@@ -60,9 +60,10 @@ describe('cloud-cli verb contracts (#555)', () => {
   };
 
   const writeHomeFile = async (rel: string[], content: string): Promise<void> => {
-    const dir = join(home, RETICLE_DIR);
-    await mkdir(dir, { recursive: true });
-    await writeFile(join(dir, ...rel), content);
+    const target = join(home, RETICLE_DIR, ...rel);
+    // dirname, not the .reticle root: sessions live one level down, in `sessions/<host>.json`.
+    await mkdir(dirname(target), { recursive: true });
+    await writeFile(target, content);
   };
 
   beforeEach(async () => {
@@ -217,6 +218,78 @@ describe('cloud-cli verb contracts (#555)', () => {
     expect(stderrBuf).toContain('https://staging.reticle.sh');
   });
 
+  it('login --url dials the host given on the command line, over env and over the default', async () => {
+    // A flag beats an environment variable for a one-off: it is visible in shell history, it cannot
+    // leak into a sibling process, and it is the spelling somebody reaches for without reading docs.
+    process.env['RETICLE_CLOUD_URL'] = 'https://staging.reticle.sh';
+    responder = () => ({ status: 500, body: { error: { message: 'down' } } });
+
+    const code = await runCloudCommand(['login', '--url', 'https://other.reticle.sh']);
+
+    expect(code).toBe(1);
+    expect(requests[0]?.url).toBe('https://other.reticle.sh/v1/auth/device/start');
+  });
+
+  it('holds a session per host, so staging and production can both be logged in', async () => {
+    // The point of keying by host. Two logins, neither clobbering the other, and each command
+    // picking the token that belongs to the host it is actually dialling.
+    await writeHomeFile(
+      ['sessions', 'app.reticle.sh.json'],
+      '{"token":"prod-token","orgName":"Prod","url":"https://app.reticle.sh"}',
+    );
+    await writeHomeFile(
+      ['sessions', 'staging.reticle.sh.json'],
+      '{"token":"staging-token","orgName":"Staging","url":"https://staging.reticle.sh"}',
+    );
+    responder = () => ({ status: 200, body: { projects: [] } });
+
+    process.env['RETICLE_CLOUD_URL'] = 'https://staging.reticle.sh';
+    await runCloudCommand(['project', 'ls']);
+    expect(requests[0]?.authorization).toBe('Bearer staging-token');
+
+    requests = [];
+    process.env['RETICLE_CLOUD_URL'] = 'https://app.reticle.sh';
+    await runCloudCommand(['project', 'ls']);
+    expect(requests[0]?.authorization).toBe('Bearer prod-token');
+  });
+
+  it('reads a pre-existing session.json, so an already-logged-in machine is not signed out by upgrading', async () => {
+    await writeHomeFile(
+      [SESSION_FILE],
+      '{"token":"legacy-token","orgName":"Acme","url":"http://localhost:9999"}',
+    );
+    responder = () => ({ status: 200, body: { projects: [] } });
+
+    await runCloudCommand(['project', 'ls']);
+
+    expect(requests[0]?.url).toContain('http://localhost:9999');
+    expect(requests[0]?.authorization).toBe('Bearer legacy-token');
+  });
+
+  it('logout signs out of one host and leaves the other logged in', async () => {
+    await writeHomeFile(
+      ['sessions', 'app.reticle.sh.json'],
+      '{"token":"prod-token","orgName":"Prod","url":"https://app.reticle.sh"}',
+    );
+    await writeHomeFile(
+      ['sessions', 'staging.reticle.sh.json'],
+      '{"token":"staging-token","orgName":"Staging","url":"https://staging.reticle.sh"}',
+    );
+    process.env['RETICLE_CLOUD_URL'] = 'https://staging.reticle.sh';
+
+    const code = await runCloudCommand(['logout']);
+
+    expect(code).toBe(0);
+    // Signing out of staging must not sign you out of production. A logout that quietly cleared
+    // every environment would be discovered at the worst moment, mid-incident, on the other one.
+    await expect(
+      readFile(join(home, RETICLE_DIR, 'sessions', 'staging.reticle.sh.json'), 'utf8'),
+    ).rejects.toThrow();
+    expect(
+      await readFile(join(home, RETICLE_DIR, 'sessions', 'app.reticle.sh.json'), 'utf8'),
+    ).toContain('prod-token');
+  });
+
   it('logout clears the cached session file without touching the network', async () => {
     await writeHomeFile([SESSION_FILE], '{"token":"tok","orgName":"Acme","url":"http://c"}');
 
@@ -224,7 +297,7 @@ describe('cloud-cli verb contracts (#555)', () => {
 
     expect(code).toBe(0);
     expect(await readFile(join(home, RETICLE_DIR, SESSION_FILE), 'utf8')).toBe('');
-    expect(lastJsonOutput()).toEqual({ loggedOut: true });
+    expect(lastJsonOutput()).toEqual({ loggedOut: true, url: 'http://c' });
     expect(requests).toHaveLength(0);
   });
 

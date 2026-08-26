@@ -53,8 +53,10 @@ export const CLI_USAGE = `usage:  npx @reticlehq/server <command>   (or \`reticl
   reticle identify --context company|side_project|open_source|learning [--company N] [--email E] [--forget]
                                                        (OPT-IN: tell us who you are, e.g. for support or an enterprise trial)
 
-Cloud (link this project to Reticle Cloud; runs/flows recorded on the dashboard):
-  reticle login --email <e> [--code <c>] [--org <n>]   (sign in: mails a code, then exchanges it)
+Cloud (link this project to Reticle; runs/flows recorded on the dashboard):
+  reticle login [--url <u>] [--email <e>] [--code <c>] [--org <n>]
+                                                       (browser device flow by default; --email mails a code)
+  reticle logout [--url <u>]                           (sign out of ONE host; others stay signed in)
   reticle link  [--project <name|id>]                  (bind this repo: mints a scoped key, writes .reticle/cloud.json)
   reticle whoami                                        (who am I signed in as, and is this repo attached?)
   reticle project <ls|create <name>>                   (list or create cloud projects)

@@ -140,7 +140,7 @@ async function pushRunToCloud(run: ReticleVerificationRun, ports: VerifyPorts): 
   if (null === config) return;
   const result = await syncRunToCloud(run, config, cloudFetch);
   if (result.outcome === SyncOutcome.SYNCED) {
-    ports.out(`↑ run ${run.runId} recorded on the Reticle Cloud dashboard`);
+    ports.out(`↑ run ${run.runId} recorded on the Reticle dashboard`);
   } else {
     ports.fail(
       `cloud run sync failed (${result.status ?? result.error ?? 'error'}); run kept locally`,

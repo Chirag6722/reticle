@@ -1,12 +1,12 @@
 /**
- * Cloud subcommands for the `reticle` CLI — the user/agent door to Reticle Cloud, folded into the ONE
+ * Cloud subcommands for the `reticle` CLI — the user/agent door to the hosted service, folded into the ONE
  * tool (was the standalone `reticle-cloud` bootstrap script). These are THIN clients over the `/v1` API:
  * the moat is the server, not these verbs, and OSS reticle already ships the cloud-sync client — this just
  * surfaces it. Creds live under `~/.reticle`: `session.json` (human token from `reticle login`) and
  * `credentials.json` (per-project api keys from `reticle link`). The non-secret repo binding + sync policy
  * is `<repo>/.reticle/cloud.json`. Auth for a command = `RETICLE_CLOUD_KEY` env (agent) OR the login token.
  */
-import { mkdir, writeFile, readFile } from 'node:fs/promises';
+import { mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { NodePlatform } from '../platform.js';
 import { spawn } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -34,6 +34,14 @@ import { diskSink, diskSource, readCloudIssues, readCloudState } from '../cloud/
 const DEFAULT_URL = 'https://app.reticle.sh';
 const RETICLE_DIR = '.reticle';
 const SESSION_FILE = 'session.json';
+/**
+ * One session file per host, so more than one environment can be logged in at once.
+ *
+ * `session.json` stays what it always was — the ACTIVE login, and the thing a bare command with no
+ * override resolves through. This directory is what makes staging and production hold at the same
+ * time instead of clobbering each other, which is the whole reason a single file was not enough.
+ */
+const SESSIONS_DIR = 'sessions';
 const CREDENTIALS_FILE = 'credentials.json';
 
 const DEFAULT_PROJECT_ID = 'default';
@@ -102,12 +110,50 @@ const flags = (argv: readonly string[]): Record<string, string> => {
 };
 
 const SessionSchema = z.object({ url: z.string(), token: z.string(), orgName: z.string() });
-const readSession = async (): Promise<z.infer<typeof SessionSchema> | null> => {
+type Session = z.infer<typeof SessionSchema>;
+
+/** Trailing slashes are not identity: `https://x/` and `https://x` are one host. */
+const normalizeUrl = (url: string): string => url.replace(/\/+$/, '');
+
+/**
+ * A filesystem-safe name for one host. `https://app.reticle.sh` → `app.reticle.sh`,
+ * `http://localhost:8890` → `localhost_8890`. The scheme is dropped deliberately: nobody runs the
+ * same host over both http and https and means two different accounts by it.
+ */
+const hostSlug = (url: string): string =>
+  normalizeUrl(url)
+    .replace(/^[a-z]+:\/\//i, '')
+    .replace(/[^a-zA-Z0-9.-]/g, '_');
+
+const sessionPath = (url: string): string => join(home(), SESSIONS_DIR, `${hostSlug(url)}.json`);
+
+/** The ACTIVE session — the last host logged in to. What a bare command resolves its URL through. */
+const readSession = async (): Promise<Session | null> => {
   const parsed = SessionSchema.safeParse(await readJson(join(home(), SESSION_FILE)));
   return parsed.success ? parsed.data : null;
 };
 
-const baseUrl = (session: { url: string } | null): string => {
+/**
+ * The session for ONE host, or null.
+ *
+ * This is the whole safety property, and it holds by construction rather than by a guard somebody
+ * has to remember: a token is looked up BY the host it will be sent to, so there is no arrangement
+ * of environment variables that fetches one host's credential for a request to another.
+ *
+ * Falls back to `session.json` when it names this host, so a machine that logged in before per-host
+ * sessions existed keeps working and is not silently signed out by an upgrade.
+ */
+const readSessionFor = async (url: string): Promise<Session | null> => {
+  const perHost = SessionSchema.safeParse(await readJson(sessionPath(url)));
+  if (perHost.success) return perHost.data;
+  const active = await readSession();
+  return null !== active && normalizeUrl(active.url) === normalizeUrl(url) ? active : null;
+};
+
+const baseUrl = (session: { url: string } | null, explicit?: string): string => {
+  // `--url` wins over the environment: it is typed for THIS command, it is visible in shell history,
+  // and it cannot leak into a sibling process the way an exported variable does.
+  if (explicit !== undefined && explicit.length > 0) return normalizeUrl(explicit);
   const env = process.env['RETICLE_CLOUD_URL'];
   if (env !== undefined && env.length > 0) return env.replace(/\/+$/, '');
   if (null !== session && session.url.length > 0) return session.url;
@@ -124,23 +170,6 @@ const bearer = (session: { token: string } | null): string | null => {
   if (key !== undefined && key.length > 0) return key;
   return session?.token ?? null;
 };
-
-/**
- * The cached session, but ONLY when it was issued by the host we are about to dial.
- *
- * `baseUrl` and `bearer` resolve independently, so without this the two can disagree: point
- * RETICLE_CLOUD_URL at staging while holding a production login and the production bearer is handed
- * to another host. One environment variable moves a credential across a trust boundary, and nothing
- * on screen says it happened — the command simply works, or 401s, depending on the other end.
- *
- * Dropping the session rather than the URL is the safe direction. The caller then behaves exactly as
- * it does for a user who never logged in — an error naming `reticle login` — which is true: they
- * have not logged in to THIS host. A staging and a production login cannot both be held today
- * (`session.json` is one file, one host); until they can, refusing is the honest answer and a
- * wrong-host 401 is not.
- */
-const sessionForHost = <T extends { url: string }>(session: T | null, url: string): T | null =>
-  null !== session && session.url.replace(/\/+$/, '') === url ? session : null;
 
 /** One `/v1` call. Throws a friendly Error on a non-2xx so the command surfaces it and exits 1. */
 const api = async (
@@ -251,11 +280,13 @@ const openBrowser = (target: string): void => {
 
 /** Persist a session token under ~/.reticle and print the next step. Shared by both login paths. */
 const writeSession = async (url: string, token: string, orgName: string): Promise<void> => {
-  await mkdir(home(), { recursive: true });
-  await writeFile(
-    join(home(), SESSION_FILE),
-    `${JSON.stringify({ url, token, orgName }, null, 2)}\n`,
-  );
+  await mkdir(join(home(), SESSIONS_DIR), { recursive: true });
+  const body = `${JSON.stringify({ url: normalizeUrl(url), token, orgName }, null, 2)}\n`;
+  // Both, on purpose. The per-host file is what lets another environment stay logged in; the active
+  // file is what a bare command with no override resolves through, and keeping it means nothing
+  // about the single-environment workflow changes.
+  await writeFile(sessionPath(url), body);
+  await writeFile(join(home(), SESSION_FILE), body);
   emit({ loggedIn: orgName, session: join(home(), SESSION_FILE) });
   hint(
     'next: `reticle link` to bind this repo to your Default project (or `reticle project create <name>` first)',
@@ -266,8 +297,8 @@ const writeSession = async (url: string, token: string, orgName: string): Promis
  * Browser device flow — the DEFAULT `reticle login` (like `gh auth login`): fetch a device + user code,
  * open the browser to approve, then poll until the user confirms. No email to type, no code to copy back.
  */
-const cmdLoginDevice = async (): Promise<number> => {
-  const url = baseUrl(null);
+const cmdLoginDevice = async (explicitUrl?: string): Promise<number> => {
+  const url = baseUrl(null, explicitUrl);
   const started = DeviceStartSchema.parse(
     await api('POST', `${url}/v1/auth/device/start`, null, {}),
   );
@@ -309,9 +340,9 @@ const cmdLogin = async (argv: readonly string[]): Promise<number> => {
   const f = flags(argv);
   const positional = argv[0] !== undefined && !argv[0].startsWith('--') ? argv[0] : undefined;
   const email = f['email'] ?? positional;
-  if (email === undefined) return cmdLoginDevice();
+  if (email === undefined) return cmdLoginDevice(f['url']);
   const org = f['org'];
-  const url = baseUrl(null);
+  const url = baseUrl(null, f['url']);
 
   let code = f['code'];
   if (code === undefined) {
@@ -338,9 +369,22 @@ const cmdLogin = async (argv: readonly string[]): Promise<number> => {
 };
 
 /** `reticle logout` — forget the cached session token (per-project keys under credentials.json stay). */
-const cmdLogout = async (): Promise<number> => {
-  await writeFile(join(home(), SESSION_FILE), '').catch(() => undefined);
-  emit({ loggedOut: true });
+/**
+ * `reticle logout` — sign out of ONE host, not of everywhere.
+ *
+ * Which host is the same question every other verb asks: `--url`, else the environment, else the
+ * active session. Signing out of staging must leave production alone — a logout that quietly
+ * cleared every environment would be discovered at the worst possible moment, mid-incident, on the
+ * one you did not mean.
+ */
+const cmdLogout = async (argv: readonly string[] = []): Promise<number> => {
+  const active = await readSession();
+  const url = baseUrl(active, flags(argv)['url']);
+  await rm(sessionPath(url), { force: true }).catch(() => undefined);
+  // The active pointer only moves if it was pointing at the host just signed out of.
+  if (null !== active && normalizeUrl(active.url) === url)
+    await writeFile(join(home(), SESSION_FILE), '').catch(() => undefined);
+  emit({ loggedOut: true, url });
   return 0;
 };
 
@@ -390,15 +434,17 @@ const cmdWhoami = async (): Promise<number> => {
 
 /** `reticle project ls` / `reticle project create <name>` — key- or session-authed. */
 const cmdProject = async (argv: readonly string[]): Promise<number> => {
-  const cached = await readSession();
-  const url = baseUrl(cached);
-  const session = sessionForHost(cached, url);
+  const active = await readSession();
+  const url = baseUrl(active);
+  const session = await readSessionFor(url);
   const token = bearer(session);
   if (null === token) {
+    // Name BOTH hosts when there is a session for a different one. "Run reticle login" on its own is
+    // baffling to somebody who just did — the useful fact is that they logged in somewhere else.
     err(
-      null === session && null !== cached
-        ? `signed in to ${cached.url}, but this command targets ${url} — run \`reticle login\` against it, or set RETICLE_CLOUD_KEY`
-        : 'run `reticle login` first, or set RETICLE_CLOUD_KEY',
+      null !== active && normalizeUrl(active.url) !== url
+        ? `signed in to ${normalizeUrl(active.url)}, but this command targets ${url} — run \`reticle login --url ${url}\`, or set RETICLE_CLOUD_KEY`
+        : `not signed in to ${url} — run \`reticle login --url ${url}\`, or set RETICLE_CLOUD_KEY`,
     );
     return 2;
   }
@@ -451,10 +497,9 @@ const cmdProject = async (argv: readonly string[]): Promise<number> => {
  */
 const cmdLink = async (argv: readonly string[]): Promise<number> => {
   const f = flags(argv);
-  const cached = await readSession();
-  const url = baseUrl(cached);
-  // Same rule as every other authed verb: a session only counts for the host that issued it.
-  const session = sessionForHost(cached, url);
+  const url = baseUrl(await readSession(), f['url']);
+  // Same rule as every other authed verb: the token is looked up by the host it will be sent to.
+  const session = await readSessionFor(url);
   const envKey = process.env['RETICLE_CLOUD_KEY'];
 
   let projectId: string;
@@ -699,7 +744,7 @@ export const runCloudCommand = async (argv: readonly string[]): Promise<number> 
       case 'login':
         return await cmdLogin(rest);
       case 'logout':
-        return await cmdLogout();
+        return await cmdLogout(rest);
       case 'whoami':
         return await cmdWhoami();
       case 'project':

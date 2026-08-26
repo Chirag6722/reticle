@@ -72,7 +72,7 @@ function replayToRunStatus(status: ReplayStatus): RunStatus {
 
 /**
  * Append a flow-replay outcome to .reticle/project.json (never throws into replay) and, when logged in,
- * best-effort mirror it to Reticle Cloud so the team's server-side regression history stays current. The
+ * best-effort mirror it to Reticle so the team's server-side regression history stays current. The
  * cloud push is fire-and-forget: not logged in → skipped, a network failure is logged and swallowed.
  */
 async function recordReplayRun(

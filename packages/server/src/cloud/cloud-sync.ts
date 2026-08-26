@@ -1,6 +1,6 @@
 /**
  * Optional cloud sync for saved flows. "Logged in" here means the two cloud env vars are set (written by
- * `reticle login` later; settable by hand today): the hosted URL and an API key from the Reticle Cloud
+ * `reticle login` later; settable by hand today): the hosted URL and an API key from the Reticle
  * dashboard. When present, a freshly-saved flow is pushed to `POST /v1/flows` so the team's regression
  * suite lives in the cloud — surviving refactors and runnable in CI. When absent, sync is a no-op and
  * everything stays 100% local (the "no phone-home" default: nothing leaves the machine unless you opt in).
@@ -69,7 +69,7 @@ export async function cloudFetch(
   } catch (err) {
     if (err instanceof Error && TIMEOUT_ERROR_NAMES.has(err.name)) {
       throw new Error(
-        `Reticle Cloud request timed out after ${Math.round(timeoutMs / 1000)}s: ${init.method} ${url}. ` +
+        `Reticle request timed out after ${Math.round(timeoutMs / 1000)}s: ${init.method} ${url}. ` +
           `The server accepted the connection but never answered. Check the network and ${CloudEnv.URL}, then retry — ` +
           `verification works locally without cloud.`,
       );

@@ -37,7 +37,7 @@ import { healFlow } from './heal-run.js';
 export { replayNamedFlow } from './flow-replay-run.js';
 
 /**
- * Best-effort mirror of a just-saved flow to Reticle Cloud (only when logged in — both cloud env vars
+ * Best-effort mirror of a just-saved flow to Reticle (only when logged in — both cloud env vars
  * set). Fire-and-forget: resolves the config, POSTs via the platform fetch, and logs the outcome. Any
  * failure is swallowed so a network hiccup never affects the local save.
  */
@@ -615,7 +615,7 @@ export const FLOW_TOOLS: ToolDef[] = [
       if (emptyRecorded !== undefined) return emptyRecorded;
       const res = await deps.flows.saveFlow(flow, session.projectId);
       if (!res.ok) return { error: flowErrorMessage(res.code), code: res.code };
-      // If logged into Reticle Cloud, mirror the saved flow to the team's regression suite. Best-effort
+      // If logged in to Reticle, mirror the saved flow to the team's regression suite. Best-effort
       // and non-blocking: the flow is already on disk, so a sync failure never fails the save.
       void syncSavedFlowToCloud(deps, flow, session.projectId);
       // Return the SaveSummary as-is ({ name, stepCount, degraded, empty }) — the outputSchema
