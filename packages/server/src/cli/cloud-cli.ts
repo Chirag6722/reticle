@@ -334,6 +334,7 @@ const writeSession = async (
   token: string,
   orgName: string,
   orgId: string | undefined,
+  project: string | undefined,
 ): Promise<void> => {
   await mkdir(join(home(), SESSIONS_DIR), { recursive: true });
   const body = `${JSON.stringify(
@@ -347,7 +348,7 @@ const writeSession = async (
   await writeFile(sessionPath(home(), url), body);
   await writeFile(join(home(), SESSION_FILE), body);
   emit({ loggedIn: orgName, session: join(home(), SESSION_FILE) });
-  await linkAfterLogin(url);
+  await linkAfterLogin(url, project);
 };
 
 /**
@@ -368,19 +369,24 @@ const writeSession = async (
  *   - a failure is reported and swallowed. The login SUCCEEDED and its token is already on disk;
  *     turning that into a non-zero exit would make the recoverable half look like the broken one.
  */
-const linkAfterLogin = async (url: string): Promise<void> => {
+const linkAfterLogin = async (url: string, project: string | undefined): Promise<void> => {
   const fs = createNodeFileSystem();
   const reticleDir = join(process.cwd(), RETICLE_DIR);
   if (!(await fs.exists(reticleDir))) {
     hint('next: run `reticle login` from your project, or `reticle link` to bind a repo');
     return;
   }
-  if (await fs.exists(join(reticleDir, CLOUD_LINK_FILE))) {
+  /*
+   * An explicit `--project` is an instruction, so it re-binds even a repo that is already linked.
+   * Without a project named, an existing binding is left completely alone — re-resolving it is how
+   * somebody repointing an environment loses a binding they meant to keep.
+   */
+  if (project === undefined && (await fs.exists(join(reticleDir, CLOUD_LINK_FILE)))) {
     hint('this repo is already linked — `reticle push` to send what it has recorded');
     return;
   }
   try {
-    await cmdLink(['--url', url]);
+    await cmdLink(project === undefined ? ['--url', url] : ['--url', url, '--project', project]);
   } catch {
     hint('signed in, but linking this repo failed — run `reticle link` to retry');
   }
@@ -390,7 +396,10 @@ const linkAfterLogin = async (url: string): Promise<void> => {
  * Browser device flow — the DEFAULT `reticle login` (like `gh auth login`): fetch a device + user code,
  * open the browser to approve, then poll until the user confirms. No email to type, no code to copy back.
  */
-const cmdLoginDevice = async (explicitUrl?: string): Promise<number> => {
+const cmdLoginDevice = async (
+  explicitUrl: string | undefined,
+  project: string | undefined,
+): Promise<number> => {
   const url = baseUrl(null, explicitUrl);
   const started = DeviceStartSchema.parse(
     await api('POST', `${url}/v1/auth/device/start`, null, {}),
@@ -406,7 +415,7 @@ const cmdLoginDevice = async (explicitUrl?: string): Promise<number> => {
       await api('POST', `${url}/v1/auth/device/token`, null, { deviceCode: started.deviceCode }),
     );
     if ('approved' === poll.status && poll.token !== undefined && poll.org !== undefined) {
-      await writeSession(url, poll.token, poll.org.name, poll.org.id);
+      await writeSession(url, poll.token, poll.org.name, poll.org.id, project);
       return 0;
     }
     if ('pending' === poll.status) {
@@ -433,7 +442,7 @@ const cmdLogin = async (argv: readonly string[]): Promise<number> => {
   const f = flags(argv);
   const positional = argv[0] !== undefined && !argv[0].startsWith('--') ? argv[0] : undefined;
   const email = f['email'] ?? positional;
-  if (email === undefined) return cmdLoginDevice(f['url']);
+  if (email === undefined) return cmdLoginDevice(f['url'], f['project']);
   const org = f['org'];
   const url = baseUrl(null, f['url']);
 
@@ -457,7 +466,7 @@ const cmdLogin = async (argv: readonly string[]): Promise<number> => {
   const parsed = LoginSchema.parse(
     await api('POST', `${url}/v1/auth/login`, null, { email, code }),
   );
-  await writeSession(url, parsed.token, parsed.org.name, parsed.org.id);
+  await writeSession(url, parsed.token, parsed.org.name, parsed.org.id, f['project']);
   return 0;
 };
 

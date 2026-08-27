@@ -61,3 +61,22 @@ describe('the slug is safe to put in a URL, a slot key and a project list', () =
     expect(slugifyProjectName('日本語')).toBe(DEFAULT_PROJECT_ID);
   });
 });
+
+/**
+ * The server-first persona: somebody who signed up on the dashboard, made a project there, and is
+ * now reading its Connect page to attach a repo.
+ *
+ * Their project already exists and has a NAME they chose. The directory-derived default is exactly
+ * wrong for them, which is why `--project` has to win outright — and why the Connect page hands
+ * them one command rather than a login followed by a link.
+ */
+describe('an explicitly named project always wins', () => {
+  it('beats the directory name', () => {
+    // `defaultProjectFor` is only ever consulted when no --project was given; this pins the
+    // contract that makes that safe to rely on.
+    expect(defaultProjectFor('some-checkout-dir', undefined)).toBe('some-checkout-dir');
+    expect(defaultProjectFor('some-checkout-dir', 'chosen-on-the-dashboard')).toBe(
+      'chosen-on-the-dashboard',
+    );
+  });
+});
