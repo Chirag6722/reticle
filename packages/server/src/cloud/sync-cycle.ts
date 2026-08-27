@@ -106,6 +106,15 @@ export interface SyncReport {
   pulled: number;
   /** True when the pull page was full — call again now rather than waiting for the next tick. */
   morePending: boolean;
+  /**
+   * The repo holds NO artifacts at all — no runs, no flows, no derived records.
+   *
+   * Distinct from "everything here is already pushed", which is the healthy steady state and looks
+   * identical from the outside. An empty repo usually means the app announces no projectId, so its
+   * runs are pooling into a different root and this binding will never report anything. Tracked so
+   * the summary can tell a user which of the two they are looking at.
+   */
+  localIsEmpty?: boolean;
   /** Set when the cycle could not complete. The local record is untouched either way. */
   error?: string;
 }
@@ -209,7 +218,8 @@ export async function runSyncCycle(deps: SyncDeps): Promise<SyncReport> {
     const hashes = isRecord(held.stateHashes) ? held.stateHashes : {};
 
     // 2. SEND — only what the server does not already have.
-    const unsent = deps.source.runs().filter((r) => !known.has(r.runId));
+    const allRuns = deps.source.runs();
+    const unsent = allRuns.filter((r) => !known.has(r.runId));
     const derivedSent: DerivedKind[] = [];
     const bundle: Record<string, unknown> = {};
     if (unsent.length > 0) bundle['runs'] = unsent.map((r) => r.payload);
@@ -288,6 +298,15 @@ export async function runSyncCycle(deps: SyncDeps): Promise<SyncReport> {
       derivedSent,
       pulled: decisions.length,
       morePending: true === pulled.more,
+      /*
+       * Nothing on disk at all, as opposed to nothing NEW. Computed from what the source offered
+       * before any cursor filtering, because a repo whose runs were all already pushed is healthy
+       * and a repo that has never recorded one is usually misconfigured.
+       */
+      localIsEmpty:
+        0 === allRuns.length &&
+        0 === deps.source.flows().length &&
+        DERIVED_RECORDS.every(({ kind }) => deps.source.derived(kind) === undefined),
     };
   } catch (error: unknown) {
     // A network that is down is not an error condition for a local-first tool; it is Tuesday.
@@ -341,7 +360,12 @@ export function describeSync(report: SyncReport): string {
       ? `sent ${sent.join(' + ')}`
       : report.runsRejected.length > 0
         ? 'nothing accepted'
-        : 'nothing to send';
+        : true === report.localIsEmpty
+          ? // Not the same statement as "nothing to send", which describes a repo that is simply up
+            // to date. This one has never recorded anything, which for a LINKED repo usually means
+            // the app announces no projectId and its runs are landing under a different root.
+            'nothing recorded here yet — if this app has been driven, it is reporting somewhere else'
+          : 'nothing to send';
   const pull =
     0 === report.pulled
       ? ''
