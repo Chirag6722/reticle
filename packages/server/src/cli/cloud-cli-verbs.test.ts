@@ -444,6 +444,63 @@ describe('cloud-cli verb contracts (#555)', () => {
     expect(stderrBuf).toContain('not in your repo');
   });
 
+  it('re-linking reuses the stored key instead of minting a second one', async () => {
+    // Credential hygiene. `link` is idempotent about the BINDING and was not about the KEY: two runs
+    // against one project left two live `reticle-cli` keys on the account, each valid, neither
+    // identifiable to a repo. An agent retries — that is what agents do — so this accumulates
+    // silently until somebody has a key list they cannot reason about and revokes the wrong one.
+    await writeHomeFile([SESSION_FILE], `{"token":"tok","orgName":"Acme","url":"${TEST_URL}"}`);
+    await writeHomeFile([CREDENTIALS_FILE], JSON.stringify({ proj_1: 'rk_live_existing00' }));
+    responder = (url) => {
+      if (true === url.endsWith('/v1/projects'))
+        return { body: { projects: [{ projectId: 'proj_1', name: 'Storefront' }] } };
+      return { body: { projectId: 'proj_1', projectName: 'Storefront' } };
+    };
+
+    const code = await runCloudCommand(['link', '--project', 'storefront']);
+
+    expect(code).toBe(0);
+    expect(
+      requests.filter((r) => 'POST' === r.method && r.url.endsWith('/v1/keys')),
+      'no second key is minted for a project already linked on this machine',
+    ).toEqual([]);
+    // It says REUSING, not "minted" — the report has to stay true on the second run.
+    expect(stderrBuf).toContain('reusing');
+    expect(stderrBuf).toContain('rk_live_existing');
+    // And the stored credential is left exactly as it was.
+    const creds = JSON.parse(
+      await readFile(join(home, RETICLE_DIR, CREDENTIALS_FILE), 'utf8'),
+    ) as Record<string, unknown>;
+    expect(creds['proj_1']).toBe('rk_live_existing00');
+  });
+
+  it('mints a fresh key when the stored one no longer works', async () => {
+    // A revoked or rotated key must not strand the repo. Validation is the whoami call the mint
+    // path already makes for dashboardUrl, so reuse costs no extra round trip.
+    await writeHomeFile([SESSION_FILE], `{"token":"tok","orgName":"Acme","url":"${TEST_URL}"}`);
+    await writeHomeFile([CREDENTIALS_FILE], JSON.stringify({ proj_1: 'rk_live_revoked000' }));
+    responder = (url) => {
+      if (true === url.endsWith('/v1/projects'))
+        return { body: { projects: [{ projectId: 'proj_1', name: 'Storefront' }] } };
+      if (true === url.endsWith('/v1/cloud/whoami'))
+        return { status: 401, body: { error: { message: 'revoked' } } };
+      return {
+        body: { projectId: 'proj_1', projectName: 'Storefront', key: 'rk_live_fresh00000' },
+      };
+    };
+
+    const code = await runCloudCommand(['link', '--project', 'storefront']);
+
+    expect(code).toBe(0);
+    expect(requests.filter((r) => 'POST' === r.method && r.url.endsWith('/v1/keys')).length).toBe(
+      1,
+    );
+    const creds = JSON.parse(
+      await readFile(join(home, RETICLE_DIR, CREDENTIALS_FILE), 'utf8'),
+    ) as Record<string, unknown>;
+    expect(creds['proj_1']).toBe('rk_live_fresh00000');
+  });
+
   it('config rewrites sync flags and verify mode in place without dialling', async () => {
     await writeRepoFile(
       [CLOUD_LINK_FILE],

@@ -174,6 +174,31 @@ const KEY_HINT_CHARS = 16;
 const keyHint = (key: string): string =>
   key.length <= KEY_HINT_CHARS ? key : `${key.slice(0, KEY_HINT_CHARS)}…`;
 
+/** The api key this machine already holds for a cloud project, if any. */
+const storedCredential = async (projectId: string): Promise<string | undefined> => {
+  const raw = await readJson(join(home(), CREDENTIALS_FILE));
+  if ('object' !== typeof raw || null === raw) return undefined;
+  const found = (raw as Record<string, unknown>)[projectId];
+  return 'string' === typeof found && found.length > 0 ? found : undefined;
+};
+
+/**
+ * What a key is good for, or undefined when the cloud will not accept it.
+ *
+ * Never throws: a revoked key, a rotated one and an unreachable cloud are all "cannot reuse this",
+ * and the caller's answer to every one of them is the same — mint a fresh one.
+ */
+const validateKey = async (
+  url: string,
+  key: string,
+): Promise<z.infer<typeof WhoamiSchema> | undefined> => {
+  try {
+    return WhoamiSchema.parse(await api('GET', `${url}/v1/cloud/whoami`, key));
+  } catch {
+    return undefined;
+  }
+};
+
 /** Bearer for a command: an explicit api key (agent) wins, else the human login token. */
 const bearer = (session: { token: string } | null): string | null => {
   const key = process.env['RETICLE_CLOUD_KEY'];
@@ -534,6 +559,8 @@ const cmdLink = async (argv: readonly string[]): Promise<number> => {
    * link the CLI guessed would be wrong exactly where it matters.
    */
   let dashboardUrl: string | undefined;
+  /** Whether the key was already on this machine — so the report can say so instead of "minted". */
+  let reusedKey = false;
   // Tracked separately from the value: an OLDER cloud answers whoami without a dashboardUrl, and
   // keying the fallback off the value would ask the same question twice every time.
   let askedWhoami = false;
@@ -551,15 +578,40 @@ const cmdLink = async (argv: readonly string[]): Promise<number> => {
       wanted === undefined
         ? DEFAULT_PROJECT_ID
         : await resolveProjectId(url, session.token, wanted);
-    const minted = KeySchema.parse(
-      await api('POST', `${url}/v1/keys`, session.token, {
-        name: 'reticle-cli',
-        projectId: targetId,
-      }),
-    );
-    projectId = minted.projectId;
-    projectName = minted.projectName;
-    key = minted.key;
+    /*
+     * Reuse the key this machine already holds for the project, rather than minting another.
+     *
+     * `link` was idempotent about the BINDING and not about the KEY: two runs against one project
+     * left two live `reticle-cli` keys on the account, each valid, neither identifiable to a repo.
+     * Agents retry — that is what agents do — so it accumulates silently until somebody has a key
+     * list they cannot reason about and revokes the wrong one. Measured: proving an unrelated fix
+     * with two `link` runs created exactly that.
+     *
+     * Validated before trusting, because a stored key can have been revoked or rotated from the
+     * dashboard and a stale credential must not strand the repo. The check is the whoami call the
+     * mint path already makes for `dashboardUrl`, so the common path costs no extra round trip —
+     * and a key that fails it is replaced rather than reported.
+     */
+    const existing = await storedCredential(targetId);
+    const reusable = existing === undefined ? undefined : await validateKey(url, existing);
+    if (existing !== undefined && reusable !== undefined) {
+      projectId = reusable.projectId;
+      projectName = reusable.projectName;
+      dashboardUrl = reusable.dashboardUrl;
+      askedWhoami = true;
+      key = existing;
+      reusedKey = true;
+    } else {
+      const minted = KeySchema.parse(
+        await api('POST', `${url}/v1/keys`, session.token, {
+          name: 'reticle-cli',
+          projectId: targetId,
+        }),
+      );
+      projectId = minted.projectId;
+      projectName = minted.projectName;
+      key = minted.key;
+    }
   } else {
     err('run `reticle login` first, or set RETICLE_CLOUD_KEY to link with an existing key');
     return 2;
@@ -615,7 +667,11 @@ const cmdLink = async (argv: readonly string[]): Promise<number> => {
    * this can be read aloud, pasted into an issue, or left in a terminal without leaking anything.
    */
   hint(`bound this repo to project "${projectName}"`);
-  hint(`minted key ${keyHint(key)} — stored in ${credPath}, not in your repo`);
+  hint(
+    reusedKey
+      ? `reusing key ${keyHint(key)} — already stored in ${credPath}, not in your repo`
+      : `minted key ${keyHint(key)} — stored in ${credPath}, not in your repo`,
+  );
   hint('to change it: `reticle link --project <other>`; to inspect: `reticle whoami`');
   hint(
     'linked ✓ runs auto-push on `reticle verify`; `reticle push` sends existing local runs; `reticle whoami` shows state',
