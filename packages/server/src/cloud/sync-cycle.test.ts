@@ -136,6 +136,64 @@ describe('a quiet machine costs nothing', () => {
   });
 });
 
+/**
+ * What the user is told when the server took the push and threw all of it away.
+ *
+ * The summary counted rejections but printed the reason for none of them, and — because it builds
+ * the sentence from what was ACCEPTED — a bundle that was entirely refused read as "nothing to
+ * send, 3 rejected". Both halves wrong in the same breath: something was very much sent, and the
+ * one fact that would let anybody act (why) was the one fact dropped. This is the shape a version
+ * skew takes in the field, where an older client's payloads are refused one by one.
+ */
+describe('when the server refuses what was pushed', () => {
+  const refused = (rejected: Array<{ index: number; reason: string }>): string =>
+    describeSync({
+      ok: true,
+      runsSent: 0,
+      runsRejected: rejected,
+      flowsSent: 0,
+      derivedSent: [],
+      pulled: 0,
+      morePending: false,
+    });
+
+  it('does not claim there was nothing to send', () => {
+    const line = refused([{ index: 0, reason: 'unknown field "verdicts"' }]);
+    expect(line).not.toContain('nothing to send');
+  });
+
+  it('names the reason, not just the count — a number alone is not actionable', () => {
+    const line = refused([{ index: 0, reason: 'unknown field "verdicts"' }]);
+    expect(line).toContain('unknown field "verdicts"');
+  });
+
+  it('gives one reason and the remaining count when several disagree', () => {
+    // A run per line would bury the summary. One example plus a count is enough to act on, and
+    // `reticle sync` prints the full list separately.
+    const line = refused([
+      { index: 0, reason: 'unknown field "verdicts"' },
+      { index: 1, reason: 'unknown field "verdicts"' },
+      { index: 2, reason: 'missing runId' },
+    ]);
+    expect(line).toContain('unknown field "verdicts"');
+    expect(line).toContain('3');
+  });
+
+  it('still reports what DID land when only some were refused', () => {
+    const line = describeSync({
+      ok: true,
+      runsSent: 2,
+      runsRejected: [{ index: 2, reason: 'missing runId' }],
+      flowsSent: 0,
+      derivedSent: [],
+      pulled: 0,
+      morePending: false,
+    });
+    expect(line).toContain('2 run(s)');
+    expect(line).toContain('missing runId');
+  });
+});
+
 describe('it sends only the difference', () => {
   it('skips runs the server names and sends the rest', async () => {
     const { report, calls } = await cycle(

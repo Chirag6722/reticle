@@ -330,12 +330,32 @@ export function describeSync(report: SyncReport): string {
   if (report.runsSent > 0) sent.push(`${String(report.runsSent)} run(s)`);
   if (report.flowsSent > 0) sent.push(`${String(report.flowsSent)} flow(s)`);
   if (report.derivedSent.length > 0) sent.push(report.derivedSent.join(', '));
-  const push = 0 === sent.length ? 'nothing to send' : `sent ${sent.join(' + ')}`;
+  /*
+   * "Nothing to send" is a statement about the QUEUE, and it is false the moment the queue was full
+   * and the server threw it away. Built from what was accepted, the sentence used to read "nothing
+   * to send, 3 rejected" — something was very much sent, and the reader is told both that it was
+   * not and nothing about why.
+   */
+  const push =
+    sent.length > 0
+      ? `sent ${sent.join(' + ')}`
+      : report.runsRejected.length > 0
+        ? 'nothing accepted'
+        : 'nothing to send';
   const pull =
     0 === report.pulled
       ? ''
       : `, pulled ${String(report.pulled)} decision(s)${report.morePending ? ' (more waiting)' : ''}`;
+  /*
+   * One reason, not a count. A rejection count tells somebody they have a problem and nothing about
+   * which problem — and these arrive from a BACKGROUND daemon, so the summary line is often the only
+   * place anybody ever sees it. Rejections in one cycle almost always share a cause (a version skew
+   * refuses every payload the same way), so the first reason plus the count is the whole story
+   * without printing a line per run; `reticle sync` still lists them all.
+   */
   const bad =
-    0 === report.runsRejected.length ? '' : `, ${String(report.runsRejected.length)} rejected`;
+    0 === report.runsRejected.length
+      ? ''
+      : `, ${String(report.runsRejected.length)} rejected — ${report.runsRejected[0]?.reason ?? 'no reason given'}`;
   return `${push}${pull}${bad}`;
 }
