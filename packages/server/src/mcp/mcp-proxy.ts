@@ -495,6 +495,17 @@ export function startMcpProxy(
     /** Why the stream we are currently trying to replace went away — carried onto the recovery. */
     let lastDropReason: string = OutageReason.OTHER;
     /**
+     * What the outage had already cost when the proxy went dormant.
+     *
+     * The wake path clears `attempts` before dialling, and it must: a wake is a fresh retry budget,
+     * and sharing the previous outage's spent budget would put the proxy dormant again on its first
+     * failure. But the recovery report is guarded on `attempts > 0`, so clearing it also erased the
+     * evidence that there was anything to recover FROM — and dormancy is the commonest outage class
+     * we have, which made every recovery of that class invisible. Carried across the wake so the
+     * budget resets and the accounting does not.
+     */
+    let attemptsBeforeDormant = 0;
+    /**
      * When the proxy started, and how many times the first connect has been refused since.
      *
      * The clock is read at this boundary rather than injected, matching the shutdown drain below:
@@ -542,9 +553,11 @@ export function startMcpProxy(
         // off and never reaching the budget that puts the proxy dormant. Measured: 32 retries in 8s.
         // Report the recovery BEFORE the counter is cleared: `attempts` is what coming back actually
         // cost, and it is the only number that can falsify the drop event. See OutageStage.RECOVERED.
-        if (attempts > 0)
-          reportMcpOutage(OutageStage.RECOVERED, { reason: lastDropReason, attempts });
+        const cost = attempts + attemptsBeforeDormant;
+        if (cost > 0)
+          reportMcpOutage(OutageStage.RECOVERED, { reason: lastDropReason, attempts: cost });
         attempts = 0;
+        attemptsBeforeDormant = 0;
         // The new session's McpServer has never seen the client's initialize — replay it first, then
         // flush whatever the client sent while we were reconnecting.
         for (const line of replay.replayLines()) forward(url, line);
@@ -857,6 +870,8 @@ export function startMcpProxy(
         // flushed once the new session's `endpoint` frame arrives.
         if (action === OnRequest.WAKE) {
           dormant = false;
+          // Budget reset, accounting preserved. See attemptsBeforeDormant.
+          attemptsBeforeDormant += attempts;
           attempts = 0;
           void (ensureDaemon?.() ?? Promise.resolve())
             .then(() => connect(false))
