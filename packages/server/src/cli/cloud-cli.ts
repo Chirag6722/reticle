@@ -6,7 +6,7 @@
  * `credentials.json` (per-project api keys from `reticle link`). The non-secret repo binding + sync policy
  * is `<repo>/.reticle/cloud.json`. Auth for a command = `RETICLE_CLOUD_KEY` env (agent) OR the login token.
  */
-import { mkdir, writeFile, readFile, rm } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
@@ -16,16 +16,23 @@ import { CLOUD_LINK_FILE, resolveProjectCloud } from '../cloud/cloud-config.js';
 import { applyCredential, findCredential } from './cloud-keystore.js';
 import { defaultProjectFor } from './project-name.js';
 import { RETICLE_CONFIG_BASENAME } from './cli-port.js';
-import { DevicePollSchema, DeviceStartSchema, openBrowser } from './device-flow.js';
+import { normalizeUrl } from './cloud-session.js';
+import { cmdLogin, cmdLogout } from './cloud-login.js';
 import {
-  normalizeUrl,
-  readSessionFrom,
-  resolveSessionFor,
-  sessionPath,
-  SESSIONS_DIR,
-  type Session,
-} from './cloud-session.js';
-import { cloudFetch } from '../cloud/cloud-sync.js';
+  api,
+  baseUrl,
+  bearer,
+  CREDENTIALS_FILE,
+  emit,
+  err,
+  flags,
+  hint,
+  home,
+  readJson,
+  readSession,
+  readSessionFor,
+  RETICLE_DIR,
+} from './cloud-kit.js';
 import { describeSync, runSyncCycle } from '../cloud/sync-cycle.js';
 import { diskSink, diskSource, readCloudIssues, readCloudState } from '../cloud/sync-disk.js';
 
@@ -41,9 +48,6 @@ import { diskSink, diskSource, readCloudIssues, readCloudState } from '../cloud/
  * reads as "the cloud is down", not "you are dialling the wrong host". Developing against a local
  * API is now what needs saying out loud, via RETICLE_CLOUD_URL, because that is the rarer case.
  */
-const DEFAULT_URL = 'https://app.reticle.sh';
-const RETICLE_DIR = '.reticle';
-const SESSION_FILE = 'session.json';
 /**
  * One session file per host, so more than one environment can be logged in at once.
  *
@@ -51,8 +55,6 @@ const SESSION_FILE = 'session.json';
  * override resolves through. This directory is what makes staging and production hold at the same
  * time instead of clobbering each other, which is the whole reason a single file was not enough.
  */
-const CREDENTIALS_FILE = 'credentials.json';
-
 const CLOUD_COMMANDS: ReadonlySet<string> = new Set([
   'login',
   'logout',
@@ -69,7 +71,6 @@ const CLOUD_COMMANDS: ReadonlySet<string> = new Set([
 export const isCloudCommand = (cmd: string | undefined): boolean =>
   cmd !== undefined && CLOUD_COMMANDS.has(cmd);
 
-const home = (): string => join(homedir(), RETICLE_DIR);
 /** `reticle sync --watch` — keep cycling instead of exiting. */
 const WATCH_FLAG = '--watch';
 
@@ -81,74 +82,6 @@ const WATCH_FLAG = '--watch';
  * turns it off — and a sync people turn off is the only kind that actually loses data.
  */
 const DEFAULT_SYNC_INTERVAL_MS = 60_000;
-
-const err = (msg: string): void => {
-  process.stderr.write(`reticle: ${msg}\n`);
-};
-/** A next-step nudge on stderr (humans read it; agents parse stdout JSON and ignore this). */
-const hint = (msg: string): void => {
-  process.stderr.write(`→ ${msg}\n`);
-};
-const emit = (obj: unknown): void => {
-  process.stdout.write(`${JSON.stringify(obj, null, 2)}\n`);
-};
-
-/** Read + parse a JSON file, or null when missing/malformed (never throws). */
-const readJson = async (path: string): Promise<unknown> => {
-  try {
-    return JSON.parse(await readFile(path, 'utf8'));
-  } catch {
-    return null;
-  }
-};
-
-/** Parse `--flag value` pairs out of an argv tail. */
-const flags = (argv: readonly string[]): Record<string, string> => {
-  const f: Record<string, string> = {};
-  for (let i = 0; i < argv.length; i += 1) {
-    const a = argv[i];
-    if (a !== undefined && a.startsWith('--') && i + 1 < argv.length) {
-      const v = argv[i + 1];
-      if (v !== undefined) f[a.slice(2)] = v;
-      i += 1;
-    }
-  }
-  return f;
-};
-
-/** The ACTIVE session — the last host logged in to. What a bare command resolves its URL through. */
-const readSession = async (): Promise<Session | null> =>
-  readSessionFrom(readJson(join(home(), SESSION_FILE)));
-
-/**
- * The session for ONE host, or null.
- *
- * The whole safety property, holding by construction rather than by a guard somebody has to
- * remember: a token is looked up BY the host it will be sent to, so no arrangement of environment
- * variables can fetch one host's credential for a request to another. Falls back to `session.json`
- * when it names this host, so a machine that logged in before per-host sessions existed is not
- * silently signed out by an upgrade.
- */
-const readSessionFor = async (url: string): Promise<Session | null> =>
-  resolveSessionFor(
-    url,
-    await readSessionFrom(readJson(sessionPath(home(), url))),
-    await readSession(),
-  );
-
-const baseUrl = (session: { url: string } | null, explicit?: string): string => {
-  // `--url` wins over the environment: it is typed for THIS command, it is visible in shell history,
-  // and it cannot leak into a sibling process the way an exported variable does.
-  if (explicit !== undefined && explicit.length > 0) return normalizeUrl(explicit);
-  const env = process.env['RETICLE_CLOUD_URL'];
-  if (env !== undefined && env.length > 0) return env.replace(/\/+$/, '');
-  if (null !== session && session.url.length > 0) return session.url;
-  // No hint here any more. This used to warn that it was falling back to localhost, which was worth
-  // saying because that default was wrong for everyone except us. The default is now the hosted
-  // service, so the fallback IS the intended path — and a warning printed on the correct path is
-  // how people learn to ignore stderr, which is where the real problems are written.
-  return DEFAULT_URL;
-};
 
 /**
  * How a key is named out loud: enough to match it against the dashboard, never enough to use.
@@ -192,49 +125,6 @@ const validateKey = async (
   }
 };
 
-/** Bearer for a command: an explicit api key (agent) wins, else the human login token. */
-const bearer = (session: { token: string } | null): string | null => {
-  const key = process.env['RETICLE_CLOUD_KEY'];
-  if (key !== undefined && key.length > 0) return key;
-  return session?.token ?? null;
-};
-
-/** One `/v1` call. Throws a friendly Error on a non-2xx so the command surfaces it and exits 1. */
-const api = async (
-  method: string,
-  url: string,
-  token: string | null,
-  body?: unknown,
-): Promise<unknown> => {
-  const headers: Record<string, string> = {};
-  if (token !== null) headers['authorization'] = `Bearer ${token}`;
-  if (body !== undefined) headers['content-type'] = 'application/json';
-  const init: { method: string; headers: Record<string, string>; body?: string } = {
-    method,
-    headers,
-  };
-  if (body !== undefined) init.body = JSON.stringify(body);
-  const res = await cloudFetch(url, init);
-  const text = await res.text();
-  let json: unknown = null;
-  if (text.length > 0) {
-    try {
-      json = JSON.parse(text);
-    } catch {
-      throw new Error(`expected JSON from ${method} ${url} but got: ${text.slice(0, 120)}`);
-    }
-  }
-  if (!res.ok) {
-    const parsed = z.object({ error: z.object({ message: z.string() }) }).safeParse(json);
-    throw new Error(parsed.success ? parsed.data.error.message : `${res.status} ${res.statusText}`);
-  }
-  return json;
-};
-
-const LoginSchema = z.object({
-  token: z.string(),
-  org: z.object({ id: z.string().optional(), name: z.string() }),
-});
 const KeySchema = z.object({ projectId: z.string(), projectName: z.string(), key: z.string() });
 const WhoamiSchema = z.object({
   projectId: z.string(),
@@ -279,197 +169,6 @@ const resolveProjectId = async (url: string, token: string, wanted: string): Pro
   );
   hint(`created project "${wanted}" (${created.projectId}) — it did not exist yet`);
   return created.projectId;
-};
-
-/**
- * `reticle login --email <e> [--org <name>] [--code <123456>]` — sign in, cache the token under
- * ~/.reticle.
- *
- * TWO STEPS, because the cloud proves you own the inbox before it hands out a session: ask for a code,
- * then exchange it. (It used to take an email alone — which meant anyone who knew your address owned your
- * org.) `--org` is only consulted when the account is brand new; a returning user never needs it.
- *
- * Without `--code` we request one and stop, telling the user to re-run with it. The one exception is a
- * LOCAL cloud, whose dev mailer cannot actually deliver mail and so echoes the code back in its response
- * (`devCode`) — there we complete the login in a single command rather than asking a developer to read a
- * code out of a server log they may not even be tailing.
- */
-const RequestCodeSchema = z.object({ devCode: z.string().optional() });
-
-/** Persist a session token under ~/.reticle and print the next step. Shared by both login paths. */
-const writeSession = async (
-  url: string,
-  token: string,
-  orgName: string,
-  orgId: string | undefined,
-  project: string | undefined,
-): Promise<void> => {
-  await mkdir(join(home(), SESSIONS_DIR), { recursive: true });
-  const body = `${JSON.stringify(
-    { url: normalizeUrl(url), token, orgName, ...(orgId === undefined ? {} : { orgId }) },
-    null,
-    2,
-  )}\n`;
-  // Both, on purpose. The per-host file is what lets another environment stay logged in; the active
-  // file is what a bare command with no override resolves through, and keeping it means nothing
-  // about the single-environment workflow changes.
-  await writeFile(sessionPath(home(), url), body);
-  await writeFile(join(home(), SESSION_FILE), body);
-  emit({ loggedIn: orgName, session: join(home(), SESSION_FILE) });
-  await linkAfterLogin(url, project);
-};
-
-/**
- * Finish the job when the shell is already standing in an unlinked Reticle project.
- *
- * `login` used to end by printing "next: `reticle link`", which made getting from local-only to
- * reporting a TWO command trip whose second half nothing enforces — and the HUD's own invitation
- * names one command, so the gap was ours to close rather than the reader's to notice. Somebody who
- * ran `reticle login` inside their instrumented repo wanted their runs on the dashboard; there is no
- * second thing they could have meant.
- *
- * Deliberately narrow, because a login that writes files in a directory the user did not mean is
- * worse than an extra step:
- *   - a `.reticle/` must already exist, which is the mark of `init` having been run HERE. Logging in
- *     from a home directory or an unrelated checkout links nothing and prints the old hint.
- *   - an existing `cloud.json` is left completely alone. Re-linking would re-resolve the project and
- *     is exactly how somebody re-pointing an environment loses a binding they meant to keep.
- *   - a failure is reported and swallowed. The login SUCCEEDED and its token is already on disk;
- *     turning that into a non-zero exit would make the recoverable half look like the broken one.
- */
-const linkAfterLogin = async (url: string, project: string | undefined): Promise<void> => {
-  const fs = createNodeFileSystem();
-  /*
-   * The marker is `.reticle.json`, NOT a `.reticle/` directory.
-   *
-   * `.reticle.json` is what `init` writes and what puts a projectId in the app's bundle, which is
-   * the only thing that lets the daemon attribute a session's runs to this repo. A bare `.reticle/`
-   * proves nothing — it is also created by artifacts and by older builds — and auto-linking on it
-   * produced a repo that was LINKED to a cloud project and yet unable to report to it: runs pooled
-   * into the daemon's own ledger, and `reticle sync` here answered "nothing to send" straight after
-   * two verdicts had been recorded. Measured, on this very repo's bench app.
-   */
-  if (!(await fs.exists(join(process.cwd(), RETICLE_CONFIG_BASENAME)))) {
-    hint(
-      'next: `reticle init` here first, then `reticle link` — or log in from a project directory',
-    );
-    return;
-  }
-  /*
-   * An explicit `--project` is an instruction, so it re-binds even a repo that is already linked.
-   * Without a project named, an existing binding is left completely alone — re-resolving it is how
-   * somebody repointing an environment loses a binding they meant to keep.
-   */
-  if (
-    project === undefined &&
-    (await fs.exists(join(process.cwd(), RETICLE_DIR, CLOUD_LINK_FILE)))
-  ) {
-    hint('this repo is already linked — `reticle push` to send what it has recorded');
-    return;
-  }
-  try {
-    await cmdLink(project === undefined ? ['--url', url] : ['--url', url, '--project', project]);
-  } catch {
-    hint('signed in, but linking this repo failed — run `reticle link` to retry');
-  }
-};
-
-/**
- * Browser device flow — the DEFAULT `reticle login` (like `gh auth login`): fetch a device + user code,
- * open the browser to approve, then poll until the user confirms. No email to type, no code to copy back.
- */
-const cmdLoginDevice = async (
-  explicitUrl: string | undefined,
-  project: string | undefined,
-): Promise<number> => {
-  const url = baseUrl(null, explicitUrl);
-  const started = DeviceStartSchema.parse(
-    await api('POST', `${url}/v1/auth/device/start`, null, {}),
-  );
-  hint(
-    `Opening ${started.verificationUri} — confirm this code in the browser: ${started.userCode}`,
-  );
-  openBrowser(started.verificationUriComplete);
-  const intervalMs = Math.max(1, started.interval) * 1000;
-  for (;;) {
-    await sleep(intervalMs);
-    const poll = DevicePollSchema.parse(
-      await api('POST', `${url}/v1/auth/device/token`, null, { deviceCode: started.deviceCode }),
-    );
-    if ('approved' === poll.status && poll.token !== undefined && poll.org !== undefined) {
-      await writeSession(url, poll.token, poll.org.name, poll.org.id, project);
-      return 0;
-    }
-    if ('pending' === poll.status) {
-      if (Date.now() > started.expiresAt) {
-        err('device login expired — run `reticle login` again');
-        return 1;
-      }
-      continue;
-    }
-    err(
-      'denied' === poll.status
-        ? 'device login was denied in the browser'
-        : 'device login expired — run `reticle login` again',
-    );
-    return 1;
-  }
-};
-
-/**
- * `reticle login` — browser device flow by default; `--email <e>` (or a positional email) keeps the
- * headless two-step code path for CI/servers where opening a browser makes no sense.
- */
-const cmdLogin = async (argv: readonly string[]): Promise<number> => {
-  const f = flags(argv);
-  const positional = argv[0] !== undefined && !argv[0].startsWith('--') ? argv[0] : undefined;
-  const email = f['email'] ?? positional;
-  if (email === undefined) return cmdLoginDevice(f['url'], f['project']);
-  const org = f['org'];
-  const url = baseUrl(null, f['url']);
-
-  let code = f['code'];
-  if (code === undefined) {
-    const requested = RequestCodeSchema.parse(
-      await api('POST', `${url}/v1/auth/request-code`, null, {
-        email,
-        ...(org !== undefined ? { orgName: org } : {}),
-      }),
-    );
-    // A real cloud mails the code and never echoes it; a local one cannot mail, so it hands it back.
-    if (requested.devCode === undefined) {
-      emit({ codeSent: true, to: email });
-      hint(`check your inbox, then: \`reticle login --email ${email} --code <the 6-digit code>\``);
-      return 0;
-    }
-    code = requested.devCode;
-  }
-
-  const parsed = LoginSchema.parse(
-    await api('POST', `${url}/v1/auth/login`, null, { email, code }),
-  );
-  await writeSession(url, parsed.token, parsed.org.name, parsed.org.id, f['project']);
-  return 0;
-};
-
-/** `reticle logout` — forget the cached session token (per-project keys under credentials.json stay). */
-/**
- * `reticle logout` — sign out of ONE host, not of everywhere.
- *
- * Which host is the same question every other verb asks: `--url`, else the environment, else the
- * active session. Signing out of staging must leave production alone — a logout that quietly
- * cleared every environment would be discovered at the worst possible moment, mid-incident, on the
- * one you did not mean.
- */
-const cmdLogout = async (argv: readonly string[] = []): Promise<number> => {
-  const active = await readSession();
-  const url = baseUrl(active, flags(argv)['url']);
-  await rm(sessionPath(home(), url), { force: true }).catch(() => undefined);
-  // The active pointer only moves if it was pointing at the host just signed out of.
-  if (null !== active && normalizeUrl(active.url) === url)
-    await writeFile(join(home(), SESSION_FILE), '').catch(() => undefined);
-  emit({ loggedOut: true, url });
-  return 0;
 };
 
 /**
@@ -958,7 +657,9 @@ export const runCloudCommand = async (argv: readonly string[]): Promise<number> 
   try {
     switch (cmd) {
       case 'login':
-        return await cmdLogin(rest);
+        // The linker is passed in rather than imported by cloud-login: login ends by linking and
+        // link needs a session, so the cycle is broken at this one call site.
+        return await cmdLogin(rest, cmdLink);
       case 'logout':
         return await cmdLogout(rest);
       case 'whoami':
