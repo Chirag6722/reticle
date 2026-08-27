@@ -50,7 +50,7 @@ import {
 } from './plan-framework.js';
 import { join } from 'node:path';
 import { htmlManual, reticleConfigContent, unverifiedUiLibraryNote } from './snippets.js';
-import { declaredInstallSource } from '../telemetry/install-source.js';
+import { configWithInstallSource, declaredInstallSource } from '../telemetry/install-source.js';
 import { devServerPortWarning, isLikelyDevServerPort } from '../cli/cli-port.js';
 
 // An app dev installs exactly the audience-scoped browser-side dependencies — never the retired
@@ -863,6 +863,18 @@ function reticleConfigStep(input: PlanInput, content: string): Step {
         target: RETICLE_CONFIG_FILE,
         status: StepStatus.NOTICE,
         detail: problem,
+      };
+    }
+    // The one thing a re-run can still learn: which channel the user actually arrived through.
+    // See configWithInstallSource — it only ever ADDS a field that is absent.
+    const backfilled = configWithInstallSource(input.reticleConfigSource, declaredInstallSource());
+    if (backfilled !== undefined) {
+      return {
+        title: RETICLE_CONFIG_TITLE,
+        target: RETICLE_CONFIG_FILE,
+        status: StepStatus.APPLY,
+        detail: 'record which install route this project came through',
+        write: { path: RETICLE_CONFIG_FILE, content: backfilled },
       };
     }
     return {

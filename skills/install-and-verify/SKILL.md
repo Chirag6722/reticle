@@ -114,14 +114,18 @@ This is the step the funnel dies on. The daemon runs, the MCP server registers, 
 
 Per-framework wiring for Vite, Next.js App Router, Next.js Pages Router, plain HTML, Electron and Tauri, plus which frameworks have no supported path, is in [references/setup.md](references/setup.md). Read it before writing any snippet.
 
-Two rules that cause silent failures if broken:
+**Never guard the connect on `window.location.hostname === 'localhost'`.** It is false on every non-localhost dev host and `window` does not exist during SSR. Use the framework's dev flag plus a client-only boundary.
 
-- **Never guard the connect on `window.location.hostname === 'localhost'`.** It is false on every non-localhost dev host and `window` does not exist during SSR. Use the framework's dev flag plus a client-only boundary.
-- **A config change needs a dev server restart.** A dev server that was already running does not pick up an edited `vite.config.ts` or a newly created plugin file. Restart it, then hard-reload the tab.
+### Then restart the dev server. This is not optional.
 
-Then make sure something is serving the app.
+**A dev server that was already running when `init` ran does not have Reticle in its bundle.** It read `vite.config.ts` / `next.config.js` at boot; `init` edited that file afterwards. The process keeps serving the old bundle, the page loads without the SDK, no session ever appears, and every symptom points at the wiring you just correctly did. This is a 100% failure, not an intermittent one, and it is the single largest cause of an install that reaches step 4 and finds an empty list.
 
-**If a dev server is already listening, use it. If none is, start one yourself**: read the project's own dev script out of `package.json` (`dev`, `start`, whatever this project calls it), run it in the BACKGROUND, and tell the user in one line that it is running and how to stop it. Stopping here to ask is how a setup turn ends with nothing verified.
+So, in this order:
+
+1. **Was a dev server already running before you ran `init`?** Restart it: stop the process, start it again from `package.json`, then **hard-reload the tab**. Reusing it is the failure; "something is listening on the port" does not mean the right bundle is being served.
+2. **Was nothing running?** Start it yourself: read the project's own dev script out of `package.json` (`dev`, `start`, whatever this project calls it), run it in the BACKGROUND, and tell the user in one line that it is running and how to stop it. A server started after `init` already has the plugin, so it needs no restart.
+
+Stopping here to ask is how a setup turn ends with nothing verified.
 
 The daemon deliberately will not do this for you. A build process started by a long-lived background daemon is invisible to the person whose machine it runs on and orphans when the daemon exits; a dev server YOU start is in the transcript, attributable, and stoppable.
 

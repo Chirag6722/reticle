@@ -150,13 +150,30 @@ export function nextActionFor(facts: NextActionFacts): NoSessionNextAction {
         `\`${OPEN_COMMAND} <url>\`.`,
     };
   }
+  // Two causes sit under this branch and only one of them is fixed by opening a page.
+  //
+  // The prose diagnosis next door already ranks them and puts the stale bundle first: `init` writes
+  // the plugin into a config the RUNNING dev server has already read, so the served bundle carries
+  // no SDK and reloading it cannot ever produce a session. This function — the half an agent
+  // actually executes — used to say only "open the app", which is the answer to the OTHER cause.
+  // An agent that follows it opens a bundle with no Reticle in it, sees no session, and has been
+  // given no reason to suspect the one thing that would have worked.
+  //
+  // Named only while nothing has EVER connected. Once a session has been here the wiring is proven
+  // and sending an agent to restart a working dev server is a wild goose chase.
+  const neverConnected = true !== facts.previouslyConnected;
   return {
     action: NoSessionAction.OPEN_APP,
     command: `${OPEN_COMMAND} ${LOCALHOST}:${String(only)}`,
     port: only,
-    reason:
-      'this project is wired and a dev server is listening — Reticle only ever sees a page a ' +
-      'browser has LOADED, and nothing has loaded one.',
+    reason: neverConnected
+      ? 'this project is wired and a dev server is listening, but no app has ever connected to ' +
+        'this daemon — Reticle only ever sees a page a browser has LOADED, and nothing has loaded ' +
+        'one. If opening it does not produce a session, the dev server is older than the Reticle ' +
+        'plugin and its bundle carries no SDK: restart the dev server (do not rely on HMR) and ' +
+        'load the page again.'
+      : 'this project is wired and a dev server is listening — Reticle only ever sees a page a ' +
+        'browser has LOADED, and nothing has loaded one.',
   };
 }
 

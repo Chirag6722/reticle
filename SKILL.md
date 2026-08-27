@@ -4,6 +4,17 @@ Reticle embeds a dev-only SDK in the user's running app and exposes it to you as
 
 This file is the whole critical path and nothing else. Everything it leaves out is at `https://docs.reticle.sh`, one page at a time.
 
+## Your first action, before you read the rest
+
+```bash
+cat .reticle.json 2>/dev/null || echo NOT_FOUND
+```
+
+- `NOT_FOUND` → go to **SETUP** and start at step 1.
+- File exists → go to **VERIFY**.
+
+Run that now. The sections between here and there are the rules the steps assume; read them as you go, not before you act.
+
 ## Installed means a verdict was produced
 
 **Setup is not complete until you have driven one real flow in the user's app and produced a verdict.** Writing config files is not installed. Every earlier point looks like success and is not:
@@ -129,24 +140,27 @@ This is the step the funnel dies on. The daemon runs, the MCP server registers, 
 
 Those four are the frameworks with an app and a CI gate behind them. The SDK is framework-agnostic and usually connects elsewhere, but say so honestly rather than reporting a proven install.
 
-Two rules that cause silent failures if broken:
+**Never guard the connect on `window.location.hostname === 'localhost'`.** It is false on every non-localhost dev host, and `window` does not exist during SSR. Use the framework's dev flag plus a client-only boundary.
 
-- **Never guard the connect on `window.location.hostname === 'localhost'`.** It is false on every non-localhost dev host, and `window` does not exist during SSR. Use the framework's dev flag plus a client-only boundary.
-- **A config change needs a dev server restart.** An already-running dev server does not pick up an edited `vite.config.ts` or a newly created plugin file. Restart it, then hard-reload the tab.
+### Then restart the dev server. This is not optional.
 
-Then make sure something is serving the app.
+**A dev server already running when `init` ran does not have Reticle in its bundle.** It read `vite.config.ts` / `next.config.js` at boot; `init` edited that file afterwards. The process keeps serving the old bundle, the page loads without the SDK, no session appears, and every symptom points at the wiring you just correctly did. This is a 100% failure, not an intermittent one, and it is the single largest cause of an install that gets to step 4 and finds an empty list.
 
-**If a dev server is already listening, use it. If none is, start one yourself**: read the project's own dev script out of `package.json` (`dev`, `start`, whatever this project calls it), run it in the BACKGROUND, and tell the user in one line that it is running and how to stop it. Stopping here to ask is how a setup turn ends with nothing verified.
+So, in this order:
+
+1. **A dev server was already running?** Restart it, then hard-reload the tab. "Something is listening" does not mean the right bundle is served.
+2. **Nothing was running?** Start it in the BACKGROUND and say so in one line. `reticle_sessions` gives you this project's own dev command in `next_action`; use that, never compose one. Started after `init`, it needs no restart.
+
+Stopping here to ask is how a setup turn ends with nothing verified.
 
 The daemon deliberately will not do this for you. A build process started by a long-lived background daemon is invisible to the person whose machine it runs on and orphans when the daemon exits; a dev server YOU start is in the transcript, attributable, and stoppable.
 
-Five guards, none optional:
+Four guards, none optional:
 
-1. **Never start a second one.** If something is already listening on the app's port, use it.
+1. **Never run two at once.** One dev server on the app's port. Restarting a stale one means stopping it first, not starting a second alongside it.
 2. **Never guess the command.** It comes from `package.json` scripts. No recognisable dev script means say so and stop, not invent one.
-3. **Never kill anything.** Not a dev server, not a daemon, not a port holder, including one you started.
-4. **Background it, and say so.** A dev server the human does not know about is the same failure one step later.
-5. **The permission prompt belongs to your host.** Never bypass, suppress or auto-approve it, and take a refusal as the answer.
+3. **Never kill anything you did not start**, and never a daemon or a port holder. The one exception is the restart above, and say in one line that you did it.
+4. **The permission prompt belongs to your host.** Never bypass, suppress or auto-approve it, and take a refusal as the answer.
 
 Then open the app yourself. Do not ask the user to do it. A setup turn that ends on "now open your browser" ends with nothing verified:
 
@@ -168,11 +182,13 @@ reticle_sessions()
 
 You need a session whose URL matches the app's localhost address. **Nothing below this line is meaningful until you have one, and you may not report setup complete without one.**
 
-**Empty list?** Read `next_action` first, then `why`. `next_action` is the machine-readable half: it names which of the four cases this is and, when there is one, the literal command to run and the port, sourced from this project's own scripts, never guessed. `why` is the same thing in prose for the human. The daemon can see whether a session was ever here and whether a dev server is listening. Then, in order: is the SDK imported and called in the app entry, is the dev server actually serving that entry, is the connect guarded on `hostname === 'localhost'`, and is the bridge port the same number on both sides. **Nothing listening at all? That one is yours: start it, per step 3.** If something IS listening, do not tell the user to start what they are already running; the fault is the SDK not loading in the page. Full checklist: `https://docs.reticle.sh/troubleshooting.md`.
+**Empty list?** Read `next_action` first, then `why`. `next_action` is the machine-readable half: it names which of the four cases this is and, when there is one, the literal command to run and the port, sourced from this project's own scripts, never guessed. `why` is the same thing in prose for the human. The daemon can see whether a session was ever here and whether a dev server is listening. Then, in order: **was the dev server restarted after `init` edited the build config** (the most likely answer by a wide margin: restart it and hard-reload before checking anything else), is the SDK imported and called in the app entry, is the dev server actually serving that entry, is the connect guarded on `hostname === 'localhost'`, and is the bridge port the same number on both sides. **Nothing listening at all? That one is yours: start it, per step 3.** If something IS listening, do not tell the user to start what they are already running; the fault is the SDK not loading in the page. Full checklist: `https://docs.reticle.sh/troubleshooting.md`.
 
 ## 5. Drive one real flow and produce a verdict.
 
 A connected session is not a result. The user has installed something and seen nothing happen.
+
+**Only `reticle_act_and_wait` and `reticle_assert` produce a verdict.** Everything else (`act`, `snapshot`, `query`, `navigate`, `observe`, `network`, `console`, `state`) moves or reads the app and proves nothing. If this step ends without one of those two, you have no result and setup is not complete, however many tools you used.
 
 **One flow, not the app.** Pick the single most important flow that completes in a handful of steps, say which one you picked in a line, and drive only that. You do not need to add `data-testid` anywhere: `reticle_snapshot` addresses elements by role and name and works on an app that has never heard of Reticle.
 

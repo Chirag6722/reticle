@@ -59,7 +59,7 @@ Two rules that fail silently if broken:
 
 ## 2. Serve the app
 
-If something is already listening on the app's port, **use it**. Do not start a second one, and do not tell the user to start what they are already running. If the dev server was up before step 1, restart it, or nothing you do next finds an instrumented page.
+**Was a dev server already running before step 1? Restart it. This is not optional.** It read `vite.config.ts` / `next.config.js` at boot, and `init` edited that file afterwards, so the process is still serving a bundle with no SDK in it. Nothing you do next finds an instrumented page, and every symptom points at the wiring you just correctly did. Stop that process, start it again from `package.json`, hard-reload the tab. "Something is listening on the port" does not mean the right bundle is being served. But never run two at once, and never tell the user to start what they are already running.
 
 If nothing is listening: read the project's own dev script out of `package.json` (`dev`, `start`, whatever this project calls it), run it in the **background**, and say in one line that it is running and how to stop it. Never guess a command that is not in `package.json`, and never kill anything.
 

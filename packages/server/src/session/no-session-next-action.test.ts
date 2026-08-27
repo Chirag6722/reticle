@@ -87,6 +87,35 @@ describe('nextActionFor', () => {
     expect(next.port).toBe(5173);
   });
 
+  // The prose half of this same payload says, for this exact branch, that the most likely cause is
+  // a dev server older than the plugin (`no-session-diagnosis.ts`). The executable half said only
+  // "open the app" — and the executable half is the one an agent acts on. An agent that opens a
+  // bundle built before `init` ran gets no session, and nothing in the answer it followed told it
+  // that reloading a stale bundle cannot work however many times it tries.
+  it('a wired app that has NEVER connected names the stale dev server, not just the open', () => {
+    const next = nextActionFor({
+      everConnected: false,
+      initialized: true,
+      listening: [5173],
+      dev: DEV,
+    });
+    expect(next.reason).toMatch(/restart/i);
+    expect(next.reason).toMatch(/dev server/i);
+  });
+
+  // ...and it must NOT say it once a session has connected before: there the wiring is proven and a
+  // restart is a wild goose chase.
+  it('does not blame the dev server once a session has connected before', () => {
+    const next = nextActionFor({
+      everConnected: false,
+      initialized: true,
+      previouslyConnected: true,
+      listening: [5173],
+      dev: DEV,
+    });
+    expect(next.reason).not.toMatch(/restart/i);
+  });
+
   it('never returns a start command while ANYTHING is listening', () => {
     for (const initialized of [true, false]) {
       const next = nextActionFor({
