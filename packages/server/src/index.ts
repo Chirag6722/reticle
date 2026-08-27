@@ -359,7 +359,14 @@ function attachJournal(
 ): void {
   const journalAttach = makeJournalAttach(deps);
   const ambientStore = new AmbientStore(deps.fs, deps.reticleRoot);
+  // Built once, not per session: the resolver walks config discovery and the user-level registry,
+  // and neither changes between two tabs connecting a second apart.
+  const resolveArtifactRoot = artifactRootResolver(deps.reticleRoot);
   bridge.attachSessionCreate((session) => {
+    // Stamp the project's own `.reticle` before ANY counter fires for this session. Without it every
+    // verdict is recorded against wherever the daemon was started, which is how one app's evidence
+    // reached a different account's production dashboard.
+    session.impactRoot = resolveArtifactRoot(session.projectId).root;
     journalAttach(session);
     // Seed the learned ambient map so a fresh session starts knowing which regions churn, instead of
     // re-learning from zero. Best-effort + async: a late seed still helps, a failure is silent.

@@ -444,13 +444,22 @@ export async function runTool<Ext>(
   // store from telemetry - this one never leaves the machine.
   const finishedAt = Date.now();
   const defect = defectForToolResult(raw, finishedAt);
-  recordImpact(deltaForToolResult(raw, finishedAt - startedAt, resultIsError(raw)), {
-    ...(defect === undefined ? {} : { defect }),
-  });
+  // Which project's ledger this call belongs to. Resolved from the SESSION being driven, not from
+  // wherever the daemon happens to stand: one daemon serves many projects, and recording every
+  // call against its own cwd is how one app's verdicts ended up on another account's dashboard.
+  // Falls back to the daemon root when no session can be named, which is the old behaviour.
+  const impactRoot = session?.impactRoot ?? deps.reticleRoot;
+  recordImpact(
+    deltaForToolResult(raw, finishedAt - startedAt, resultIsError(raw)),
+    { ...(defect === undefined ? {} : { defect }) },
+    impactRoot,
+  );
   // ...and the tab being driven is told, so the report is live rather than a thing you reload.
   // Optional-call, not optional-chain-on-the-object: a test double is a partial Session, and a
   // courtesy push must never be the reason a tool call throws.
-  session?.pushImpact?.(impactSnapshot);
+  // Bound to THIS session's root: a tab must be shown its own project's numbers, not whichever
+  // project the daemon was started in.
+  session?.pushImpact?.(() => impactSnapshot(impactRoot));
   if (resultIsError(raw)) reportRefusal(tool.name, (raw as { error: string }).error);
   else {
     noteToolServed();
