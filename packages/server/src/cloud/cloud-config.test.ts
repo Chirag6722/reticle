@@ -87,4 +87,79 @@ describe('resolveProjectCloud — per-project cloud binding + sync policy', () =
     const cloud = await resolveProjectCloud(fs, reticleRoot, homeDir, {});
     expect(cloud.config).toBeNull();
   });
+
+  describe('a credential belongs to the cloud that minted it', () => {
+    /*
+     * The collision, measured on a real machine: `reticle link` names every project "default", so a
+     * repo on a self-hosted install and a repo on the hosted service both claimed the slot
+     * `default`. The production key overwrote the local one and was then sent to localhost, which
+     * answered 401.
+     *
+     * Same class as sending a session token to a host that did not issue it, and the same answer:
+     * no credential at all beats one belonging to somewhere else.
+     */
+    it('refuses a key stamped with a different cloud, even when the project ids match', async () => {
+      await writeLink({ projectId: 'default', url: 'http://localhost:8890' });
+      await writeCreds({ default: { key: 'rk_live_prod', url: 'https://app.reticle.sh' } });
+
+      const cloud = await resolveProjectCloud(fs, reticleRoot, homeDir, env);
+
+      expect(cloud.config, 'the prod key must not be dialled at localhost').toBeNull();
+    });
+
+    it('uses a key stamped with the SAME cloud', async () => {
+      await writeLink({ projectId: 'default', url: 'http://localhost:8890' });
+      await writeCreds({ default: { key: 'rk_live_local', url: 'http://localhost:8890' } });
+
+      const cloud = await resolveProjectCloud(fs, reticleRoot, homeDir, env);
+
+      expect(cloud.config?.apiKey).toBe('rk_live_local');
+    });
+
+    it('ignores a trailing slash when comparing clouds', async () => {
+      await writeLink({ projectId: 'default', url: 'https://app.reticle.sh' });
+      await writeCreds({ default: { key: 'rk_live_prod', url: 'https://app.reticle.sh/' } });
+
+      const cloud = await resolveProjectCloud(fs, reticleRoot, homeDir, env);
+
+      expect(cloud.config?.apiKey).toBe('rk_live_prod');
+    });
+
+    it('holds TWO clouds that each call their project "default"', async () => {
+      // The collision itself, not just the leak. Stamping stopped the wrong key being sent; only
+      // keying by cloud lets a self-hosted repo and a hosted-service repo both work on one machine.
+      await writeLink({ projectId: 'default', url: 'http://localhost:8890' });
+      await writeCreds({
+        'http://localhost:8890::default': 'rk_live_local',
+        'https://app.reticle.sh::default': 'rk_live_prod',
+      });
+
+      const cloud = await resolveProjectCloud(fs, reticleRoot, homeDir, env);
+
+      expect(cloud.config?.apiKey).toBe('rk_live_local');
+    });
+
+    it('prefers the composite slot over an ambiguous legacy one', async () => {
+      await writeLink({ projectId: 'default', url: 'http://localhost:8890' });
+      await writeCreds({
+        'http://localhost:8890::default': 'rk_live_right',
+        default: 'rk_live_ambiguous',
+      });
+
+      const cloud = await resolveProjectCloud(fs, reticleRoot, homeDir, env);
+
+      expect(cloud.config?.apiKey).toBe('rk_live_right');
+    });
+
+    it('still honours a LEGACY bare-string credential', async () => {
+      // Refusing these would silently unlink every repo that predates the change — a worse outage
+      // than the collision being fixed. Re-linking upgrades a repo to the stamped shape.
+      await writeLink({ projectId: 'default', url: 'http://localhost:8890' });
+      await writeCreds({ default: 'rk_live_legacy' });
+
+      const cloud = await resolveProjectCloud(fs, reticleRoot, homeDir, env);
+
+      expect(cloud.config?.apiKey).toBe('rk_live_legacy');
+    });
+  });
 });

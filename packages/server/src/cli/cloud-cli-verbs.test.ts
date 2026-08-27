@@ -365,7 +365,9 @@ describe('cloud-cli verb contracts (#555)', () => {
     const creds = JSON.parse(
       await readFile(join(home, RETICLE_DIR, CREDENTIALS_FILE), 'utf8'),
     ) as Record<string, unknown>;
-    expect(creds['proj_1']).toBe(TEST_KEY);
+    // Stamped with the cloud that minted it, so a project called `default` on two different clouds
+    // cannot share one slot — the collision that sent a production key to a localhost server.
+    expect(creds['proj_1']).toEqual({ key: TEST_KEY, url: TEST_URL });
   });
 
   it('link --project creates the project when it does not exist yet, and says so', async () => {
@@ -471,7 +473,9 @@ describe('cloud-cli verb contracts (#555)', () => {
     const creds = JSON.parse(
       await readFile(join(home, RETICLE_DIR, CREDENTIALS_FILE), 'utf8'),
     ) as Record<string, unknown>;
-    expect(creds['proj_1']).toBe('rk_live_existing00');
+    // The KEY is unchanged — nothing was minted — and the entry is upgraded to the stamped shape on
+    // the way through, so a legacy credential stops being ambiguous the first time it is reused.
+    expect(creds['proj_1']).toEqual({ key: 'rk_live_existing00', url: TEST_URL });
   });
 
   it('mints a fresh key when the stored one no longer works', async () => {
@@ -498,7 +502,7 @@ describe('cloud-cli verb contracts (#555)', () => {
     const creds = JSON.parse(
       await readFile(join(home, RETICLE_DIR, CREDENTIALS_FILE), 'utf8'),
     ) as Record<string, unknown>;
-    expect(creds['proj_1']).toBe('rk_live_fresh00000');
+    expect(creds['proj_1']).toEqual({ key: 'rk_live_fresh00000', url: TEST_URL });
   });
 
   it('config rewrites sync flags and verify mode in place without dialling', async () => {

@@ -3,7 +3,12 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { resolveProjectCloud } from './cloud/cloud-config.js';
 import { startSyncDaemon } from './cloud/sync-daemon.js';
-import { PROJECT_REGISTRY_FILE, emptyProjectRegistry, parseProjectRegistry } from '@reticlehq/core';
+import {
+  PROJECT_REGISTRY_FILE,
+  emptyProjectRegistry,
+  parseProjectRegistry,
+  projectCandidates,
+} from '@reticlehq/core';
 import { discoverProjectConfigs, type ConfigDiscovery } from './cli/config-discovery.js';
 import {
   projectCandidatesFrom,
@@ -451,6 +456,38 @@ async function resolveRealInput(
  * this daemon is up, and a resolution that used a startup snapshot would keep answering with a map
  * from before the project the agent is now driving existed.
  */
+/**
+ * Every `.reticle` root on this machine that sync should consider, from the same two sources the
+ * artifact resolver uses.
+ *
+ * Read on every call rather than snapshotted, for the same reason: `reticle link` can run in
+ * another terminal while this daemon is up, and a startup snapshot would keep that repo silent
+ * until somebody restarted a process they have no reason to suspect.
+ *
+ * Returns directories that MIGHT be linked; the caller resolves each and skips the ones that are
+ * not. Deciding that here would mean reading every cloud.json on every tick.
+ */
+function knownProjectRoots(): string[] {
+  const roots = new Set<string>();
+  try {
+    const path = join(homedir(), ReticleDir.ROOT, PROJECT_REGISTRY_FILE);
+    if (existsSync(path)) {
+      const registry = parseProjectRegistry(JSON.parse(readFileSync(path, 'utf8')));
+      for (const candidate of projectCandidates(registry))
+        roots.add(join(candidate.directory, ReticleDir.ROOT));
+    }
+  } catch {
+    // A registry that cannot be read is an empty one — never a reason to stop syncing.
+  }
+  try {
+    for (const config of discoverProjectConfigs(process.cwd()).found)
+      roots.add(join(config.directory, ReticleDir.ROOT));
+  } catch {
+    // Same: a diagnostic walk that throws must not take the sync loop with it.
+  }
+  return [...roots];
+}
+
 function artifactRootResolver(daemonRoot: string): (projectId: string | undefined) => ArtifactRoot {
   return (projectId) => {
     let registry = emptyProjectRegistry();
@@ -642,6 +679,11 @@ export async function startDaemon(options: StartOptions = {}): Promise<RunningSe
   const cloudSync = startSyncDaemon({
     reticleRoot,
     cloud: () => resolveProjectCloud(fs, reticleRoot, homedir(), process.env),
+    // Every OTHER linked repo on this machine, not just the directory the daemon was started in.
+    // One daemon serves many projects, and pushing only its own root left the rest silently
+    // reporting nothing — indistinguishable, on the dashboard, from nobody having verified anything.
+    otherRoots: () => Promise.resolve(knownProjectRoots()),
+    cloudFor: (root) => resolveProjectCloud(fs, root, homedir(), process.env),
   });
   // Scope auto-selection to the active project (from .reticle.json) so a stray tab from another app is
   // never picked when the agent omits a sessionId. Explicit per-call scope/sessionId still overrides.

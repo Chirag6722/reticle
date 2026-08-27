@@ -14,7 +14,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { createNodeFileSystem } from '../project/fs-port.js';
-import { CLOUD_LINK_FILE, resolveProjectCloud } from '../cloud/cloud-config.js';
+import { CLOUD_LINK_FILE, credentialSlot, resolveProjectCloud } from '../cloud/cloud-config.js';
 import { cloudFetch } from '../cloud/cloud-sync.js';
 import { describeSync, runSyncCycle } from '../cloud/sync-cycle.js';
 import { diskSink, diskSource, readCloudIssues, readCloudState } from '../cloud/sync-disk.js';
@@ -174,12 +174,29 @@ const KEY_HINT_CHARS = 16;
 const keyHint = (key: string): string =>
   key.length <= KEY_HINT_CHARS ? key : `${key.slice(0, KEY_HINT_CHARS)}…`;
 
-/** The api key this machine already holds for a cloud project, if any. */
-const storedCredential = async (projectId: string): Promise<string | undefined> => {
+/**
+ * The api key this machine already holds for a project ON THIS CLOUD, if any.
+ *
+ * Two shapes, matching the resolver: `{ key, url }` is what `link` writes now and is only returned
+ * when the URL matches, and a bare string is the legacy shape with no URL to check. Without the URL
+ * check this would happily reuse a production key for a self-hosted link, because `link` names
+ * every project "default" and the two collide in one slot.
+ */
+const storedCredential = async (projectId: string, url: string): Promise<string | undefined> => {
   const raw = await readJson(join(home(), CREDENTIALS_FILE));
   if ('object' !== typeof raw || null === raw) return undefined;
-  const found = (raw as Record<string, unknown>)[projectId];
-  return 'string' === typeof found && found.length > 0 ? found : undefined;
+  const store = raw as Record<string, unknown>;
+  const composite = store[credentialSlot(url, projectId)];
+  if ('string' === typeof composite && composite.length > 0) return composite;
+  const found = store[projectId];
+  if ('string' === typeof found) return found.length > 0 ? found : undefined;
+  if ('object' !== typeof found || null === found) return undefined;
+  const record = found as Record<string, unknown>;
+  const key = record['key'];
+  const forUrl = record['url'];
+  if ('string' !== typeof key || 0 === key.length) return undefined;
+  if ('string' === typeof forUrl && normalizeUrl(forUrl) !== normalizeUrl(url)) return undefined;
+  return key;
 };
 
 /**
@@ -592,7 +609,7 @@ const cmdLink = async (argv: readonly string[]): Promise<number> => {
      * mint path already makes for `dashboardUrl`, so the common path costs no extra round trip —
      * and a key that fails it is replaced rather than reported.
      */
-    const existing = await storedCredential(targetId);
+    const existing = await storedCredential(targetId, url);
     const reusable = existing === undefined ? undefined : await validateKey(url, existing);
     if (existing !== undefined && reusable !== undefined) {
       projectId = reusable.projectId;
@@ -650,7 +667,27 @@ const cmdLink = async (argv: readonly string[]): Promise<number> => {
   const creds = (await readJson(credPath)) ?? {};
   const credObj =
     'object' === typeof creds && creds !== null ? (creds as Record<string, unknown>) : {};
-  credObj[projectId] = key;
+  /*
+   * Stamped with the cloud it belongs to.
+   *
+   * The store was keyed by project id alone, and `link` names every project "default" — so a repo
+   * on a self-hosted install and a repo on the hosted service shared one slot, last writer winning.
+   * Measured on one machine: the production key was being handed to a localhost server. A key now
+   * carries the URL that minted it, and the resolver refuses it anywhere else.
+   */
+  /*
+   * Keyed by CLOUD and project, not project alone.
+   *
+   * `link` names every project "default", so a repo on a self-hosted install and a repo on the
+   * hosted service both claimed the slot `default` and the last link won — measured on one machine,
+   * with a production key then being handed to a localhost server. The composite slot lets both be
+   * held at once; the stamped `url` inside makes a mismatched read refuse rather than dial.
+   *
+   * The bare `projectId` slot is written too, so a daemon running an OLDER build still finds this
+   * credential. It is the ambiguous one and the resolver prefers the composite.
+   */
+  credObj[credentialSlot(url, projectId)] = key;
+  credObj[projectId] = { key, url };
   await writeFile(credPath, `${JSON.stringify(credObj, null, 2)}\n`);
 
   emit({ linked: projectName, projectId, cloudJson: linkPath, credentials: credPath });

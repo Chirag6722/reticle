@@ -46,6 +46,19 @@ export interface SyncDaemonDeps {
   reticleRoot: string;
   /** Resolved per tick, not once: a repo linked while the daemon is alive starts syncing itself. */
   cloud: () => Promise<ProjectCloud>;
+  /**
+   * Every OTHER `.reticle` root on this machine that might be linked.
+   *
+   * One daemon serves many projects — that is what `artifactRootFor` exists for — and this loop
+   * pushed exactly one of them: whichever directory the daemon happened to be started in. Every
+   * other linked repo went silent, and silent is indistinguishable from "nobody verified anything",
+   * which is the worst possible failure for a dashboard somebody is deciding budget on.
+   *
+   * Optional: a caller that does not supply it gets exactly the old single-root behaviour.
+   */
+  otherRoots?: () => Promise<readonly string[]>;
+  /** Resolve the link for a root that is not this daemon's own. Required to use `otherRoots`. */
+  cloudFor?: (root: string) => Promise<ProjectCloud>;
   now?: () => number;
   intervalMs?: number;
   /** Injected for the test; the real one is `fetch`. */
@@ -107,6 +120,71 @@ export function startSyncDaemon(deps: SyncDaemonDeps): SyncDaemon {
    */
   let wasLinked: boolean | undefined;
 
+  /** One root's bundle. The state, source and sink are already per-root; only the caller was not. */
+  const pushRoot = async (root: string, cloud: ProjectCloud): Promise<SyncReport | undefined> => {
+    if (null === cloud.config) return undefined;
+    const full = diskSource(root);
+    return runSyncCycle({
+      config: cloud.config,
+      source: {
+        runs: () => (cloud.policy.runs ? full.runs() : []),
+        flows: () => (cloud.policy.flows ? full.flows() : []),
+        derived: (kind) => (cloud.policy.memory ? full.derived(kind) : undefined),
+      },
+      sink: diskSink(root),
+      state: readCloudState(root),
+      now,
+      request,
+    });
+  };
+
+  /**
+   * Push every other linked root this machine knows about.
+   *
+   * Isolated per root on purpose. A revoked credential, a deleted directory or an unreachable
+   * self-hosted server in ONE repo is a fact about that repo; letting it throw would take the
+   * daemon's own push down with it and turn one broken link into a machine-wide outage.
+   */
+  const syncOtherRoots = async (): Promise<void> => {
+    const roots = deps.otherRoots;
+    const cloudFor = deps.cloudFor;
+    if (roots === undefined || cloudFor === undefined) return;
+    let list: readonly string[] = [];
+    try {
+      list = await roots();
+    } catch {
+      // Enumeration is best-effort: a registry that cannot be read must not stop this daemon
+      // syncing the root it is standing in.
+      return;
+    }
+    for (const root of list) {
+      if (root === deps.reticleRoot) continue;
+      try {
+        const cloud = await cloudFor(root);
+        if (null === cloud.config) continue;
+        const report = await pushRoot(root, cloud);
+        if (report === undefined) continue;
+        if (report.error !== undefined) {
+          log('reticle_cloud_sync_failed', { root, error: report.error });
+          continue;
+        }
+        const moved =
+          report.runsSent > 0 ||
+          report.flowsSent > 0 ||
+          report.derivedSent.length > 0 ||
+          report.pulled > 0;
+        // The root is NAMED here and not in the single-root log below, because with several repos
+        // reporting, "synced 3 runs" without a directory is not an answer to "synced from where".
+        if (moved) log('reticle_cloud_synced', { root, summary: describeSync(report) });
+      } catch (error: unknown) {
+        log('reticle_cloud_sync_failed', {
+          root,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  };
+
   const cycle = async (): Promise<SyncReport | undefined> => {
     // Overlap guard: a slow cycle must not have a second one started on top of it, or two bundles
     // race and the cursor written by the loser silently rewinds the winner's progress.
@@ -130,20 +208,14 @@ export function startSyncDaemon(deps: SyncDaemonDeps): SyncDaemon {
             fix: 'run `reticle link` in this directory, or start the daemon in the linked one — nothing is being synced from here',
           });
       }
+      // Every OTHER linked root, first. Their failures are logged and never abort this daemon's own
+      // push: one repo whose credential was revoked must not silence the rest of the machine.
+      await syncOtherRoots();
+
       if (null === cloud.config) return undefined;
-      const full = diskSource(deps.reticleRoot);
-      const report = await runSyncCycle({
-        config: cloud.config,
-        source: {
-          runs: () => (cloud.policy.runs ? full.runs() : []),
-          flows: () => (cloud.policy.flows ? full.flows() : []),
-          derived: (kind) => (cloud.policy.memory ? full.derived(kind) : undefined),
-        },
-        sink: diskSink(deps.reticleRoot),
-        state: readCloudState(deps.reticleRoot),
-        now,
-        request,
-      });
+      const report = await pushRoot(deps.reticleRoot, cloud);
+      // `pushRoot` returns undefined only for an unlinked root, which the guard above has ruled out.
+      if (report === undefined) return undefined;
       if (report.error !== undefined) {
         if (report.error !== reportedError) {
           reportedError = report.error;

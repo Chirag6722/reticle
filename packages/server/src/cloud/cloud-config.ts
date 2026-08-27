@@ -84,11 +84,53 @@ function parseLink(raw: unknown): CloudLink | null {
 }
 
 /** Look up the API key for a cloud project id in the user credentials map. */
-function credentialFor(raw: unknown, projectId: string): string | null {
+/**
+ * The API key this machine holds for one project ON ONE CLOUD.
+ *
+ * The store used to be keyed by cloud project id ALONE, which collides in the case that is not rare
+ * at all — it is the default. `reticle link` names every project "default", so a repo linked to a
+ * self-hosted install and a repo linked to the hosted service both claim the slot `default`, and
+ * whichever was linked last wins. Measured: two repos on one machine, and the production key was
+ * being sent to a localhost server, which answered 401.
+ *
+ * That is the same class of defect as sending a session token to a host that did not issue it, and
+ * it deserves the same answer: a credential is scoped to the cloud that minted it, and no credential
+ * at all is better than one belonging to somewhere else.
+ *
+ * Two shapes are accepted. `{ key, url }` is what is written now and is checked against the URL
+ * being dialled. A bare string is the legacy shape, has no URL to check, and is still honoured —
+ * refusing it would silently unlink every repo that predates this change, which is a worse outage
+ * than the collision. Re-linking upgrades a repo to the safe shape.
+ */
+export const credentialSlot = (url: string, projectId: string): string =>
+  `${normalizeCloudUrl(url)}::${projectId}`;
+
+function credentialFor(raw: unknown, projectId: string, url: string): string | null {
   if (typeof raw !== 'object' || null === raw) return null;
-  const key = (raw as Record<string, unknown>)[projectId];
-  return 'string' === typeof key && key.length > 0 ? key : null;
+  const store = raw as Record<string, unknown>;
+  /*
+   * The composite slot first: a project id alone cannot identify a credential, because `link` names
+   * every project "default" and two clouds therefore claim one slot. Stamping the entry (below)
+   * stopped the WRONG key being sent; only keying by cloud lets both be held at once.
+   */
+  const composite = store[credentialSlot(url, projectId)];
+  if ('string' === typeof composite && composite.length > 0) return composite;
+  const entry = store[projectId];
+  if ('string' === typeof entry) return entry.length > 0 ? entry : null;
+  if (typeof entry !== 'object' || null === entry) return null;
+  const record = entry as Record<string, unknown>;
+  const key = record['key'];
+  const forUrl = record['url'];
+  if ('string' !== typeof key || 0 === key.length) return null;
+  // A credential stamped with a DIFFERENT cloud is not this project's credential, however much the
+  // project ids match. Refuse rather than dial somewhere with somebody else's key.
+  if ('string' === typeof forUrl && normalizeCloudUrl(forUrl) !== normalizeCloudUrl(url))
+    return null;
+  return key;
 }
+
+/** Trailing slashes are not identity: `https://x/` and `https://x` are one cloud. */
+const normalizeCloudUrl = (url: string): string => url.replace(/\/+$/, '');
 
 /**
  * Resolve the cloud picture for a project rooted at `reticleRoot`. Reads the project's link file + the
@@ -119,6 +161,7 @@ export async function resolveProjectCloud(
   const key = credentialFor(
     await readJson(fs, join(homeDir, ReticleDir.ROOT, CREDENTIALS_FILE)),
     link.projectId,
+    link.url,
   );
   const config: CloudConfig | null =
     key !== null ? { url: link.url.replace(/\/+$/, ''), apiKey: key } : null;
