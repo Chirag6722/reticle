@@ -15,6 +15,7 @@ import { join } from 'node:path';
 import { ProjectSize, ReticleDir, type ProjectProfile } from '@reticlehq/core';
 import { gitFacts } from './git-facts.js';
 import { detectStack } from './feedback-context.js';
+import { readProjectId } from '../cli/cli-port.js';
 
 /**
  * The feature FAMILIES, and the on-disk evidence that a project has adopted each. Named rather than
@@ -167,7 +168,19 @@ function exists(path: string): boolean {
  * Build the full profile. Best-effort throughout: an unreadable project yields a profile of zeroes
  * rather than an exception, because a telemetry snapshot must never be able to fail a daemon start.
  */
-export function profileProject(cwd: string, now: number): ProjectProfile {
+/**
+ * Facts about the install that the filesystem cannot answer.
+ *
+ * Passed in rather than read here for the same reason `previouslyConnected` is passed to the MCP
+ * server: it needs the daemon's port and the state home, and a profile that reached for those would
+ * stop being a pure function of a directory.
+ */
+export interface InstallFacts {
+  /** Has an app for this project EVER connected to Reticle, from durable state. */
+  appConnectedBefore: boolean;
+}
+
+export function profileProject(cwd: string, now: number, install?: InstallFacts): ProjectProfile {
   const reticleRoot = join(cwd, ReticleDir.ROOT);
   const flowCount = countIn(reticleRoot, ReticleDir.FLOWS_SUBDIR, /\.json$/);
   const baselineCount = countIn(reticleRoot, ReticleDir.BASELINES_SUBDIR);
@@ -209,5 +222,11 @@ export function profileProject(cwd: string, now: number): ProjectProfile {
     // Rounded to 2dp: the exact ratio is a function of the counts above, and an unrounded float would
     // just be a higher-cardinality restatement of them.
     featureDepth: Math.round((featuresUsed.length / ALL_FAMILIES.length) * 100) / 100,
+    // WHERE the install stopped, for the daemons that never see an app. `daemon_started` minus
+    // `app_instrumented` says one happened and cannot say why; these two bits split that silence
+    // into "never ran init", "ran it and no page has ever reached us", and "works, just not up
+    // right now". See the fields on ProjectProfileSchema.
+    initialized: readProjectId(cwd) !== undefined,
+    ...(install === undefined ? {} : { appConnectedBefore: install.appConnectedBefore }),
   };
 }

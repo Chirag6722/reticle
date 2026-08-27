@@ -619,7 +619,7 @@ function handleDaemonInner(parsed: {
       log('reticle_daemon_ready', { port: parsed.port, pid: process.pid });
       // Daemon lifecycle telemetry: started, a one-shot project profile, the periodic counter flush,
       // and the rich summary on shutdown. All of it lives in one module — see daemon-telemetry.ts.
-      const daemonTelemetry = installDaemonTelemetry(process.cwd());
+      const daemonTelemetry = installDaemonTelemetry(process.cwd(), undefined, parsed.port);
       // Publish to the discovery registry so a build plugin can find this daemon by projectId — no
       // hand-reconciled port. Written from the child (only it knows its cwd); removePid drops it.
       const registryProjectId = readProjectId(process.cwd());

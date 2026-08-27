@@ -631,6 +631,23 @@ export const McpConnectionSchema = z.object({
   daemonAgeMs: z.number().int().nonnegative(),
   /** Which client, from its own handshake (`claude-code`, `cursor`). */
   client: z.string().min(1).max(64).optional(),
+  /**
+   * Was an app carrying the SDK already attached to this daemon when the agent arrived.
+   *
+   * The mirror of `AppInstrumentation.agentAttached`, and the closest thing we have to WHAT THE
+   * AGENT SAW. Most clients that attach never call a single tool, and that cohort was reachable only
+   * by subtraction — `tool_refused` cannot describe it, because an agent that reads the server
+   * instructions, learns nothing is wired and stops has refused nothing. It made no call at all.
+   *
+   * `false` means the handshake happened against a daemon with no app to look at, which is the state
+   * the first-move instructions describe and the state in which no tool could have answered
+   * anything. Split the never-drove population on this and the two halves need opposite fixes: one
+   * is an install that never finished, the other is an agent that had everything it needed and did
+   * not use it.
+   *
+   * OPTIONAL because an older sender has none. Absent means not measured, never `false`.
+   */
+  appConnected: z.boolean().optional(),
 });
 export type McpConnection = z.infer<typeof McpConnectionSchema>;
 

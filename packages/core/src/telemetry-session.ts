@@ -328,6 +328,33 @@ export const SessionSummarySchema = z.object({
    * asked whether it worked is the finding, so absence and `false` must not look alike.
    */
   endedWithVerdict: z.boolean().optional(),
+  /**
+   * Was the update nudge actually delivered to an agent during this daemon run.
+   *
+   * The nudge is the entire adoption mechanism for a published fix — it rides the tool-result
+   * envelope once per daemon process — and it emitted NOTHING, so the one question it exists to
+   * answer could not be asked. `versionChange.nudged` is the other half and only reaches us from
+   * machines that DID update; the cohort pinned three releases back never fires `version_changed` at
+   * all, which is exactly the cohort worth understanding.
+   *
+   * Crossed against this same installId's `version` on a later day it separates the two causes,
+   * which need opposite fixes: `false` for run after run means the nudge is not firing for them (a
+   * cache that never warms, a check that never returns, an offline machine); `true` for run after
+   * run with a version that never moves means the agent is receiving it and dropping it out of the
+   * envelope, or telling a human who says no.
+   *
+   * Reads the delivery flag, not a counter: the nudge is one-shot per process by design, so `true`
+   * means "an agent was told", never "how often".
+   */
+  updateNudged: z.boolean().optional(),
+  /**
+   * The newer version this daemon knew about, when it knew about one.
+   *
+   * OUR OWN published version number, so it is low-cardinality and carries nothing about the
+   * machine. Without it `updateNudged: false` is two facts at once — nothing was available, or
+   * something was and the nudge did not fire — and only the second is a defect.
+   */
+  updateOffered: z.string().max(32).optional(),
   /** Was this a clean shutdown, or a periodic flush of a still-running session? */
   final: z.boolean(),
   /**
@@ -408,6 +435,36 @@ export const ProjectProfileSchema = z.object({
   runCount: z.number().int().nonnegative(),
   /** A git-checked `.reticle/contract.json` — the team declared a testable surface on purpose. */
   hasContract: z.boolean(),
+  /**
+   * Has `reticle init` run in this project — a `.reticle.json` is present.
+   *
+   * The install has two halves and the failure side of the second one is a SET DIFFERENCE:
+   * `daemon_started` minus `app_instrumented`, joined on `sessionId`. That difference says a daemon
+   * ran with nothing wired and cannot say WHY, so the whole non-instrumented majority arrives as one
+   * silence covering four different situations with four different owners.
+   *
+   * This is the first of the two bits that split it, and it is on `project_profiled` deliberately:
+   * that event fires once per daemon start whatever happens afterwards, so it is the only place a
+   * fact about a project reaches us for the users who never instrument anything. `app_instrumented`
+   * carries the same field and cannot answer this, because it only exists when the answer is moot.
+   */
+  initialized: z.boolean().optional(),
+  /**
+   * Has an app for this project EVER connected to Reticle — read from durable state, not from this
+   * process.
+   *
+   * The second bit. `initialized: false` is "never ran init"; `initialized: true` with this `false`
+   * is the cohort the funnel loses — the config was written and no page has ever reached the daemon,
+   * which is the dev server that was never restarted, a plugin that never loaded, or a handshake
+   * refused at the origin gate. `true` here with no `app_instrumented` this run is a working install
+   * whose app simply is not up right now, and reading that as a loss is how the drop-off gets
+   * over-stated.
+   *
+   * Scoped to project + port, like every other reader of this state, so it cannot borrow another
+   * project's success on a shared daemon. OPTIONAL because an older sender has none; absent means
+   * not measured, never `false`.
+   */
+  appConnectedBefore: z.boolean().optional(),
   /** Fail-to-pass bug capsules — the deepest feature in the product. */
   capsuleCount: z.number().int().nonnegative(),
   /** Which of Reticle's feature FAMILIES this project has ever touched. The activation metric. */

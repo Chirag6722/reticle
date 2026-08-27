@@ -108,9 +108,24 @@ export const FEEDBACK_RETRY_BACKOFF_MS = 750;
  * (`reticle version`/`gate`) ~800ms. Long-lived daemon events still send in-process: a spawn per tool
  * call would be far heavier than a fetch inside an already-running server.
  */
+/**
+ * The budget the DISOWNED child gets, and why it is not `SEND_TIMEOUT_MS`.
+ *
+ * 2s is right for an in-process send: the daemon is waiting on it, so the budget is a latency cost
+ * somebody pays. A detached child pays nobody — the parent has already exited — so the only thing a
+ * short budget there buys is a lost event.
+ *
+ * And it loses the worst ones. Every detached send comes from a SHORT-LIVED CLI process, which pays
+ * cold DNS and a cold TLS route by definition; measured on the feedback path with a WARM cache it
+ * was already 0.694s before any payload moved. `reticle_installed` is the extreme case: it fires
+ * once per machine, on the first Reticle command that machine ever runs, which is the single coldest
+ * network call it will ever make to the collector — so the top of the funnel is the event most
+ * likely to be dropped, and it fails silently like everything else here.
+ */
+const DETACHED_SEND_TIMEOUT_MS = 15_000;
 const DETACHED_SEND_SCRIPT =
   "fetch(process.argv[1],{method:'POST',headers:{'content-type':'application/json'}," +
-  `body:process.argv[2],signal:AbortSignal.timeout(${SEND_TIMEOUT_MS})})` +
+  `body:process.argv[2],signal:AbortSignal.timeout(${DETACHED_SEND_TIMEOUT_MS})})` +
   '.catch(()=>{}).finally(()=>process.exit(0))';
 
 /** Env var names — mirror cloud-sync's `RETICLE_*` convention. */
