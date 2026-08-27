@@ -191,8 +191,47 @@ describe('Bridge security boundary', () => {
     const { code, reason } = await closed;
     expect(code).toBe(1008);
     // The distinct reason is what stops the agent misdiagnosing a version skew as a port mismatch.
-    expect(reason).toContain('protocol version mismatch');
+    expect(reason).toContain('protocol mismatch');
+    /*
+     * And it names the RIGHT side. This fixture sends `RETICLE_PROTOCOL_VERSION + 1` — a page AHEAD
+     * of the daemon, which is the skew that actually happens (a current SDK in the app dialling a
+     * daemon npx served from cache). The reason used to be a fixed "upgrade @reticlehq/browser",
+     * sending that user to upgrade the one component that was already current.
+     */
+    expect(reason).toContain('daemon is older');
+    expect(reason).not.toContain('upgrade @reticlehq/browser');
     expect(bridge.sessions.count()).toBe(0);
+  });
+
+  it('closes the socket when the message handler throws, rather than hanging open', async () => {
+    /*
+     * A throw inside the handler used to leave the socket OPEN and unresponsive. The agent's next
+     * tool call then answers "no browser session connected" — indistinguishable from an app nobody
+     * started, which is the exact invisible failure the close reasons in this file exist to prevent.
+     *
+     * Found by accident: a missing import made `protocolSkewReason` undefined, and the symptom was
+     * not an error anywhere but a test that timed out waiting for a close that never came.
+     *
+     * The clock is the seam because the handler reads it on its first line, so a clock that throws
+     * reproduces "any exception at all" without needing a specific malformed payload.
+     */
+    let calls = 0;
+    const { port } = await makeBridge({
+      clock: () => {
+        calls += 1;
+        // Let the handshake through; blow up once the first message is being handled.
+        if (calls > 3) throw new Error('clock exploded');
+        return 1_700_000_000_000;
+      },
+    });
+    const socket = await openSocket(port);
+    const closed = new Promise<number>((resolve) => {
+      socket.once('close', (code) => resolve(code));
+    });
+
+    socket.send(JSON.stringify(hello('boom-client')));
+
+    await expect(closed).resolves.toBeGreaterThan(0);
   });
 
   it('keeps a replacement session when the older duplicate socket closes', async () => {
