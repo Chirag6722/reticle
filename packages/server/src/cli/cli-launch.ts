@@ -20,6 +20,8 @@ interface StatusSession {
   throttled: boolean;
   stale: boolean;
   pendingMarks: number;
+  /** The tab is attached and answering nothing — see Session.unresponsive. Absent on an older daemon. */
+  unresponsive?: true;
 }
 
 /**
@@ -50,6 +52,7 @@ export function summarizeStatus(payload: unknown): {
         throttled: true === r['throttled'],
         stale: true === r['stale'],
         pendingMarks: 'number' === typeof r['pendingMarks'] ? r['pendingMarks'] : 0,
+        ...(true === r['unresponsive'] ? { unresponsive: true as const } : {}),
       };
     })
     .filter((s): s is StatusSession => s !== null);
@@ -150,7 +153,14 @@ function sameOrigin(a: string, b: string): boolean {
  * is run by a human whose browser this is, and yanking the page they are looking at to somewhere else
  * is a bigger surprise than being told where the tab actually is.
  */
-export function decideOpen(sessions: { url: string }[], url: string | undefined): OpenDecision {
+export function decideOpen(
+  all: { url: string; unresponsive?: boolean }[],
+  url: string | undefined,
+): OpenDecision {
+  // A tab that has stopped answering is not a tab you can be handed. `open` is the command a caller
+  // reaches for to RECOVER, and reusing the wedged one left no way out short of killing the daemon:
+  // ending the session only flips a flag on the record, it does not make the page answer.
+  const sessions = all.filter((s) => true !== s.unresponsive);
   if (url === undefined) {
     const first = sessions[0];
     return first !== undefined ? { action: 'reuse', url: first.url } : { action: 'need-url' };

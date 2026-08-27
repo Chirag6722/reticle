@@ -86,6 +86,13 @@ export const RAW_TOOLS: ToolDef[] = [
             leased: z.boolean().optional(),
             stale: z.boolean().optional(),
             cleanup_suggestion: z.string().optional(),
+            unresponsive: z
+              .literal(true)
+              .optional()
+              .describe(
+                'Present only when this tab is attached but has stopped answering commands: every call against it will time out. The other health fields still look fine, which is what makes this state invisible without the flag.',
+              ),
+            unresponsive_suggestion: z.string().optional(),
             pendingMarks: z.number().optional(),
             review_suggestion: z.string().optional(),
             recommendation: z.string().optional(),

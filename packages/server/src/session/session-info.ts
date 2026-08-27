@@ -28,6 +28,13 @@ export interface SessionInfo {
   recommendation?: string;
   stale?: boolean;
   cleanup_suggestion?: string;
+  /**
+   * present ONLY when this tab has stopped answering commands — attached, streaming events, and
+   * missing every command budget. Never `false`: absence means "answering, or not asked yet".
+   */
+  unresponsive?: true;
+  /** present with `unresponsive` — the in-protocol way out of a wedged tab. */
+  unresponsive_suggestion?: string;
   /** present only when the human has flagged bugs on this tab — count of pending review marks. */
   pendingMarks?: number;
   /** present with pendingMarks — nudges the agent to drain them with reticle_review. */
@@ -59,6 +66,7 @@ interface SessionView {
   health: () => SessionHealth;
   staleMs: () => number;
   pendingMarkCount: () => number;
+  unresponsive: () => boolean;
 }
 
 /**
@@ -89,6 +97,15 @@ export function buildSessionInfo(session: SessionView): SessionInfo {
     base.stale = true;
     base.cleanup_suggestion =
       'Call reticle_session{action:"end"} to free this session before starting new work.';
+  }
+  // A tab that is attached and answering nothing. Said out loud because every health field beside it
+  // reads fine — that combination is exactly what made the wedge invisible.
+  if (session.unresponsive()) {
+    base.unresponsive = true;
+    base.unresponsive_suggestion =
+      'This tab is connected but has stopped answering commands, so every call against it will time ' +
+      'out. Ending the session does not revive the page. Reload the tab, or run `reticle open <url>` ' +
+      'to get a fresh one — it will no longer hand this tab back.';
   }
   // Surface human bug reports in reticle_sessions (only when > 0, so a clean session adds nothing).
   const marks = session.pendingMarkCount();

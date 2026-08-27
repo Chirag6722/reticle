@@ -109,6 +109,13 @@ const REBINDABLE_COMMANDS: ReadonlySet<string> = new Set<string>([
 /** Prefix on minted action ids (a1, a2, …) — the journal's action identity, independent of commands. */
 const ACTION_ID_PREFIX = 'a';
 
+/**
+ * How many consecutive unanswered commands make a tab unresponsive. One is a page that was merely
+ * busy for its budget; two in a row with no reply between them is a wedge, and the cost of being
+ * wrong about that is one extra browser tab.
+ */
+const UNRESPONSIVE_AFTER_TIMEOUTS = 2;
+
 /** ws readyState for an OPEN socket — guard fire-and-forget pushes against a closing tab. */
 const WS_OPEN = 1;
 
@@ -152,6 +159,8 @@ export class Session {
   readonly #listeners = new Set<(event: ReticleEvent) => void>();
   readonly #disconnectListeners = new Set<() => void>();
   #actionSeq = 0;
+  /** Consecutive missed command budgets — free liveness evidence. Any reply resets it. */
+  #unansweredCommands = 0;
   #lastSeenAt: number;
   #hidden = false;
   /** Which shell the page reported (PAGE_HEALTH). Undefined until the first report lands. */
@@ -305,7 +314,18 @@ export class Session {
       health: () => this.health(),
       staleMs: () => this.staleMs(),
       pendingMarkCount: () => this.#review.pendingCount(),
+      unresponsive: () => this.unresponsive(),
     });
+  }
+
+  /**
+   * Attached but not answering. A tab can be `connected` with a fresh `lastSeenMs` and still answer
+   * nothing: `lastSeenMs` measures the events the SDK streams, not the commands it replies to. Reuse
+   * and auto-selection read that as health, so `reticle open` handed a wedged tab back forever and
+   * `reticle_session{action:"end"}` — a flag on the record, not on the page — could not help.
+   */
+  unresponsive(): boolean {
+    return this.#unansweredCommands >= UNRESPONSIVE_AFTER_TIMEOUTS;
   }
 
   /** Wall-clock age of the session in milliseconds. */
@@ -669,6 +689,8 @@ export class Session {
     // the app taking its time — the split telemetry reports in aggregate, made visible per call.
     return span('browser.command', { command: name, sessionId: this.id }, () => awaited)
       .then((result) => {
+        // Answered — whatever the reply said, the command channel is alive.
+        this.#unansweredCommands = 0;
         // The label is only knowable from the REPLY — the request carries a ref, and a ref dies with
         // the next re-render. Recorded here so coverage survives frameworks that replace nodes.
         if (name === ReticleCommand.ACT) this.recordActedLabelFrom(result);
@@ -683,6 +705,7 @@ export class Session {
         // simply not been answered in budget was read as "you were replaced, ask again" — and
         // against a page re-dialling in a loop that turned one read into hundreds of commands on the
         // wire, minutes of wall clock, and an answer still quoting the budget it had blown.
+        if (error instanceof CommandTimeoutError) this.#unansweredCommands += 1;
         const next = error instanceof CommandTimeoutError ? undefined : this.#liveSuccessor();
         if (next === undefined || !REBINDABLE_COMMANDS.has(name)) throw error;
         // What is LEFT of the caller's budget, not a fresh copy of it. Re-issuing with the original
@@ -696,6 +719,9 @@ export class Session {
   }
 
   handleResult(result: CommandResult): void {
+    // Any reply at all clears the wedge, including one for a command that already timed out: it is
+    // still proof that bridge→page→bridge works right now, which is the only thing being claimed.
+    this.#unansweredCommands = 0;
     this.#pending.settle(result);
   }
 

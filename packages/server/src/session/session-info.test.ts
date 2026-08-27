@@ -33,6 +33,7 @@ const view = (title: string) => ({
   }),
   staleMs: () => 0,
   pendingMarkCount: () => 0,
+  unresponsive: () => false,
 });
 
 describe('buildSessionInfo — title', () => {
