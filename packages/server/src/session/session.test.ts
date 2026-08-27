@@ -7,7 +7,8 @@ import {
   SESSION_HEALTH,
   SESSION_LIFECYCLE,
   SessionState,
-  UNSCRIPTABLE_TAB_RECOMMENDATION,
+  HIDDEN_TAB_RECOMMENDATION,
+  THROTTLED_TAB_RECOMMENDATION,
   type HelloMessage,
   type ReticleEvent,
 } from '@reticlehq/core';
@@ -251,18 +252,21 @@ describe('SessionManager.resolve() auto-selection', () => {
   });
 });
 
-describe('un-scriptable tab recommendation', () => {
+describe('tab-health recommendation', () => {
   it('info() carries the recommendation when hidden', () => {
     const { session } = makeSession();
     session.applyHealth(true, false);
-    expect(session.info().recommendation).toBe(UNSCRIPTABLE_TAB_RECOMMENDATION);
+    expect(session.info().recommendation).toBe(HIDDEN_TAB_RECOMMENDATION);
   });
 
-  it('info() recommends when stale past the threshold', () => {
+  it('info() recommends when stale past the threshold — the NOT-hidden wording', () => {
+    // Stale is not hidden. `throttled` is `hidden || stale`, so a quiet visible tab trips it, and
+    // that tab is usually still driveable: telling it "you may be un-focusable, go lease one" sent
+    // agents off the only screen a human can watch, for a heartbeat that was merely late.
     const { session, tick } = makeSession();
     session.touch();
     tick(SESSION_HEALTH.STALE_THRESHOLD_MS + 1);
-    expect(session.info().recommendation).toBe(UNSCRIPTABLE_TAB_RECOMMENDATION);
+    expect(session.info().recommendation).toBe(THROTTLED_TAB_RECOMMENDATION);
   });
 
   it('info() omits recommendation when visible and recently seen', () => {
@@ -276,7 +280,7 @@ describe('un-scriptable tab recommendation', () => {
   it('health() carries the recommendation when throttled', () => {
     const { session } = makeSession();
     session.applyHealth(true, false);
-    expect(session.health().recommendation).toBe(UNSCRIPTABLE_TAB_RECOMMENDATION);
+    expect(session.health().recommendation).toBe(HIDDEN_TAB_RECOMMENDATION);
   });
 });
 

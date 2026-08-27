@@ -241,3 +241,132 @@ describe('reticle_lease_release', () => {
     ).rejects.toThrow(/pool unavailable/i);
   });
 });
+
+describe('telling the human that the agent went somewhere invisible', () => {
+  /**
+   * Sessions stub with a watcher tab and a leased one, recording every narration posted.
+   *
+   * The selector is unit-tested next door; what is proved HERE is the wiring — that acquire and
+   * release actually reach `pushNarration`. The reported bug was fifteen invisible tool calls, and a
+   * correct selector nobody called would reproduce it exactly.
+   */
+  function depsWithWatcher(leasedIds: string[]): {
+    deps: ToolDeps;
+    narrations: { id: string; text: string }[];
+  } {
+    const narrations: { id: string; text: string }[] = [];
+    const make = (id: string, projectId: string): unknown => ({
+      id,
+      projectId,
+      pushNarration: (text: string) => narrations.push({ id, text }),
+    });
+    const watcher = make('s-human', 'acme');
+    const leased = make('lease-1', 'acme');
+    const { pool } = fakePool();
+    const deps = {
+      sessions: {
+        all: () => [watcher, leased],
+        get: (id: string) => ('s-human' === id ? watcher : leased),
+      },
+      pool: { ...pool, leasedSessionIds: () => leasedIds },
+    } as unknown as ToolDeps;
+    return { deps, narrations };
+  }
+
+  it("narrates into the human's tab on acquire, and not into the leased one", async () => {
+    const { deps, narrations } = depsWithWatcher(['lease-1']);
+    await tool(ReticleTool.LEASE_ACQUIRE)(deps, {
+      url: 'http://localhost:3000/',
+      projectId: 'acme',
+    });
+    expect(narrations.map((n) => n.id)).toEqual(['s-human']);
+    expect(narrations[0]?.text).toContain('will not appear in this tab');
+  });
+
+  it('tells the tab it is live again once the LAST lease is released', async () => {
+    const { deps, narrations } = depsWithWatcher(['lease-1']);
+    await tool(ReticleTool.LEASE_RELEASE)(deps, { sessionId: 'lease-1' });
+    expect(narrations.map((n) => n.text).join()).toContain('live again');
+  });
+
+  it('a narration that throws cannot fail the lease', async () => {
+    // A courtesy to a person must never turn a working lease into a reported failure.
+    const { pool } = fakePool();
+    const deps = {
+      sessions: {
+        all: () => [{ id: 's-human', projectId: 'acme' }],
+        get: () => ({
+          id: 's-human',
+          pushNarration: () => {
+            throw new Error('socket gone');
+          },
+        }),
+      },
+      pool,
+    } as unknown as ToolDeps;
+    const out = (await tool(ReticleTool.LEASE_ACQUIRE)(deps, {
+      url: 'http://localhost:3000/',
+    })) as Record<string, unknown>;
+    expect(out['sessionId']).toBeDefined();
+  });
+});
+
+describe('prioritising a tab that is already open', () => {
+  it('names the live non-leased tab so the agent can switch to the one a human can see', async () => {
+    // Informing after the fact is not prioritising. The agent is told AT THE POINT OF CHOICE that a
+    // visible tab already exists, because that is the only moment the choice is still open.
+    const narrations: string[] = [];
+    const watcher = {
+      id: 's-human',
+      projectId: 'acme',
+      pushNarration: (t: string) => narrations.push(t),
+    };
+    const { pool } = fakePool();
+    const deps = {
+      sessions: { all: () => [watcher], get: () => watcher },
+      pool,
+    } as unknown as ToolDeps;
+
+    const out = (await tool(ReticleTool.LEASE_ACQUIRE)(deps, {
+      url: 'http://localhost:3000/',
+      projectId: 'acme',
+    })) as Record<string, unknown>;
+
+    const prefer = out['preferExisting'] as { sessionId: string; note: string } | undefined;
+    expect(prefer?.sessionId).toBe('s-human');
+    expect(prefer?.note).toContain('release this lease');
+  });
+
+  it('stays silent when no tab was open — a lease is simply correct then', async () => {
+    const { pool } = fakePool();
+    const deps = {
+      sessions: { all: () => [], get: () => ({ id: 'live' }) },
+      pool,
+    } as unknown as ToolDeps;
+
+    const out = (await tool(ReticleTool.LEASE_ACQUIRE)(deps, {
+      url: 'http://localhost:3000/',
+      projectId: 'acme',
+    })) as Record<string, unknown>;
+
+    expect('preferExisting' in out).toBe(false);
+  });
+
+  it('never REFUSES the lease — isolation is a legitimate need', async () => {
+    // The fix must not break agents that genuinely want a clean context. It steers; it does not veto.
+    const watcher = { id: 's-human', projectId: 'acme', pushNarration: () => undefined };
+    const { pool } = fakePool();
+    const deps = {
+      sessions: { all: () => [watcher], get: () => watcher },
+      pool,
+    } as unknown as ToolDeps;
+
+    const out = (await tool(ReticleTool.LEASE_ACQUIRE)(deps, {
+      url: 'http://localhost:3000/',
+      projectId: 'acme',
+    })) as Record<string, unknown>;
+
+    expect(out['sessionId']).toBeDefined();
+    expect(out['url']).toBe('http://localhost:3000/');
+  });
+});
