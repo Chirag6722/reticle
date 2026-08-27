@@ -121,7 +121,7 @@ export class Session {
   /** Stable build-stamped project identity; undefined for v1.0 SDKs that omit it. */
   readonly projectId: string | undefined;
   /**
-   * The `.reticle` directory this session's evidence belongs in.
+   * The `.reticle` directory this session's evidence belongs in — impact counters AND capsules.
    *
    * Stamped once when the session is created, from the project it declared in HELLO, rather than
    * resolved per call: the answer cannot change while the tab is connected, and resolving it once
@@ -130,7 +130,7 @@ export class Session {
    * Undefined when nothing could name a project — the caller then falls back to the daemon's own
    * root, which is what every counter did unconditionally before this existed.
    */
-  impactRoot: string | undefined;
+  artifactRoot: string | undefined;
   url: string;
   title: string;
   adapters: string[];
@@ -355,7 +355,7 @@ export class Session {
         this.#review.add(parsed.data, this.elapsed());
         // The impact record's `marks` field existed and nothing ever wrote it: the report would
         // have shown a permanent zero next to a page covered in pins.
-        recordImpact({ marks: 1 }, {}, this.impactRoot);
+        recordImpact({ marks: 1 }, {}, this.artifactRoot);
       }
     }
     if (event.type === EventType.ROUTE_CHANGE) {
@@ -752,7 +752,7 @@ export class Session {
   disconnect(reason: string, replaced = false): void {
     // "Longest run" means the longest SESSION, and it used to be fed a single tool call's duration
     // - so the report's superlative was a number in milliseconds that never grew past a click.
-    recordImpact({}, { runMs: this.elapsed() }, this.impactRoot);
+    recordImpact({}, { runMs: this.elapsed() }, this.artifactRoot);
     this.rejectAll(reason, replaced);
     try {
       this.#socket.close(1008, reason);

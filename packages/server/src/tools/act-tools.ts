@@ -1,6 +1,3 @@
-import { normalizeQueryArgs } from './query-shape.js';
-import type { Session } from '../session/session.js';
-import { resolveTargetRef, type TargetResolution } from './resolve-target.js';
 /**
  * Action tools — reticle_act, reticle_act_sequence, reticle_act_and_wait. Split out of tools.ts to keep
  * that file under the line cap and assembled back into the tool list there via ...ACT_TOOLS; the
@@ -81,6 +78,7 @@ import { assertSequenceSteps, dispatchAct, preflightAct } from './act-preflight.
 import { followLostObservation } from './act-observation.js';
 import { type ToolDef, intentArg, sessionIdShape } from './tool-kit.js';
 import { asActionType, gradeOf } from './act-helpers.js';
+import { resolveActTarget } from './act-target.js';
 import { tryRealInput, rewriteUploadArgs } from './real-input-attempt.js';
 
 /**
@@ -139,43 +137,6 @@ async function actCommand(
 const ACTION_TYPE_VALUES = Object.values(ActionType);
 const ACTION_TYPE_LIST = ACTION_TYPE_VALUES.join(' | ');
 const actionTypeEnum = z.enum(ACTION_TYPE_VALUES as [string, ...string[]]);
-
-/**
- * Resolve an action's element: an explicit `ref`, or a `target` query resolved in the SAME call.
- *
- * Requiring a ref meant every verification paid a `reticle_query` turn first just to learn one
- * string, and the advertised tool surface is re-sent on every turn — measured on the wire, a
- * two-turn verification spent 10,756 of 11,235 tokens on schema and 479 on the actual answers. The
- * lookup still happens; it just stops costing a round trip through the model.
- *
- * `ref` wins when both are given, because it is the more specific instruction and silently
- * preferring the query would act on something the caller did not name.
- */
-async function resolveActTarget(
-  session: Session,
-  args: Record<string, unknown>,
-): Promise<TargetResolution> {
-  const ref = asString(args['ref']);
-  if (ref !== undefined && ref.length > 0) return { kind: 'ref', ref };
-  const target = args['target'];
-  if (target === undefined) {
-    return {
-      kind: 'error',
-      message:
-        'pass `ref` (from reticle_query/reticle_snapshot) or `target` (e.g. { testid } or { role, name }).',
-    };
-  }
-  const q = normalizeQueryArgs(asRecord(target));
-  const out = await session.command(ReticleCommand.QUERY, {
-    by: q['by'],
-    value: q['value'],
-    name: q['name'],
-    scope: q['scope'],
-  });
-  if (!out.ok) return { kind: 'error', message: out.error ?? 'target query failed' };
-  const elements = asRecord(out.result)['elements'];
-  return resolveTargetRef(Array.isArray(elements) ? elements : []);
-}
 
 export const ACT_TOOLS: ToolDef[] = [
   {
@@ -818,6 +779,9 @@ export const ACT_TOOLS: ToolDef[] = [
           capsule,
           links,
           args,
+          // The session actually driven — after any navigation follow — so the capsule is filed
+          // against the codebase that produced the failure, not wherever the daemon stands.
+          root: session.artifactRoot,
           // No dispatch result to capture when the transport was displaced mid-write.
           actResult: actResult ?? {},
           ...(actedSource === undefined ? {} : { actedSource }),

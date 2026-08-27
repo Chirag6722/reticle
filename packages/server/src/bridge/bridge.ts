@@ -479,12 +479,12 @@ export class Bridge {
           // Against this session's OWN project. Counted here rather than at the chokepoint because
           // a connect is not a tool call, and a session that connects and is never driven is still
           // that project's session — not the daemon's.
-          recordImpact({ sessions: 1 }, {}, session.impactRoot);
+          recordImpact({ sessions: 1 }, {}, session.artifactRoot);
         }
         // ...and the tab is shown its own project's numbers. Captured into a const so the closure
         // cannot be read as capturing a reassignable binding that TS believes may be undefined.
         const attached = session;
-        attached.pushImpact(() => impactSnapshot(attached.impactRoot), true);
+        attached.pushImpact(() => impactSnapshot(attached.artifactRoot), true);
         const replaced = this.sessions.add(session);
         if (replaced !== undefined) {
           // Name the newcomer. A field report had a live session vanish during `reticle_lease` and the

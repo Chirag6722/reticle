@@ -448,18 +448,18 @@ export async function runTool<Ext>(
   // wherever the daemon happens to stand: one daemon serves many projects, and recording every
   // call against its own cwd is how one app's verdicts ended up on another account's dashboard.
   // Falls back to the daemon root when no session can be named, which is the old behaviour.
-  const impactRoot = session?.impactRoot ?? deps.reticleRoot;
+  const artifactRoot = session?.artifactRoot ?? deps.reticleRoot;
   recordImpact(
     deltaForToolResult(raw, finishedAt - startedAt, resultIsError(raw)),
     { ...(defect === undefined ? {} : { defect }) },
-    impactRoot,
+    artifactRoot,
   );
   // ...and the tab being driven is told, so the report is live rather than a thing you reload.
   // Optional-call, not optional-chain-on-the-object: a test double is a partial Session, and a
   // courtesy push must never be the reason a tool call throws.
   // Bound to THIS session's root: a tab must be shown its own project's numbers, not whichever
   // project the daemon was started in.
-  session?.pushImpact?.(() => impactSnapshot(impactRoot));
+  session?.pushImpact?.(() => impactSnapshot(artifactRoot));
   if (resultIsError(raw)) reportRefusal(tool.name, (raw as { error: string }).error);
   else {
     noteToolServed();

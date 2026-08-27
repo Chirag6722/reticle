@@ -366,7 +366,7 @@ function attachJournal(
     // Stamp the project's own `.reticle` before ANY counter fires for this session. Without it every
     // verdict is recorded against wherever the daemon was started, which is how one app's evidence
     // reached a different account's production dashboard.
-    session.impactRoot = resolveArtifactRoot(session.projectId).root;
+    session.artifactRoot = resolveArtifactRoot(session.projectId).root;
     journalAttach(session);
     // Seed the learned ambient map so a fresh session starts knowing which regions churn, instead of
     // re-learning from zero. Best-effort + async: a late seed still helps, a failure is silent.
