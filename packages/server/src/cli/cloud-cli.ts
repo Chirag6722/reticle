@@ -11,11 +11,20 @@ import { NodePlatform } from '../platform.js';
 import { spawn } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { z } from 'zod';
 import { createNodeFileSystem } from '../project/fs-port.js';
 import { CLOUD_LINK_FILE, resolveProjectCloud } from '../cloud/cloud-config.js';
 import { applyCredential, findCredential } from './cloud-keystore.js';
+import { defaultProjectFor } from './project-name.js';
+import {
+  normalizeUrl,
+  readSessionFrom,
+  resolveSessionFor,
+  sessionPath,
+  SESSIONS_DIR,
+  type Session,
+} from './cloud-session.js';
 import { cloudFetch } from '../cloud/cloud-sync.js';
 import { describeSync, runSyncCycle } from '../cloud/sync-cycle.js';
 import { diskSink, diskSource, readCloudIssues, readCloudState } from '../cloud/sync-disk.js';
@@ -42,10 +51,7 @@ const SESSION_FILE = 'session.json';
  * override resolves through. This directory is what makes staging and production hold at the same
  * time instead of clobbering each other, which is the whole reason a single file was not enough.
  */
-const SESSIONS_DIR = 'sessions';
 const CREDENTIALS_FILE = 'credentials.json';
-
-const DEFAULT_PROJECT_ID = 'default';
 
 const CLOUD_COMMANDS: ReadonlySet<string> = new Set([
   'login',
@@ -110,56 +116,25 @@ const flags = (argv: readonly string[]): Record<string, string> => {
   return f;
 };
 
-const SessionSchema = z.object({
-  url: z.string(),
-  token: z.string(),
-  orgName: z.string(),
-  /**
-   * WHICH tenant this session signed into. Optional because every session file written before
-   * org-scoped credentials lacks it; the link path treats "unknown" as "cannot prove a stored key
-   * is ours" and mints, which is the safe direction.
-   */
-  orgId: z.string().optional(),
-});
-type Session = z.infer<typeof SessionSchema>;
-
-/** Trailing slashes are not identity: `https://x/` and `https://x` are one host. */
-const normalizeUrl = (url: string): string => url.replace(/\/+$/, '');
-
-/**
- * A filesystem-safe name for one host. `https://app.reticle.sh` → `app.reticle.sh`,
- * `http://localhost:8890` → `localhost_8890`. The scheme is dropped deliberately: nobody runs the
- * same host over both http and https and means two different accounts by it.
- */
-const hostSlug = (url: string): string =>
-  normalizeUrl(url)
-    .replace(/^[a-z]+:\/\//i, '')
-    .replace(/[^a-zA-Z0-9.-]/g, '_');
-
-const sessionPath = (url: string): string => join(home(), SESSIONS_DIR, `${hostSlug(url)}.json`);
-
 /** The ACTIVE session — the last host logged in to. What a bare command resolves its URL through. */
-const readSession = async (): Promise<Session | null> => {
-  const parsed = SessionSchema.safeParse(await readJson(join(home(), SESSION_FILE)));
-  return parsed.success ? parsed.data : null;
-};
+const readSession = async (): Promise<Session | null> =>
+  readSessionFrom(readJson(join(home(), SESSION_FILE)));
 
 /**
  * The session for ONE host, or null.
  *
- * This is the whole safety property, and it holds by construction rather than by a guard somebody
- * has to remember: a token is looked up BY the host it will be sent to, so there is no arrangement
- * of environment variables that fetches one host's credential for a request to another.
- *
- * Falls back to `session.json` when it names this host, so a machine that logged in before per-host
- * sessions existed keeps working and is not silently signed out by an upgrade.
+ * The whole safety property, holding by construction rather than by a guard somebody has to
+ * remember: a token is looked up BY the host it will be sent to, so no arrangement of environment
+ * variables can fetch one host's credential for a request to another. Falls back to `session.json`
+ * when it names this host, so a machine that logged in before per-host sessions existed is not
+ * silently signed out by an upgrade.
  */
-const readSessionFor = async (url: string): Promise<Session | null> => {
-  const perHost = SessionSchema.safeParse(await readJson(sessionPath(url)));
-  if (perHost.success) return perHost.data;
-  const active = await readSession();
-  return null !== active && normalizeUrl(active.url) === normalizeUrl(url) ? active : null;
-};
+const readSessionFor = async (url: string): Promise<Session | null> =>
+  resolveSessionFor(
+    url,
+    await readSessionFrom(readJson(sessionPath(home(), url))),
+    await readSession(),
+  );
 
 const baseUrl = (session: { url: string } | null, explicit?: string): string => {
   // `--url` wins over the environment: it is typed for THIS command, it is visible in shell history,
@@ -369,7 +344,7 @@ const writeSession = async (
   // Both, on purpose. The per-host file is what lets another environment stay logged in; the active
   // file is what a bare command with no override resolves through, and keeping it means nothing
   // about the single-environment workflow changes.
-  await writeFile(sessionPath(url), body);
+  await writeFile(sessionPath(home(), url), body);
   await writeFile(join(home(), SESSION_FILE), body);
   emit({ loggedIn: orgName, session: join(home(), SESSION_FILE) });
   await linkAfterLogin(url);
@@ -498,7 +473,7 @@ const cmdLogin = async (argv: readonly string[]): Promise<number> => {
 const cmdLogout = async (argv: readonly string[] = []): Promise<number> => {
   const active = await readSession();
   const url = baseUrl(active, flags(argv)['url']);
-  await rm(sessionPath(url), { force: true }).catch(() => undefined);
+  await rm(sessionPath(home(), url), { force: true }).catch(() => undefined);
   // The active pointer only moves if it was pointing at the host just signed out of.
   if (null !== active && normalizeUrl(active.url) === url)
     await writeFile(join(home(), SESSION_FILE), '').catch(() => undefined);
@@ -619,6 +594,16 @@ const cmdLink = async (argv: readonly string[]): Promise<number> => {
   // Same rule as every other authed verb: the token is looked up by the host it will be sent to.
   const session = await readSessionFor(url);
   const envKey = process.env['RETICLE_CLOUD_KEY'];
+  /*
+   * Read the existing binding FIRST, because it decides which project a bare `link` targets.
+   * Re-running `link` is ordinary — rotating a key, repointing an environment — and it must land in
+   * the project this repo already reports to, or its history splits in two without saying so.
+   */
+  const priorLink = await readJson(join(process.cwd(), RETICLE_DIR, CLOUD_LINK_FILE));
+  const priorProjectId =
+    'object' === typeof priorLink && priorLink !== null
+      ? (priorLink as Record<string, unknown>)['projectId']
+      : undefined;
 
   let projectId: string;
   let projectName: string;
@@ -653,9 +638,21 @@ const cmdLink = async (argv: readonly string[]): Promise<number> => {
   } else if (session !== null) {
     // --project accepts a slug id OR a display name; default when omitted. Resolve to the canonical id.
     const wanted = f['project'];
+    /*
+     * A repo is named after itself, not "Default".
+     *
+     * Every repo used to bind to one project called "Default" — measured, two unrelated checkouts on
+     * one account merged their runs, issues and impact into a single bucket, and the dashboard's
+     * per-project view described nothing. It is also what let two TENANTS collide, since a
+     * credential slot built from a project id is only as distinct as the ids are.
+     */
+    const fallback = defaultProjectFor(
+      basename(process.cwd()),
+      'string' === typeof priorProjectId ? priorProjectId : undefined,
+    );
     const targetId =
       wanted === undefined
-        ? DEFAULT_PROJECT_ID
+        ? await resolveProjectId(url, session.token, fallback)
         : await resolveProjectId(url, session.token, wanted);
     /*
      * Reuse the key this machine already holds for the project, rather than minting another.
