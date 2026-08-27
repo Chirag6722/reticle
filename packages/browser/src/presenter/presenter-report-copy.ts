@@ -67,6 +67,20 @@ export const REPORT_TEXT = {
   CHART: 'Verdicts, last 30 days',
   DEFECTS: 'What broke',
   DEFECTS_MORE: 'Manage all of them on the dashboard',
+  /**
+   * What an UNLINKED user is told, and the only place the product tells them.
+   *
+   * The dashboard link renders only when `dashboardUrl` exists, which means only once a repo is
+   * already linked — so the person most likely to want one, watching this record climb on their own
+   * machine, was never told it existed. The single mention anywhere else is a daemon log line.
+   *
+   * Stated as a FACT about where the record lives, not as a pitch. It sits at the foot of a panel
+   * somebody opened on purpose, so it informs rather than interrupts, and it appears only once
+   * there is a verdict worth keeping — an offer to preserve nothing is just an advert.
+   */
+  LOCAL_ONLY: 'This record stops at this machine.',
+  LOCAL_ONLY_ACTION: 'reticle login',
+  LOCAL_ONLY_TAIL: 'keeps it, and lets a team see it.',
   DEFECTS_NONE: 'Nothing has failed a declared consequence yet.',
   EMPTY: 'Nothing recorded yet. Drive the app once and this fills in.',
   SHARE: 'Share',

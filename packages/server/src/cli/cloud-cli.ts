@@ -14,7 +14,8 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { createNodeFileSystem } from '../project/fs-port.js';
-import { CLOUD_LINK_FILE, credentialSlot, resolveProjectCloud } from '../cloud/cloud-config.js';
+import { CLOUD_LINK_FILE, resolveProjectCloud } from '../cloud/cloud-config.js';
+import { applyCredential, findCredential } from './cloud-keystore.js';
 import { cloudFetch } from '../cloud/cloud-sync.js';
 import { describeSync, runSyncCycle } from '../cloud/sync-cycle.js';
 import { diskSink, diskSource, readCloudIssues, readCloudState } from '../cloud/sync-disk.js';
@@ -109,7 +110,17 @@ const flags = (argv: readonly string[]): Record<string, string> => {
   return f;
 };
 
-const SessionSchema = z.object({ url: z.string(), token: z.string(), orgName: z.string() });
+const SessionSchema = z.object({
+  url: z.string(),
+  token: z.string(),
+  orgName: z.string(),
+  /**
+   * WHICH tenant this session signed into. Optional because every session file written before
+   * org-scoped credentials lacks it; the link path treats "unknown" as "cannot prove a stored key
+   * is ours" and mints, which is the safe direction.
+   */
+  orgId: z.string().optional(),
+});
 type Session = z.infer<typeof SessionSchema>;
 
 /** Trailing slashes are not identity: `https://x/` and `https://x` are one host. */
@@ -182,22 +193,12 @@ const keyHint = (key: string): string =>
  * check this would happily reuse a production key for a self-hosted link, because `link` names
  * every project "default" and the two collide in one slot.
  */
-const storedCredential = async (projectId: string, url: string): Promise<string | undefined> => {
-  const raw = await readJson(join(home(), CREDENTIALS_FILE));
-  if ('object' !== typeof raw || null === raw) return undefined;
-  const store = raw as Record<string, unknown>;
-  const composite = store[credentialSlot(url, projectId)];
-  if ('string' === typeof composite && composite.length > 0) return composite;
-  const found = store[projectId];
-  if ('string' === typeof found) return found.length > 0 ? found : undefined;
-  if ('object' !== typeof found || null === found) return undefined;
-  const record = found as Record<string, unknown>;
-  const key = record['key'];
-  const forUrl = record['url'];
-  if ('string' !== typeof key || 0 === key.length) return undefined;
-  if ('string' === typeof forUrl && normalizeUrl(forUrl) !== normalizeUrl(url)) return undefined;
-  return key;
-};
+const storedCredential = async (
+  projectId: string,
+  url: string,
+  orgId: string | undefined,
+): Promise<string | undefined> =>
+  findCredential(await readJson(join(home(), CREDENTIALS_FILE)), projectId, url, orgId);
 
 /**
  * What a key is good for, or undefined when the cloud will not accept it.
@@ -255,11 +256,20 @@ const api = async (
   return json;
 };
 
-const LoginSchema = z.object({ token: z.string(), org: z.object({ name: z.string() }) });
+const LoginSchema = z.object({
+  token: z.string(),
+  org: z.object({ id: z.string().optional(), name: z.string() }),
+});
 const KeySchema = z.object({ projectId: z.string(), projectName: z.string(), key: z.string() });
 const WhoamiSchema = z.object({
   projectId: z.string(),
   projectName: z.string(),
+  /**
+   * Which tenant the key belongs to. Optional for the same reason `dashboardUrl` is — an older
+   * cloud does not send it — and when it is missing a stored key cannot be proved to be ours, which
+   * is why the reuse path below mints instead of guessing.
+   */
+  orgId: z.string().optional(),
   /**
    * Where this project's dashboard lives. Optional because an older cloud does not send it, and a
    * CLI that refused to link against one would break the thing it is supposed to connect.
@@ -322,7 +332,7 @@ const DeviceStartSchema = z.object({
 const DevicePollSchema = z.object({
   status: z.string(),
   token: z.string().optional(),
-  org: z.object({ name: z.string() }).optional(),
+  org: z.object({ id: z.string().optional(), name: z.string() }).optional(),
 });
 
 /** Best-effort open the approval page in the default browser; the printed URL is the headless fallback. */
@@ -344,18 +354,61 @@ const openBrowser = (target: string): void => {
 };
 
 /** Persist a session token under ~/.reticle and print the next step. Shared by both login paths. */
-const writeSession = async (url: string, token: string, orgName: string): Promise<void> => {
+const writeSession = async (
+  url: string,
+  token: string,
+  orgName: string,
+  orgId: string | undefined,
+): Promise<void> => {
   await mkdir(join(home(), SESSIONS_DIR), { recursive: true });
-  const body = `${JSON.stringify({ url: normalizeUrl(url), token, orgName }, null, 2)}\n`;
+  const body = `${JSON.stringify(
+    { url: normalizeUrl(url), token, orgName, ...(orgId === undefined ? {} : { orgId }) },
+    null,
+    2,
+  )}\n`;
   // Both, on purpose. The per-host file is what lets another environment stay logged in; the active
   // file is what a bare command with no override resolves through, and keeping it means nothing
   // about the single-environment workflow changes.
   await writeFile(sessionPath(url), body);
   await writeFile(join(home(), SESSION_FILE), body);
   emit({ loggedIn: orgName, session: join(home(), SESSION_FILE) });
-  hint(
-    'next: `reticle link` to bind this repo to your Default project (or `reticle project create <name>` first)',
-  );
+  await linkAfterLogin(url);
+};
+
+/**
+ * Finish the job when the shell is already standing in an unlinked Reticle project.
+ *
+ * `login` used to end by printing "next: `reticle link`", which made getting from local-only to
+ * reporting a TWO command trip whose second half nothing enforces — and the HUD's own invitation
+ * names one command, so the gap was ours to close rather than the reader's to notice. Somebody who
+ * ran `reticle login` inside their instrumented repo wanted their runs on the dashboard; there is no
+ * second thing they could have meant.
+ *
+ * Deliberately narrow, because a login that writes files in a directory the user did not mean is
+ * worse than an extra step:
+ *   - a `.reticle/` must already exist, which is the mark of `init` having been run HERE. Logging in
+ *     from a home directory or an unrelated checkout links nothing and prints the old hint.
+ *   - an existing `cloud.json` is left completely alone. Re-linking would re-resolve the project and
+ *     is exactly how somebody re-pointing an environment loses a binding they meant to keep.
+ *   - a failure is reported and swallowed. The login SUCCEEDED and its token is already on disk;
+ *     turning that into a non-zero exit would make the recoverable half look like the broken one.
+ */
+const linkAfterLogin = async (url: string): Promise<void> => {
+  const fs = createNodeFileSystem();
+  const reticleDir = join(process.cwd(), RETICLE_DIR);
+  if (!(await fs.exists(reticleDir))) {
+    hint('next: run `reticle login` from your project, or `reticle link` to bind a repo');
+    return;
+  }
+  if (await fs.exists(join(reticleDir, CLOUD_LINK_FILE))) {
+    hint('this repo is already linked — `reticle push` to send what it has recorded');
+    return;
+  }
+  try {
+    await cmdLink(['--url', url]);
+  } catch {
+    hint('signed in, but linking this repo failed — run `reticle link` to retry');
+  }
 };
 
 /**
@@ -378,7 +431,7 @@ const cmdLoginDevice = async (explicitUrl?: string): Promise<number> => {
       await api('POST', `${url}/v1/auth/device/token`, null, { deviceCode: started.deviceCode }),
     );
     if ('approved' === poll.status && poll.token !== undefined && poll.org !== undefined) {
-      await writeSession(url, poll.token, poll.org.name);
+      await writeSession(url, poll.token, poll.org.name, poll.org.id);
       return 0;
     }
     if ('pending' === poll.status) {
@@ -429,7 +482,7 @@ const cmdLogin = async (argv: readonly string[]): Promise<number> => {
   const parsed = LoginSchema.parse(
     await api('POST', `${url}/v1/auth/login`, null, { email, code }),
   );
-  await writeSession(url, parsed.token, parsed.org.name);
+  await writeSession(url, parsed.token, parsed.org.name, parsed.org.id);
   return 0;
 };
 
@@ -570,6 +623,14 @@ const cmdLink = async (argv: readonly string[]): Promise<number> => {
   let projectId: string;
   let projectName: string;
   let key: string;
+  /**
+   * The tenant this binding belongs to, recorded so the credential can be filed and found per-org.
+   * Undefined against an older cloud, where the slot stays cloud+project as it always was.
+   */
+  let orgId: string | undefined;
+  /** The key this machine already had for the slot, and whether it provably belongs to another tenant. */
+  let priorKey: string | undefined;
+  let priorIsForeign = false;
   /*
    * Where this project's dashboard lives. Asked of the cloud rather than derived from `url`: the API
    * origin and the console origin are different hosts in every deployment that is not a laptop, so a
@@ -586,6 +647,7 @@ const cmdLink = async (argv: readonly string[]): Promise<number> => {
     projectId = who.projectId;
     projectName = who.projectName;
     dashboardUrl = who.dashboardUrl;
+    orgId = who.orgId;
     askedWhoami = true;
     key = envKey;
   } else if (session !== null) {
@@ -609,12 +671,41 @@ const cmdLink = async (argv: readonly string[]): Promise<number> => {
      * mint path already makes for `dashboardUrl`, so the common path costs no extra round trip —
      * and a key that fails it is replaced rather than reported.
      */
-    const existing = await storedCredential(targetId, url);
-    const reusable = existing === undefined ? undefined : await validateKey(url, existing);
+    const existing = await storedCredential(targetId, url, session.orgId);
+    const validated = existing === undefined ? undefined : await validateKey(url, existing);
+    /*
+     * A valid key is not the same as OUR key.
+     *
+     * `validateKey` only asks whether the cloud still accepts it, and a key belonging to another
+     * organisation on the same cloud passes that question perfectly. With every project named
+     * "default", the slot `<url>::default` was shared across tenants — so a brand-new workspace
+     * signing in on a machine that had linked a different account reused that account's key and
+     * would have pushed its runs into a stranger's dashboard. Measured, not hypothesised.
+     *
+     * So reuse now requires PROOF of a tenant match, and treats anything less as no match: an older
+     * cloud that omits `orgId`, or a session file written before we recorded one, both fall through
+     * to minting. Minting a second key is a tidiness problem; pushing to the wrong tenant is a
+     * disclosure, and only one of those is worth defaulting to.
+     */
+    const sameTenant =
+      validated !== undefined &&
+      session.orgId !== undefined &&
+      validated.orgId !== undefined &&
+      validated.orgId === session.orgId;
+    const reusable = sameTenant ? validated : undefined;
+    priorKey = existing;
+    // Provably somebody else's: it still works on this cloud AND whoami names a different org. A key
+    // that merely FAILED validation is our own revoked one, and overwriting that is the point.
+    priorIsForeign =
+      validated !== undefined &&
+      validated.orgId !== undefined &&
+      session.orgId !== undefined &&
+      validated.orgId !== session.orgId;
     if (existing !== undefined && reusable !== undefined) {
       projectId = reusable.projectId;
       projectName = reusable.projectName;
       dashboardUrl = reusable.dashboardUrl;
+      orgId = reusable.orgId;
       askedWhoami = true;
       key = existing;
       reusedKey = true;
@@ -628,6 +719,8 @@ const cmdLink = async (argv: readonly string[]): Promise<number> => {
       projectId = minted.projectId;
       projectName = minted.projectName;
       key = minted.key;
+      // The key was minted WITH this session, so its tenant is this session's by construction.
+      orgId = session.orgId;
     }
   } else {
     err('run `reticle login` first, or set RETICLE_CLOUD_KEY to link with an existing key');
@@ -644,9 +737,11 @@ const cmdLink = async (argv: readonly string[]): Promise<number> => {
   // that also has a link in it, and an older cloud simply does not send one.
   if (!askedWhoami) {
     try {
-      dashboardUrl = WhoamiSchema.parse(
-        await api('GET', `${url}/v1/cloud/whoami`, key),
-      ).dashboardUrl;
+      const who = WhoamiSchema.parse(await api('GET', `${url}/v1/cloud/whoami`, key));
+      dashboardUrl = who.dashboardUrl;
+      // Only FILL IN a tenant we do not have. The session we minted with is the authority on which
+      // org this key belongs to; letting a later lookup overwrite it is how the answer drifts.
+      orgId = orgId ?? who.orgId;
     } catch {
       // Older cloud, or a transient failure. The HUD shows its list without a link.
     }
@@ -655,6 +750,9 @@ const cmdLink = async (argv: readonly string[]): Promise<number> => {
   const cloudJson = {
     projectId,
     projectName,
+    // Recorded so the daemon resolves the credential in the ORG slot rather than the ambiguous
+    // cloud+project one, which two tenants on one cloud both answer to.
+    ...(orgId === undefined ? {} : { orgId }),
     url,
     ...(dashboardUrl === undefined ? {} : { dashboardUrl }),
     sync: prevObj['sync'] ?? { runs: true, memory: true, flows: true },
@@ -665,29 +763,10 @@ const cmdLink = async (argv: readonly string[]): Promise<number> => {
   await mkdir(home(), { recursive: true });
   const credPath = join(home(), CREDENTIALS_FILE);
   const creds = (await readJson(credPath)) ?? {};
-  const credObj =
-    'object' === typeof creds && creds !== null ? (creds as Record<string, unknown>) : {};
-  /*
-   * Stamped with the cloud it belongs to.
-   *
-   * The store was keyed by project id alone, and `link` names every project "default" — so a repo
-   * on a self-hosted install and a repo on the hosted service shared one slot, last writer winning.
-   * Measured on one machine: the production key was being handed to a localhost server. A key now
-   * carries the URL that minted it, and the resolver refuses it anywhere else.
-   */
-  /*
-   * Keyed by CLOUD and project, not project alone.
-   *
-   * `link` names every project "default", so a repo on a self-hosted install and a repo on the
-   * hosted service both claimed the slot `default` and the last link won — measured on one machine,
-   * with a production key then being handed to a localhost server. The composite slot lets both be
-   * held at once; the stamped `url` inside makes a mismatched read refuse rather than dial.
-   *
-   * The bare `projectId` slot is written too, so a daemon running an OLDER build still finds this
-   * credential. It is the ambiguous one and the resolver prefers the composite.
-   */
-  credObj[credentialSlot(url, projectId)] = key;
-  credObj[projectId] = { key, url };
+  const credObj = applyCredential(
+    'object' === typeof creds && creds !== null ? (creds as Record<string, unknown>) : {},
+    { projectId, url, key, orgId, priorKey, priorIsForeign },
+  );
   await writeFile(credPath, `${JSON.stringify(credObj, null, 2)}\n`);
 
   emit({ linked: projectName, projectId, cloudJson: linkPath, credentials: credPath });

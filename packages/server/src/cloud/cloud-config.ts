@@ -46,6 +46,8 @@ export interface ProjectCloud {
 
 interface CloudLink {
   projectId: string;
+  /** Which tenant this binding belongs to. Absent in a cloud.json written before org-scoped slots. */
+  orgId: string | undefined;
   url: string;
   sync: Partial<SyncPolicy>;
   verify: VerifyMode;
@@ -73,6 +75,7 @@ function parseLink(raw: unknown): CloudLink | null {
     'object' === typeof o.sync && o.sync !== null ? (o.sync as Record<string, unknown>) : {};
   return {
     projectId: o.projectId,
+    orgId: 'string' === typeof o.orgId && o.orgId.length > 0 ? o.orgId : undefined,
     url: o.url,
     sync: {
       runs: asBool(sync.runs, DEFAULT_SYNC_POLICY.runs),
@@ -102,16 +105,34 @@ function parseLink(raw: unknown): CloudLink | null {
  * refusing it would silently unlink every repo that predates this change, which is a worse outage
  * than the collision. Re-linking upgrades a repo to the safe shape.
  */
-export const credentialSlot = (url: string, projectId: string): string =>
-  `${normalizeCloudUrl(url)}::${projectId}`;
+export const credentialSlot = (url: string, projectId: string, orgId?: string): string =>
+  orgId === undefined || 0 === orgId.length
+    ? `${normalizeCloudUrl(url)}::${projectId}`
+    : `${normalizeCloudUrl(url)}::org::${orgId}::${projectId}`;
 
-function credentialFor(raw: unknown, projectId: string, url: string): string | null {
+function credentialFor(
+  raw: unknown,
+  projectId: string,
+  url: string,
+  orgId?: string,
+): string | null {
   if (typeof raw !== 'object' || null === raw) return null;
   const store = raw as Record<string, unknown>;
   /*
-   * The composite slot first: a project id alone cannot identify a credential, because `link` names
-   * every project "default" and two clouds therefore claim one slot. Stamping the entry (below)
-   * stopped the WRONG key being sent; only keying by cloud lets both be held at once.
+   * The ORG slot first, because cloud + project is still not an identity.
+   *
+   * `link` names every project "default", so two ACCOUNTS on one cloud both claimed the slot
+   * `<url>::default` and the last link won. Measured on a laptop: a brand-new workspace ran
+   * `reticle login` and was handed a stored key belonging to a different organisation — valid, so
+   * every validation passed, and every run it pushed would have landed in a stranger's dashboard.
+   * Keying by cloud fixed two clouds colliding; only keying by ORG fixes two tenants colliding.
+   */
+  const orgScoped = orgId === undefined ? undefined : store[credentialSlot(url, projectId, orgId)];
+  if ('string' === typeof orgScoped && orgScoped.length > 0) return orgScoped;
+  /*
+   * Then the cloud+project slot, which is what every repo linked before this change still holds. It
+   * is ambiguous between tenants by construction, which is why it is consulted second and why the
+   * writer above stopped producing it as the only entry.
    */
   const composite = store[credentialSlot(url, projectId)];
   if ('string' === typeof composite && composite.length > 0) return composite;
@@ -162,6 +183,7 @@ export async function resolveProjectCloud(
     await readJson(fs, join(homeDir, ReticleDir.ROOT, CREDENTIALS_FILE)),
     link.projectId,
     link.url,
+    link.orgId,
   );
   const config: CloudConfig | null =
     key !== null ? { url: link.url.replace(/\/+$/, ''), apiKey: key } : null;

@@ -60,6 +60,41 @@ describe('the impact report', () => {
 });
 
 /**
+ * The only place the product tells an unlinked user a dashboard exists.
+ *
+ * Before this, every dashboard mention in the HUD was gated on `dashboardUrl`, which is read from a
+ * repo's cloud.json — so the person who had never linked, the only one who needed telling, was the
+ * one person never told. The rest of these tests exist because the fix for that is one line away
+ * from being a nag, and a nag in a verification tool costs more trust than the conversion is worth.
+ */
+describe('what an UNLINKED user is told about the dashboard', () => {
+  const withVerdicts = scope({ calls: 40, verdicts: 12, passed: 9, failed: 2, unknown: 1 });
+
+  it('names the one command, once, when there is a record worth keeping', () => {
+    const html = reportBodyHtml(withVerdicts);
+    expect(html).toContain('This record stops at this machine.');
+    expect(html).toContain('reticle login');
+    // Once. A second mention in the same panel is where a line becomes a nag.
+    expect(html.split('reticle login').length - 1).toBe(1);
+  });
+
+  it('goes silent the moment the repo is linked', () => {
+    // A linked user is already reporting; telling them to log in is noise that reads as a bug.
+    const html = reportBodyHtml(withVerdicts, 'https://app.reticle.sh/o/acme');
+    expect(html).not.toContain('This record stops at this machine.');
+  });
+
+  it('offers nothing when there is nothing yet to keep', () => {
+    // Gated on a VERDICT, not on tool calls: somebody who has driven the app but proved nothing has
+    // not yet received the thing this offers to preserve, and an offer to keep nothing is an advert.
+    expect(reportBodyHtml(scope({ calls: 40 }))).not.toContain(
+      'This record stops at this machine.',
+    );
+    expect(reportBodyHtml(scope())).not.toContain('This record stops at this machine.');
+  });
+});
+
+/**
  * The public card is a different audience from the private report.
  *
  * Estimated savings are the most-mocked class of number in AI tooling, and a percentile without a

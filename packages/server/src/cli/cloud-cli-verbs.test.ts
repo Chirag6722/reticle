@@ -446,17 +446,91 @@ describe('cloud-cli verb contracts (#555)', () => {
     expect(stderrBuf).toContain('not in your repo');
   });
 
+  /**
+   * The stored key is VALID but belongs to somebody else.
+   *
+   * `link` names every project "default", so two accounts on one cloud shared the slot
+   * `<url>::default`. Validation could never catch it: the other tenant's key works perfectly, it
+   * just is not ours. Measured end to end against a real API — a brand-new workspace signed in and
+   * was handed a stranger's key, and every run it pushed would have landed in their dashboard.
+   */
+  it('refuses to reuse a key that belongs to a DIFFERENT organisation', async () => {
+    await writeHomeFile(
+      [SESSION_FILE],
+      `{"token":"tok","orgName":"Acme","orgId":"org_mine","url":"${TEST_URL}"}`,
+    );
+    await writeHomeFile([CREDENTIALS_FILE], JSON.stringify({ proj_1: 'rk_live_theirs000' }));
+    responder = (url) => {
+      if (true === url.endsWith('/v1/projects'))
+        return { body: { projects: [{ projectId: 'proj_1', name: 'Storefront' }] } };
+      if (true === url.endsWith('/v1/keys'))
+        return {
+          body: { projectId: 'proj_1', projectName: 'Storefront', key: 'rk_live_mine00000' },
+        };
+      return { body: { projectId: 'proj_1', projectName: 'Storefront', orgId: 'org_theirs' } };
+    };
+
+    const code = await runCloudCommand(['link', '--project', 'storefront']);
+
+    expect(code).toBe(0);
+    expect(
+      requests.filter((r) => 'POST' === r.method && r.url.endsWith('/v1/keys')).length,
+      "a key of our own is minted rather than borrowing the other tenant's",
+    ).toBe(1);
+    const creds = JSON.parse(
+      await readFile(join(home, RETICLE_DIR, CREDENTIALS_FILE), 'utf8'),
+    ) as Record<string, unknown>;
+    // Ours is filed under the org slot...
+    expect(creds[`${TEST_URL}::org::org_mine::proj_1`]).toBe('rk_live_mine00000');
+    // ...and THEIR entry is left exactly as it was. Overwriting it would be the same disclosure
+    // pointing the other way: their repo would start pushing with our key.
+    expect(creds['proj_1']).toBe('rk_live_theirs000');
+    expect(creds[`${TEST_URL}::proj_1`]).toBeUndefined();
+  });
+
+  it('mints rather than guessing when the cloud cannot name the tenant', async () => {
+    // An older cloud answers whoami without an orgId, so a stored key cannot be proved ours. Minting
+    // a second key is untidy; pushing to the wrong tenant is a disclosure. Only one of those is a
+    // safe default, and this pins which one we chose.
+    await writeHomeFile(
+      [SESSION_FILE],
+      `{"token":"tok","orgName":"Acme","orgId":"org_mine","url":"${TEST_URL}"}`,
+    );
+    await writeHomeFile([CREDENTIALS_FILE], JSON.stringify({ proj_1: 'rk_live_unknown00' }));
+    responder = (url) => {
+      if (true === url.endsWith('/v1/projects'))
+        return { body: { projects: [{ projectId: 'proj_1', name: 'Storefront' }] } };
+      if (true === url.endsWith('/v1/keys'))
+        return {
+          body: { projectId: 'proj_1', projectName: 'Storefront', key: 'rk_live_mine00000' },
+        };
+      return { body: { projectId: 'proj_1', projectName: 'Storefront' } };
+    };
+
+    const code = await runCloudCommand(['link', '--project', 'storefront']);
+
+    expect(code).toBe(0);
+    expect(requests.filter((r) => 'POST' === r.method && r.url.endsWith('/v1/keys')).length).toBe(
+      1,
+    );
+  });
+
   it('re-linking reuses the stored key instead of minting a second one', async () => {
     // Credential hygiene. `link` is idempotent about the BINDING and was not about the KEY: two runs
     // against one project left two live `reticle-cli` keys on the account, each valid, neither
     // identifiable to a repo. An agent retries — that is what agents do — so this accumulates
     // silently until somebody has a key list they cannot reason about and revokes the wrong one.
-    await writeHomeFile([SESSION_FILE], `{"token":"tok","orgName":"Acme","url":"${TEST_URL}"}`);
+    await writeHomeFile(
+      [SESSION_FILE],
+      `{"token":"tok","orgName":"Acme","orgId":"org_acme","url":"${TEST_URL}"}`,
+    );
     await writeHomeFile([CREDENTIALS_FILE], JSON.stringify({ proj_1: 'rk_live_existing00' }));
     responder = (url) => {
       if (true === url.endsWith('/v1/projects'))
         return { body: { projects: [{ projectId: 'proj_1', name: 'Storefront' }] } };
-      return { body: { projectId: 'proj_1', projectName: 'Storefront' } };
+      // whoami names the tenant, which is what lets a stored key be recognised as OURS. Reuse now
+      // requires that proof — see the foreign-org test below for why.
+      return { body: { projectId: 'proj_1', projectName: 'Storefront', orgId: 'org_acme' } };
     };
 
     const code = await runCloudCommand(['link', '--project', 'storefront']);

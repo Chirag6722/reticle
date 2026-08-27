@@ -31,6 +31,48 @@ describe('resolveProjectCloud — per-project cloud binding + sync policy', () =
     await writeFile(join(homeDir, '.reticle', CREDENTIALS_FILE), JSON.stringify(obj));
   };
 
+  /**
+   * Two ACCOUNTS on one cloud, which is one machine with a work login and a personal one.
+   *
+   * `link` names every project "default", so both tenants claimed the slot `<url>::default` and the
+   * last writer won. Measured end to end: a brand-new workspace signed in and was handed a stored
+   * key belonging to a different organisation — valid, so every check passed, and its runs would
+   * have been pushed into a stranger's dashboard.
+   */
+  describe('two tenants on one cloud', () => {
+    const URL = 'https://cloud.test';
+    const bothTenants = {
+      [`${URL}::org::org_mine::default`]: 'rk_live_mine',
+      [`${URL}::org::org_theirs::default`]: 'rk_live_theirs',
+      // The ambiguous shim an older link left behind, pointing at the OTHER tenant.
+      [`${URL}::default`]: 'rk_live_theirs',
+      default: { key: 'rk_live_theirs', url: URL },
+    };
+
+    it('sends MY key when the binding names my org, not whoever wrote the shared slot', async () => {
+      await writeLink({ projectId: 'default', orgId: 'org_mine', url: URL });
+      await writeCreds(bothTenants);
+      const cloud = await resolveProjectCloud(fs, reticleRoot, homeDir, env);
+      expect(cloud.config?.apiKey).toBe('rk_live_mine');
+    });
+
+    it('keeps the other tenant on their own key from the same keystore', async () => {
+      await writeLink({ projectId: 'default', orgId: 'org_theirs', url: URL });
+      await writeCreds(bothTenants);
+      const cloud = await resolveProjectCloud(fs, reticleRoot, homeDir, env);
+      expect(cloud.config?.apiKey).toBe('rk_live_theirs');
+    });
+
+    it('still resolves a binding written before orgs were recorded', async () => {
+      // The compatibility half. A repo linked by an older CLI has no orgId and must keep working
+      // through the ambiguous slot rather than losing its credential to a stricter lookup.
+      await writeLink({ projectId: 'default', url: URL });
+      await writeCreds(bothTenants);
+      const cloud = await resolveProjectCloud(fs, reticleRoot, homeDir, env);
+      expect(cloud.config?.apiKey).toBe('rk_live_theirs');
+    });
+  });
+
   it('falls back to env creds when the project has no cloud.json (single-project / CI)', async () => {
     const withEnv = { RETICLE_CLOUD_URL: 'https://cloud.test', RETICLE_CLOUD_KEY: 'rk_live_env' };
     const cloud = await resolveProjectCloud(fs, reticleRoot, homeDir, withEnv);
