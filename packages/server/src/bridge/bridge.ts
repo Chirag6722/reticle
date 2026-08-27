@@ -249,7 +249,15 @@ export class Bridge {
    * is the only thing that could have found it.
    */
   readonly #onSessionReady: SessionReadyHandler[] = [];
-  #onSessionCreate: ((session: Session) => void) | undefined;
+  /*
+   * A LIST, not a single slot.
+   *
+   * It held one handler, so a second `attachSessionCreate` silently replaced the first — and the
+   * first is what stamps a session's artifactRoot, without which every verdict is recorded against
+   * wherever the daemon was started. A registration API whose failure mode is "the previous caller
+   * stops working, quietly" is a trap; anything that needs to run on a new session now simply runs.
+   */
+  readonly #onSessionCreate: Array<(session: Session) => void> = [];
   /** Fired when a session is removed — flushes its journal tail + persists what it learned. */
   #onSessionEnd: ((session: Session) => Promise<void>) | undefined;
 
@@ -498,7 +506,16 @@ export class Bridge {
           session = new Session(parsed, socket, this.#clock);
           // Recorded on ACCEPTANCE, so it is evidence of what this daemon really serves.
           if (parsed.projectId !== undefined) this.#servedProjects.add(parsed.projectId);
-          this.#onSessionCreate?.(session); // attach the durable journal before any events stream in
+          // Attach the durable journal (and anything else registered) before any events stream in.
+          // One throwing handler must not stop the others, or the order of registration would decide
+          // which features survive a bad frame.
+          for (const handler of this.#onSessionCreate) {
+            try {
+              handler(session);
+            } catch {
+              /* a handler that failed is not a reason to drop the session */
+            }
+          }
           // A tab that has just connected has no impact record yet, so the report would read "nothing
           // recorded" over a file with a month of history in it. Push what is already on disk as soon
           // as there is somewhere to push it to; a session is also a thing that HAPPENED, so it counts.
@@ -700,8 +717,9 @@ export class Bridge {
     this.#onSessionEnd = handler;
   }
 
+  /** Register a handler to run when a session connects. Additive — every handler runs. */
   attachSessionCreate(handler: (session: Session) => void): void {
-    this.#onSessionCreate = handler;
+    this.#onSessionCreate.push(handler);
   }
 
   close(): Promise<void> {

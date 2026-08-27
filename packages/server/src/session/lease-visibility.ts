@@ -35,6 +35,39 @@ export const AGENT_DRIVING_HERE_AGAIN =
   'The agent released its separate context — this tab is live again.';
 
 /**
+ * Shown to a tab that CONNECTS while a lease is already open.
+ *
+ * The acquire-time notice only reaches tabs that were already connected, so opening the app — or
+ * merely reloading it — during a lease landed somebody on a silent HUD with nothing explaining it.
+ * That is the same dark-HUD failure the acquire notice exists to prevent, arrived at from the other
+ * direction, and it is the more common one: a person opens the dashboard BECAUSE they want to watch.
+ *
+ * Worded for arrival rather than for a change of state — nothing just happened from this tab's point
+ * of view, so "an agent is driving elsewhere" would describe an event it never saw.
+ */
+export const AGENT_ALREADY_DRIVING_ELSEWHERE =
+  'An agent is already driving a separate leased context — its actions will not appear in this tab.';
+
+/**
+ * Whether a session arriving now should be told a lease is already running.
+ *
+ * Same rules as `watchersToNotify`, expressed for one session: never tell a leased context about
+ * itself, and never tell somebody watching app A about a lease against app B.
+ */
+export function shouldGreetWithLeaseNotice(
+  session: WatcherCandidate,
+  leasedSessionIds: readonly string[],
+  leasedProjectIds: readonly (string | undefined)[],
+): boolean {
+  if (leasedSessionIds.includes(session.id)) return false;
+  if (0 === leasedSessionIds.length) return false;
+  return leasedProjectIds.some(
+    (projectId) =>
+      projectId === undefined || session.projectId === undefined || session.projectId === projectId,
+  );
+}
+
+/**
  * Which connected sessions belong to a human who should be told.
  *
  * Two exclusions, both deliberate:

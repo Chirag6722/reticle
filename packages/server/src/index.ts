@@ -62,6 +62,10 @@ import { statusPayload } from './status-payload.js';
 import { CdpRealInputProvider, LaunchedRealInputProvider } from './input/real-input.js';
 import { cpus } from 'node:os';
 import { BrowserPool } from './pool/browser-pool.js';
+import {
+  AGENT_ALREADY_DRIVING_ELSEWHERE,
+  shouldGreetWithLeaseNotice,
+} from './session/lease-visibility.js';
 import { playwrightLauncher, resolveMaxContexts } from './pool/playwright-launcher.js';
 import { LeaseReaper } from './pool/lease-reaper.js';
 import { readJournalEnabled, readProjectId } from './cli/cli-port.js';
@@ -560,6 +564,25 @@ export async function start(options: StartOptions = {}): Promise<RunningServer> 
     pool = createBrowserPool(options.headless ?? true);
     leaseReaper = new LeaseReaper(pool);
     leaseReaper.start();
+    /*
+     * Tell a tab that ARRIVES during a lease why its HUD is silent.
+     *
+     * The acquire-time notice only reaches tabs already connected, so opening the app — or merely
+     * reloading it — while an agent held a lease landed somebody on a dark HUD with nothing
+     * explaining it. That is the more common way to hit it, because a person opens the dashboard
+     * precisely when they want to watch. Reported as "dashboard is being watched, but the agent chat
+     * shows nothing".
+     *
+     * Registered separately from the journal hook rather than folded into it: this one needs the
+     * pool, which does not exist on the no-drive path, and session-create handlers are additive.
+     */
+    const leasePool = pool;
+    bridge.attachSessionCreate((session) => {
+      const leasedIds = leasePool.leasedSessionIds();
+      const leasedProjects = leasedIds.map((id) => bridge.sessions.get(id)?.projectId);
+      if (shouldGreetWithLeaseNotice(session, leasedIds, leasedProjects))
+        session.pushNarration(AGENT_ALREADY_DRIVING_ELSEWHERE);
+    });
     const deps = {
       sessions: bridge.sessions,
       pool,

@@ -6,6 +6,8 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  AGENT_ALREADY_DRIVING_ELSEWHERE,
+  shouldGreetWithLeaseNotice,
   AGENT_DRIVING_ELSEWHERE,
   AGENT_DRIVING_HERE_AGAIN,
   watchersToNotify,
@@ -58,5 +60,46 @@ describe('watchersToNotify', () => {
     // And the HUD is explained in BOTH directions — a tab that went quiet and never got told it was
     // live again is the same confusion arriving later.
     expect(AGENT_DRIVING_HERE_AGAIN).toContain('live again');
+  });
+});
+
+/**
+ * The other direction: a tab that arrives DURING a lease.
+ *
+ * The acquire-time notice only reaches tabs already connected, so opening the dashboard — or just
+ * reloading it — while an agent held a lease landed somebody on a silent HUD with nothing to explain
+ * it. Reported exactly that way: "dashboard is being watched, but the agent chat shows nothing."
+ */
+describe('shouldGreetWithLeaseNotice', () => {
+  const tab = { id: 's1', projectId: 'app' };
+
+  it('greets a tab that connects while a lease is open', () => {
+    expect(shouldGreetWithLeaseNotice(tab, ['lease-1'], ['app'])).toBe(true);
+  });
+
+  it('says nothing when no lease is running', () => {
+    expect(shouldGreetWithLeaseNotice(tab, [], [])).toBe(false);
+  });
+
+  it('never tells a leased context about itself', () => {
+    expect(
+      shouldGreetWithLeaseNotice({ id: 'lease-1', projectId: 'app' }, ['lease-1'], ['app']),
+    ).toBe(false);
+  });
+
+  it('does not tell somebody watching app A about a lease on app B', () => {
+    expect(shouldGreetWithLeaseNotice(tab, ['lease-1'], ['other'])).toBe(false);
+  });
+
+  it('still greets a session with no projectId — an older SDK sends none', () => {
+    // Dropping these would reintroduce the dark HUD for the people least able to work out why.
+    expect(
+      shouldGreetWithLeaseNotice({ id: 's1', projectId: undefined }, ['lease-1'], ['app']),
+    ).toBe(true);
+  });
+
+  it('has arrival wording, not change-of-state wording', () => {
+    // Nothing just happened from this tab's point of view; it walked in on something.
+    expect(AGENT_ALREADY_DRIVING_ELSEWHERE).toContain('already');
   });
 });
