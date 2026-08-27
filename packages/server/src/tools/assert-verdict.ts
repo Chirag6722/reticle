@@ -131,6 +131,7 @@ export async function assertVerdict(
     prior,
     currentDocumentId: session.currentDocumentId,
     currentEditEpoch: session.currentEditEpoch,
+    appOrigin: session.url,
     expectedFailures: declared.netFailures,
     renderProved: pass && declared.rendersContent,
     ...(actCursor !== undefined && actCursor >= since ? { actionSince: actCursor } : {}),

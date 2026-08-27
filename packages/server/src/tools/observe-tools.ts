@@ -23,6 +23,8 @@ import {
 import { buildReactionReport } from '../events/reaction.js';
 import { findContradictions } from '../events/contradictions.js';
 import { evaluatePredicate, waitForPredicate, PredicateSchema } from '../events/predicate.js';
+import { resolveSessionWithin } from '../session/resolve-within.js';
+import { WALL_CLOCK } from '../session/wall-clock.js';
 import { parsePredicate } from '../events/predicate-parse.js';
 import {
   matchNet,
@@ -255,6 +257,7 @@ export const OBSERVE_TOOLS: ToolDef[] = [
       const contradictions = findContradictions(filtered, {
         currentDocumentId: session.currentDocumentId,
         currentEditEpoch: session.currentEditEpoch,
+        appOrigin: session.url,
         ...(judgingTheAct ? { ...session.lastAct.effect(), actionSince: actCursor } : {}),
       });
       // carry session health — a throttled tab means the observed timeline may be incomplete.
@@ -333,17 +336,19 @@ export const OBSERVE_TOOLS: ToolDef[] = [
         ),
     },
     handler: async (deps, args) => {
-      const session = deps.sessions.resolve(asString(args['sessionId']));
+      const waitBudget = asNumber(args['timeout_ms']) ?? DEFAULT_ASSERT_TIMEOUT_MS;
+      // Spend the budget waiting for the APP as well as for the predicate. See resolve-within.
+      const session = await resolveSessionWithin(
+        deps.sessions,
+        asString(args['sessionId']),
+        waitBudget,
+        WALL_CLOCK,
+      );
       // `until` is act_and_wait's name for this — see alias-args.ts.
       const predicate = parsePredicate(aliasParam(args, 'predicate', ['until'])['predicate']);
       // Honesty: explicit since wins; else default to the last act's cursor; else the whole buffer.
       const since = asNumber(args['since']) ?? session.lastAct.cursor() ?? 0;
-      const verdict = await waitForPredicate(
-        session,
-        predicate,
-        asNumber(args['timeout_ms']) ?? DEFAULT_ASSERT_TIMEOUT_MS,
-        since,
-      );
+      const verdict = await waitForPredicate(session, predicate, waitBudget, since);
       // match reticle_assert — wrap with control + session health (throttle matters most while blocking)
       // and the buffer envelope, so a verdict reached over an evicted window says so.
       return withControl(session, {
@@ -455,10 +460,16 @@ export const OBSERVE_TOOLS: ToolDef[] = [
         ),
     },
     handler: async (deps, args) => {
-      const session = deps.sessions.resolve(asString(args['sessionId']));
+      const timeout = asNumber(args['timeout_ms']) ?? 0;
+      // Spend the budget waiting for the APP as well as for the predicate. See resolve-within.
+      const session = await resolveSessionWithin(
+        deps.sessions,
+        asString(args['sessionId']),
+        timeout,
+        WALL_CLOCK,
+      );
       // `until` is act_and_wait's name for this — see alias-args.ts.
       const predicate = parsePredicate(aliasParam(args, 'predicate', ['until'])['predicate']);
-      const timeout = asNumber(args['timeout_ms']) ?? 0;
       // Honesty: explicit since wins; else default to the last act's cursor; else the whole buffer.
       const since = asNumber(args['since']) ?? session.lastAct.cursor() ?? 0;
       // Declared BEFORE the verdict, so the undeclared-change read below finds it open and stays

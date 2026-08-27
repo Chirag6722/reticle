@@ -5,6 +5,8 @@
  */
 import { z } from 'zod';
 import { aliasParam } from './alias-args.js';
+import { resolveSessionWithin } from '../session/resolve-within.js';
+import { WALL_CLOCK } from '../session/wall-clock.js';
 import { timeoutMsSchema } from './numeric-bounds.js';
 import { captureAct, compileSequenceStep } from '../flows/replay.js';
 import {
@@ -556,7 +558,15 @@ export const ACT_TOOLS: ToolDef[] = [
       ...pausedOutputShape,
     },
     handler: async (deps, args) => {
-      let session = deps.sessions.resolve(asString(args['sessionId']));
+      // Spend the caller's budget waiting for the APP too, not only for the consequence. This tool
+      // is the one an agent reaches for straight after `init` and a dev-server restart, which is
+      // exactly when there is no session yet and one is seconds away. See resolve-within.
+      let session = await resolveSessionWithin(
+        deps.sessions,
+        asString(args['sessionId']),
+        asNumber(args['timeout_ms']) ?? DEFAULT_ASSERT_TIMEOUT_MS,
+        WALL_CLOCK,
+      );
       const acted = session;
       const actedSessionId = session.id;
       // Live-control: refuse to drive the page (no act, no predicate eval) while paused.
@@ -817,6 +827,7 @@ export const ACT_TOOLS: ToolDef[] = [
           ...session.lastAct.effect(),
           currentDocumentId: session.currentDocumentId,
           currentEditEpoch: session.currentEditEpoch,
+          appOrigin: session.url,
         });
         // The single field an agent reads. Everything below it is the evidence it was derived from;
         // this is the only one that has to be interpreted, and now it interprets itself.

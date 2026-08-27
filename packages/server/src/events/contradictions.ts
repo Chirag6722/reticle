@@ -4,6 +4,7 @@ import {
   MUTATING_METHODS,
   isDevToolingUrl,
   isSameDocument,
+  isThirdPartyUrl,
   isSameEditEpoch,
   type ReticleEvent,
 } from '@reticlehq/core';
@@ -313,6 +314,24 @@ export interface ContradictionOptions {
    * treats absence as current on both sides.
    */
   currentEditEpoch?: number | undefined;
+  /**
+   * The page under test, as the session last recorded it — the app's own origin, in URL form.
+   *
+   * The first-party/third-party axis. Every rule below asks "did the app disagree with itself", and
+   * a failed analytics beacon is not the app: reported independently from several apps, any
+   * analytics package installed was enough to grade a correct drive `contradicted`, and on one app
+   * EVERY assertion came back that way forever, because it fires a branding call on page load. A
+   * verdict field that answers "no" to everything has stopped being a verdict field.
+   *
+   * Third-party traffic is dropped here rather than reported at a lower severity, for the reason the
+   * dev-tooling split is: the rules below would each have to learn to say it. The exclusion is never
+   * silent — the URLs ride out in the same disclosure line the toolchain's do — and the calls
+   * themselves are untouched in `reticle_network` and the event timeline.
+   *
+   * Undefined disables the axis, exactly as an undefined `currentDocumentId` disables the document
+   * one: a caller that cannot say which page is under test gets the behaviour it had before this.
+   */
+  appOrigin?: string | undefined;
 }
 
 /** Net-shaped events — the only ones that carry a URL a dev-tooling channel could occupy. */
@@ -332,7 +351,10 @@ const NET_TYPES: ReadonlySet<EventType> = new Set([
  * every action. The overlay's own 404s and duplicate fetches are the same story on other checks,
  * which is why the split happens ONCE here rather than in the one check that reported it.
  */
-function splitDevTooling(events: readonly ReticleEvent[]): {
+function splitForeignTraffic(
+  events: readonly ReticleEvent[],
+  appOrigin: string | undefined,
+): {
   app: readonly ReticleEvent[];
   ignored: string[];
 } {
@@ -340,7 +362,9 @@ function splitDevTooling(events: readonly ReticleEvent[]): {
   const app = events.filter((e) => {
     if (!NET_TYPES.has(e.type)) return true;
     const url = asString(e.data['url']);
-    if (!isDevToolingUrl(url)) return true;
+    // Somebody else's code, twice over: the toolchain's own channel, and any site that is not the
+    // app under test. Neither can answer the question every rule below asks.
+    if (!isDevToolingUrl(url) && !isThirdPartyUrl(url, appOrigin)) return true;
     if (url !== undefined && !ignored.includes(url)) ignored.push(url);
     return false;
   });
@@ -391,20 +415,23 @@ function findWindowContradictions(
   options: ContradictionOptions,
 ): Contradiction[] {
   const found: OwnContradiction[] = [];
-  const { app: allApp, ignored: ignoredDevTooling } = splitDevTooling(allEvents);
+  const { app: allApp, ignored: ignoredForeign } = splitForeignTraffic(
+    allEvents,
+    options.appOrigin,
+  );
 
   // ── Evidence belonging to a document that has since been replaced ───────────────────────────
   // Scoped ONCE, here, for the same reason the dev-tooling split is: every rule below asks "what
   // else was in this window", and answering that with a dead page's traffic is a defect in all of
   // them rather than in whichever one reported it. Applied after the dev-tooling split so the count
   // reported below is the app's own evidence and not the toolchain's noise.
-  const events = allApp.filter((e) => isSameDocument(e.documentId, options.currentDocumentId));
-  const superseded = allApp.length - events.length;
+  const scoped = allApp.filter((e) => isSameDocument(e.documentId, options.currentDocumentId));
+  const superseded = allApp.length - scoped.length;
   // An empty window was always allowed to mean "nothing happened"; that reading is only unsafe once
   // supersession is what emptied it. Reported ALONE and before every rule below, because a window
   // with nothing left in it is exactly the shape `action-had-no-effect` fires on — so without this
   // the fix would have swapped a wrong citation for a wrong accusation.
-  if (superseded > 0 && 0 === events.length) {
+  if (superseded > 0 && 0 === scoped.length) {
     return [
       {
         kind: ContradictionKind.EVIDENCE_SUPERSEDED,
@@ -415,6 +442,19 @@ function findWindowContradictions(
       },
     ];
   }
+
+  // ── Evidence that predates the action ───────────────────────────────────────────────────────
+  // The attribution floor, and it is scoped ONCE here for the same reason the two filters above are:
+  // a rule that reads "what else was in this window" and gets handed traffic from before the caller
+  // acted is not refining its answer, it is answering about somebody else's action. Three rules
+  // (`duplicate-request`, `signal-without-consequence`, `consequence-elsewhere`) each checked this
+  // for themselves and the other six swept the whole window — which is how an assert with no `since`
+  // came to be judged against everything that had ever happened in the tab.
+  //
+  // Undefined means nothing attributed the window to an action at all; the floor then does nothing,
+  // and the consequence rules below decline to speak instead. See `advanced`.
+  const floor = options.actionSince;
+  const events = floor === undefined ? scoped : scoped.filter((e) => e.t >= floor);
 
   const settled = events.filter((e) => e.type === EventType.NET_REQUEST).map(netCall);
 
@@ -455,7 +495,22 @@ function findWindowContradictions(
   const unexpected = failed.filter(
     (c) => !matchesDeclaredFailure(c, options.expectedFailures ?? []),
   );
-  const advanced = uiAdvanced(events);
+  /**
+   * Did the UI move — and is anybody entitled to say so?
+   *
+   * `undefined` is the third answer and the point of the tri-state: "the UI moved forward while a
+   * request failed" is a claim about CAUSATION, and over a window nothing attributed to an action
+   * the two halves merely co-occurred. A passive `reticle_assert` performs nothing, so ambient
+   * traffic — a poll, a page-load bootstrap, a branding call — is not its consequence and must not
+   * decide its verdict.
+   *
+   * Typed rather than gated with a boolean so it cannot be skipped: every rule that reasons from UI
+   * movement has to answer `undefined` explicitly, including one added later. The rules that read
+   * the app's OWN claims (a success signal over a failed call) or its payloads (a 2xx whose body
+   * says it failed, a field echoed back wrong) are untouched — those are things the app said, not
+   * consequences anybody inferred, and they are true whoever caused them.
+   */
+  const advanced: boolean | undefined = floor === undefined ? undefined : uiAdvanced(events);
   const signals = events
     .filter((e) => e.type === EventType.SIGNAL)
     .map((e) => asString(e.data['name']) ?? 'signal');
@@ -545,7 +600,12 @@ function findWindowContradictions(
       counter: `${String(failed.length)} request(s) in the same window failed`,
       detail: failed.map(describe).join('; '),
     });
-  } else if (unexpected.length > 0 && advanced && !misattributed && !failureAcknowledged(events)) {
+  } else if (
+    unexpected.length > 0 &&
+    true === advanced &&
+    !misattributed &&
+    !failureAcknowledged(events)
+  ) {
     found.push({
       kind: ContradictionKind.UI_ADVANCED_REQUEST_FAILED,
       claim: 'the UI moved forward (DOM/store/route changed)',
@@ -557,7 +617,7 @@ function findWindowContradictions(
   // ── A write succeeded and nothing on the client moved ───────────────────────────────────────
   // Writes only: a GET that changes nothing is a prefetch; a POST that changes nothing is a lost
   // write, a response parsed into the void, or a render that never happened.
-  if (!advanced) {
+  if (false === advanced) {
     const ignoredWrites = settled.filter((c) => true === c.ok && isMutating(c));
     if (ignoredWrites.length > 0) {
       // ...unless THIS document handed the consequence to another browsing context. An OAuth sign-in
@@ -609,7 +669,7 @@ function findWindowContradictions(
   // to prevent.
   if (
     options.actionSince !== undefined &&
-    !advanced &&
+    false === advanced &&
     0 === settled.length &&
     successSignals.length > 0
   ) {
@@ -666,7 +726,7 @@ function findWindowContradictions(
   // Gated on the UI having moved: an in-flight request while the app is still visibly waiting is
   // just a slow request, not a contradiction. It becomes one when the app proceeded regardless —
   // which is also what makes a later `{ kind: "settled" }` assertion a false green.
-  if (advanced) {
+  if (true === advanced) {
     const settledIds = new Set(
       events
         .filter((e) => e.type === EventType.NET_REQUEST)
@@ -686,9 +746,9 @@ function findWindowContradictions(
         // the finding says which URLs, so an agent reading it can see what Reticle chose to ignore.
         detail: [
           inFlight.map((p) => describe(p.call)).join('; '),
-          ...(0 === ignoredDevTooling.length
+          ...(0 === ignoredForeign.length
             ? []
-            : [`ignored as dev tooling: ${ignoredDevTooling.join(', ')}`]),
+            : [`ignored as dev tooling or third-party: ${ignoredForeign.join(', ')}`]),
         ].join(' — '),
       });
     }
