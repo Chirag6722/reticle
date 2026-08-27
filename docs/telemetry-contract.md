@@ -324,6 +324,22 @@ The lesson is not "wire the field". It is that **the battery asserted the event 
 
 Still true and worth knowing when you query it: `mcp_connection_lost` carries **no `sessionId`** (it fires from the proxy process, not the daemon), and is capped at two per proxy process by design.
 
+### Licence activation
+
+Three envelope scalars, present on **every** event rather than on a licence event of their own: the questions a licensed customer generates are "how much is this org using it", "what is breaking for them" and "did their key lapse", and every one of those is answered by an event that has nothing to do with licensing.
+
+- `licenseId`. The signed licence id. An opaque uuid that resolves to a company only against the issuance ledger held locally, so the analytics backend never holds a customer list. Present only while a key verifies.
+- `licenseStatus`. `active` | `missing` | `invalid` | `expired`. Rides whenever an issuer key is baked, **including the failure states**, which is what makes a lapse distinguishable from a churn: a lapsed customer stops sending `licenseId`, so on identity alone a lapse and a departure look identical.
+- `licenseKeyPresent`. A key was placed in the environment, whatever this build concluded about it.
+
+**The trap this last one exists to close.** `licenseStatus` is absent entirely on a build with no issuer key baked, which is every OSS install and every source checkout. That is deliberate and correct for a machine with no key. And wrong for a machine with one. A customer who pastes a real enterprise key into such a build produced _no licence signal whatsoever_ and was indistinguishable from someone who has never held a key. So the one population most worth seeing was the one that could not be seen.
+
+**`licenseKeyPresent: true` with no `licenseStatus` is the "their key is not taking effect" case.** Query for it directly; it is a support ticket that has not been filed yet.
+
+**Never the key.** `licenseKeyPresent` is a boolean. The key is a credential and does not leave the machine, and neither does the organisation NAME (free text, and rule 3 is names-never-values) or the PLAN (the issuance ledger already holds it against the same id).
+
+**Where the key is looked for.** The daemon is spawned without an explicit `cwd` and inherits the editor's, so `<cwd>/.env` alone missed keys routinely: in a monorepo the daemon starts at the workspace root while the key sits in the app's own `.env`, and under some editors the cwd is the user's home. `license-env.ts` searches `.env` and `.env.local`, upward to the project root and one level down into `apps/*` and `packages/*`. Only the licence key is taken out of a file found by walking. Bulk-importing a `.env` from a directory the caller never named could rebind the daemon's port or its allowed origins, which would be a far worse bug than the one it fixes.
+
 ## Recording locally instead of sending: `RETICLE_TELEMETRY_FILE`
 
 Set it to a path and every event is appended there as one JSON object per line, and **nothing is sent**. The payload is the one the wire would have carried, built by the same code and redacted by the same rules, so what a run records is what a user would have sent.

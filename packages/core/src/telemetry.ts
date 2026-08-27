@@ -963,5 +963,17 @@ export const TelemetryEventSchema = z.object({
   licenseId: z.string().min(1).max(64).optional(),
   /** How activation resolved. Absent on a build with no issuer key baked, i.e. every OSS install. */
   licenseStatus: z.nativeEnum(LicenseActivation).optional(),
+  /**
+   * A key was PLACED in the environment, whatever this build concluded about it.
+   *
+   * Rides even when `licenseStatus` is absent, and that combination is the entire reason it exists:
+   * a build with no issuer key baked reports no status at all, so a customer who pasted a real
+   * enterprise key into one produced no licence signal whatsoever and looked identical to someone
+   * who has never held a key. `licenseKeyPresent: true` with no `licenseStatus` is precisely the
+   * "their key is not taking effect" case, and it was previously unobservable.
+   *
+   * A boolean, never the key. The key is a credential and does not leave the machine.
+   */
+  licenseKeyPresent: z.boolean().optional(),
 });
 export type TelemetryEvent = z.infer<typeof TelemetryEventSchema>;

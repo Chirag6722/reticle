@@ -19,6 +19,8 @@ import {
 } from './cli/cli-flow-commands.js';
 import { RETICLE_DEFAULT_PORT, ReticleDir, ReticleEnv } from '@reticlehq/core';
 import { loadDotEnv } from './telemetry/dev-repo.js';
+import { licenseKeyFromEnvFiles } from './license/license-env.js';
+import { LICENSE_KEY_ENV } from './license/license.js';
 import { createNodeFileSystem } from './project/fs-port.js';
 import { affectedSavedFlows } from './flows/flow-sources.js';
 
@@ -717,6 +719,13 @@ function main(): void {
   // Before anything reads process.env — notably the telemetry gate and the bridge's security
   // options — fold in a project-local `.env`. Values already in the environment always win.
   loadDotEnv(process.cwd());
+  // The licence key specifically is searched for HARDER than the rest of the environment, because
+  // the daemon is spawned without an explicit cwd and inherits the editor's. A key in the app's own
+  // `.env` — or in the repo root when the editor started inside the app — was never read, and the
+  // customer then produced events that said `missing`, which is indistinguishable from having no
+  // licence at all. Only the key is taken; see license-env.ts for why nothing else is.
+  const licenseKey = licenseKeyFromEnvFiles(process.cwd());
+  if (licenseKey !== undefined) process.env[LICENSE_KEY_ENV] = licenseKey;
   const argv = process.argv.slice(2);
   // Every invocation passes through here — the single chokepoint for the "how often is it used / how
   // many distinct machines + projects" metrics. Fire-and-forget: a metric must never delay or fail a run.
