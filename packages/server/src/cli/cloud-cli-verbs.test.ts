@@ -138,6 +138,55 @@ describe('cloud-cli verb contracts (#555)', () => {
     await rm(cwd, { recursive: true, force: true });
   });
 
+  /**
+   * A `.reticle/` directory is not proof the app is instrumented.
+   *
+   * `.reticle.json` is what `init` writes and what puts a projectId in the app's BUNDLE, which is
+   * the only thing letting the daemon attribute a session's runs to this repo. Auto-linking on the
+   * mere existence of `.reticle/` produced a repo that was linked to a cloud project and could not
+   * report to it — runs pooled into the daemon's own ledger, and `sync` here answered "nothing to
+   * send" immediately after two verdicts were recorded. Measured on this repo's own bench app.
+   */
+  describe('auto-link after login only fires for a repo that can actually report', () => {
+    const loginResponder = (url: string): { body: unknown } =>
+      url.endsWith('/v1/auth/request-code')
+        ? { body: { devCode: '654321' } }
+        : { body: { token: 'tok_1', org: { name: 'Acme', id: 'org_acme' } } };
+
+    it('does not link a directory that has a .reticle/ but no .reticle.json', async () => {
+      process.env['RETICLE_CLOUD_URL'] = TEST_URL;
+      responder = loginResponder;
+      // The artifacts directory alone — the shape bench-app was in.
+      await writeRepoFile(['impact.json'], '{}');
+
+      const code = await runCloudCommand(['login', '--email', 'dev@example.com']);
+
+      expect(code).toBe(0);
+      // Signed in, but nothing was minted or bound: no key request went out.
+      expect(requests.filter((r) => r.url.endsWith('/v1/keys'))).toEqual([]);
+      expect(stderrBuf).toContain('reticle init');
+    });
+
+    it('links when .reticle.json is present, which is what init writes', async () => {
+      process.env['RETICLE_CLOUD_URL'] = TEST_URL;
+      responder = (url) => {
+        if (url.endsWith('/v1/auth/request-code') || url.endsWith('/v1/auth/login'))
+          return loginResponder(url);
+        if (url.endsWith('/v1/keys'))
+          return { body: { projectId: 'p1', projectName: 'P1', key: 'rk_live_minted0000' } };
+        // The responder cannot see the METHOD, and /v1/projects is both listed and created against.
+        // A superset body satisfies whichever schema the CLI parses it with.
+        return { body: { projects: [], projectId: 'p1', name: 'P1' } };
+      };
+      await writeFile(join(cwd, '.reticle.json'), JSON.stringify({ projectId: 'p1' }));
+
+      const code = await runCloudCommand(['login', '--email', 'dev@example.com']);
+
+      expect(code).toBe(0);
+      expect(requests.filter((r) => r.url.endsWith('/v1/keys')).length).toBe(1);
+    });
+  });
+
   it('login --email exchanges a dev-mailed code and persists the session (POST shapes)', async () => {
     process.env['RETICLE_CLOUD_URL'] = TEST_URL;
     responder = (url) =>

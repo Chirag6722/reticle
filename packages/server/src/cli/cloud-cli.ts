@@ -7,8 +7,6 @@
  * is `<repo>/.reticle/cloud.json`. Auth for a command = `RETICLE_CLOUD_KEY` env (agent) OR the login token.
  */
 import { mkdir, writeFile, readFile, rm } from 'node:fs/promises';
-import { NodePlatform } from '../platform.js';
-import { spawn } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
@@ -17,6 +15,8 @@ import { createNodeFileSystem } from '../project/fs-port.js';
 import { CLOUD_LINK_FILE, resolveProjectCloud } from '../cloud/cloud-config.js';
 import { applyCredential, findCredential } from './cloud-keystore.js';
 import { defaultProjectFor } from './project-name.js';
+import { RETICLE_CONFIG_BASENAME } from './cli-port.js';
+import { DevicePollSchema, DeviceStartSchema, openBrowser } from './device-flow.js';
 import {
   normalizeUrl,
   readSessionFrom,
@@ -296,38 +296,6 @@ const resolveProjectId = async (url: string, token: string, wanted: string): Pro
  */
 const RequestCodeSchema = z.object({ devCode: z.string().optional() });
 
-const DeviceStartSchema = z.object({
-  deviceCode: z.string(),
-  userCode: z.string(),
-  verificationUri: z.string(),
-  verificationUriComplete: z.string(),
-  interval: z.number(),
-  expiresAt: z.number(),
-});
-const DevicePollSchema = z.object({
-  status: z.string(),
-  token: z.string().optional(),
-  org: z.object({ id: z.string().optional(), name: z.string() }).optional(),
-});
-
-/** Best-effort open the approval page in the default browser; the printed URL is the headless fallback. */
-const openBrowser = (target: string): void => {
-  const cmd =
-    NodePlatform.MACOS === process.platform
-      ? 'open'
-      : NodePlatform.WINDOWS === process.platform
-        ? 'cmd'
-        : 'xdg-open';
-  const args = NodePlatform.WINDOWS === process.platform ? ['/c', 'start', '', target] : [target];
-  try {
-    const child = spawn(cmd, args, { stdio: 'ignore', detached: true });
-    child.on('error', () => undefined);
-    child.unref();
-  } catch {
-    /* no opener available — the user opens the printed URL manually */
-  }
-};
-
 /** Persist a session token under ~/.reticle and print the next step. Shared by both login paths. */
 const writeSession = async (
   url: string,
@@ -371,9 +339,20 @@ const writeSession = async (
  */
 const linkAfterLogin = async (url: string, project: string | undefined): Promise<void> => {
   const fs = createNodeFileSystem();
-  const reticleDir = join(process.cwd(), RETICLE_DIR);
-  if (!(await fs.exists(reticleDir))) {
-    hint('next: run `reticle login` from your project, or `reticle link` to bind a repo');
+  /*
+   * The marker is `.reticle.json`, NOT a `.reticle/` directory.
+   *
+   * `.reticle.json` is what `init` writes and what puts a projectId in the app's bundle, which is
+   * the only thing that lets the daemon attribute a session's runs to this repo. A bare `.reticle/`
+   * proves nothing — it is also created by artifacts and by older builds — and auto-linking on it
+   * produced a repo that was LINKED to a cloud project and yet unable to report to it: runs pooled
+   * into the daemon's own ledger, and `reticle sync` here answered "nothing to send" straight after
+   * two verdicts had been recorded. Measured, on this very repo's bench app.
+   */
+  if (!(await fs.exists(join(process.cwd(), RETICLE_CONFIG_BASENAME)))) {
+    hint(
+      'next: `reticle init` here first, then `reticle link` — or log in from a project directory',
+    );
     return;
   }
   /*
@@ -381,7 +360,10 @@ const linkAfterLogin = async (url: string, project: string | undefined): Promise
    * Without a project named, an existing binding is left completely alone — re-resolving it is how
    * somebody repointing an environment loses a binding they meant to keep.
    */
-  if (project === undefined && (await fs.exists(join(reticleDir, CLOUD_LINK_FILE)))) {
+  if (
+    project === undefined &&
+    (await fs.exists(join(process.cwd(), RETICLE_DIR, CLOUD_LINK_FILE)))
+  ) {
     hint('this repo is already linked — `reticle push` to send what it has recorded');
     return;
   }
@@ -798,6 +780,24 @@ const cmdLink = async (argv: readonly string[]): Promise<number> => {
   hint(
     'linked ✓ runs auto-push on `reticle verify`; `reticle push` sends existing local runs; `reticle whoami` shows state',
   );
+  /*
+   * A binding is not a connection.
+   *
+   * Without `.reticle.json` the app's bundle carries no projectId, so the daemon cannot attribute a
+   * session to this repo: its runs pool into whichever root the daemon itself was started in, and
+   * `sync` here reports "nothing to send" however much was actually recorded. Measured on this
+   * repo's bench app — two verdicts driven, then a sync that claimed there was nothing.
+   *
+   * Said AFTER the success line rather than refusing: the binding really was written and really is
+   * correct, and the missing half is one command away. Refusing would strand somebody who links
+   * before they install, which is a legitimate order to work in.
+   */
+  if (!(await createNodeFileSystem().exists(join(process.cwd(), RETICLE_CONFIG_BASENAME)))) {
+    hint(
+      `no ${RETICLE_CONFIG_BASENAME} here, so this app announces no project — its runs will not be ` +
+        'attributed to this binding. Run `reticle init` in the app, then restart the dev server.',
+    );
+  }
   return 0;
 };
 
