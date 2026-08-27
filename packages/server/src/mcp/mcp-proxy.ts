@@ -54,6 +54,7 @@ export {
 } from './proxy-log.js';
 import { proxyLog } from './proxy-log.js';
 import { log } from '../log.js';
+import { loopbackAgent, isRetryableConnectError } from '../loopback-agent.js';
 import { OutageReason, OutageStage, reportMcpOutage } from './mcp-outage.js';
 
 /** Reconnect backoff: linear, capped, so a briefly-restarting daemon is picked up fast. */
@@ -306,8 +307,9 @@ export class HandshakeReplay {
 }
 
 /**
- * POST one JSON-RPC line into the daemon's session. Resolves null on success, or a short reason
- * when the request never reached a server that will answer it.
+ * ONE attempt at POSTing a JSON-RPC line into the daemon's session. Reports whether the call was
+ * taken, and whether it provably never left this machine — see `postToSession` below for what the
+ * second answer is for.
  *
  * It used to resolve `void` in every case, logging the failure and moving on. That is the THIRD way
  * a call goes unanswered, and the only one neither `streamLossReplies` nor the queue timer can see:
@@ -315,8 +317,18 @@ export class HandshakeReplay {
  * but the POST leg is its own TCP connection and an ECONNRESET on it means the daemon never received
  * the call. Nobody was ever going to reply, and the caller waited for its own timeout.
  */
-function postToSession(url: string, body: string): Promise<string | null> {
-  return new Promise<string | null>((resolve) => {
+interface PostAttempt {
+  /** A short reason the call will never be answered, or null when the daemon took it. */
+  failure: string | null;
+  /**
+   * True only when the attempt died before a socket ever finished connecting — the one case where
+   * the daemon provably never saw a byte of the request.
+   */
+  neverSent: boolean;
+}
+
+function postOnce(url: string, body: string): Promise<PostAttempt> {
+  return new Promise<PostAttempt>((resolve) => {
     const parsed = new URL(url);
     const bodyBuf = Buffer.from(body, 'utf8');
     const options: http.RequestOptions = {
@@ -324,11 +336,18 @@ function postToSession(url: string, body: string): Promise<string | null> {
       port: parsed.port !== '' ? parseInt(parsed.port, 10) : 80,
       path: `${parsed.pathname}${parsed.search}`,
       method: 'POST',
+      agent: loopbackAgent,
       headers: {
         'Content-Type': 'application/json',
         'Content-Length': bodyBuf.byteLength,
       },
     };
+    /**
+     * Set the moment a socket is usable — either it finished connecting, or the agent handed back
+     * an already-open one it had parked. From here on the request may be on the wire, so it is no
+     * longer safe to assume the daemon did not act on it.
+     */
+    let connected = false;
     const req = http.request(options, (res) => {
       const status = res.statusCode ?? 0;
       const rejected = status < 200 || status >= 300;
@@ -338,15 +357,51 @@ function postToSession(url: string, body: string): Promise<string | null> {
         log('reticle_mcp_proxy_post_non2xx', { status, path: options.path });
       }
       res.resume(); // drain so the socket is reused
-      resolve(rejected ? `daemon rejected the call with HTTP ${String(status)}` : null);
+      resolve({
+        failure: rejected ? `daemon rejected the call with HTTP ${String(status)}` : null,
+        neverSent: false,
+      });
+    });
+    req.on('socket', (socket) => {
+      if (socket.connecting) socket.once('connect', () => (connected = true));
+      else connected = true;
     });
     req.on('error', (err) => {
-      log('reticle_mcp_proxy_post_error', { error: err.message });
-      resolve(`post failed: ${err.message}`);
+      const neverSent = !connected && isRetryableConnectError(err);
+      log('reticle_mcp_proxy_post_error', { error: err.message, neverSent });
+      resolve({ failure: `post failed: ${err.message}`, neverSent });
     });
     req.write(bodyBuf);
     req.end();
   });
+}
+
+/**
+ * How many times ONE JSON-RPC message may be posted. Three, and only along the never-sent path: two
+ * extra attempts is enough to ride out a socket table that is momentarily full or a daemon that is
+ * a few hundred milliseconds from being back, and few enough that a genuinely gone daemon is
+ * reported rather than waited on — the caller is an agent mid-drive, and a late honest failure it
+ * can act on beats a slow one it cannot.
+ */
+export const POST_MAX_ATTEMPTS = 3;
+
+/**
+ * POST one JSON-RPC line into the daemon's session, retrying ONLY what provably never left.
+ *
+ * The idempotency line is drawn at "a socket finished connecting". Before that, no byte of the
+ * request can have reached the daemon, so a second attempt cannot repeat anything — this is the
+ * `ENOBUFS`/`EADDRNOTAVAIL` case, where the kernel refused to give us a socket at all. After that,
+ * we cannot tell a request that was never written from one the daemon read and acted on before it
+ * died, so we do not guess: a `reticle_act` that already clicked would click twice, and inventing a
+ * second action in somebody's app is worse than reporting a failure. Same reasoning, and the same
+ * conclusion, as `streamLossReplies` above.
+ */
+export async function postToSession(url: string, body: string): Promise<string | null> {
+  for (let attempt = 1; ; attempt++) {
+    const { failure, neverSent } = await postOnce(url, body);
+    if (null === failure || !neverSent || attempt >= POST_MAX_ATTEMPTS) return failure;
+    await new Promise<void>((resolve) => setTimeout(resolve, reconnectDelayMs(attempt)));
+  }
 }
 
 /**

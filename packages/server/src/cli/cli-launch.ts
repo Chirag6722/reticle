@@ -6,6 +6,7 @@ import { describeSkew, DAEMON_FIX } from '../version/version-skew.js';
 import { CONTRACT_FINGERPRINT } from '@reticlehq/core';
 import { SERVER_VERSION } from '../version/server-version.js';
 import { log } from '../log.js';
+import { loopbackAgent } from '../loopback-agent.js';
 
 /**
  * CLI launch + status helpers — the daemon-introspection (`reticle status`) and the one-command
@@ -96,7 +97,15 @@ const STATUS_PROBE_TIMEOUT_MS = 1000;
 export function fetchStatus(port: number): Promise<unknown> {
   return new Promise((resolve) => {
     const req = http.get(
-      { host: LOOPBACK_HOST, port, path: STATUS_PATH, timeout: STATUS_PROBE_TIMEOUT_MS },
+      {
+        host: LOOPBACK_HOST,
+        port,
+        path: STATUS_PATH,
+        timeout: STATUS_PROBE_TIMEOUT_MS,
+        // Shares the proxy's keep-alive agent: the proxy calls this on every reconnect, and a socket
+        // per probe is the same churn the POST leg was fixed for.
+        agent: loopbackAgent,
+      },
       (res) => {
         let body = '';
         res.setEncoding('utf8');
