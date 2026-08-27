@@ -164,6 +164,16 @@ const baseUrl = (session: { url: string } | null, explicit?: string): string => 
   return DEFAULT_URL;
 };
 
+/**
+ * How a key is named out loud: enough to match it against the dashboard, never enough to use.
+ *
+ * The same shape the console shows (`displayPrefix`), so the two surfaces name one key identically
+ * and somebody can tell at a glance which row this repo is using.
+ */
+const KEY_HINT_CHARS = 16;
+const keyHint = (key: string): string =>
+  key.length <= KEY_HINT_CHARS ? key : `${key.slice(0, KEY_HINT_CHARS)}…`;
+
 /** Bearer for a command: an explicit api key (agent) wins, else the human login token. */
 const bearer = (session: { token: string } | null): string | null => {
   const key = process.env['RETICLE_CLOUD_KEY'];
@@ -220,15 +230,28 @@ const ProjectsListSchema = z.object({
 });
 
 /** Resolve a --project value that may be a slug id OR a display name into the canonical projectId. */
+/**
+ * The id for the project the caller named, creating it if it does not exist yet.
+ *
+ * It used to refuse — "create it with `reticle project create`" — which made naming a project a
+ * two-command bookkeeping ritual for the COMMON case: a first repo, whose project has of course not
+ * been created yet. That refusal is also the only reason the magic path existed: bare `link` binds
+ * to a project called `Default` precisely so nobody has to meet this error.
+ *
+ * Creating is announced rather than silent. A tool that quietly invents a durable, billable object
+ * is its own surprise, and the whole point of this change is that the automatic path SAYS what it
+ * did.
+ */
 const resolveProjectId = async (url: string, token: string, wanted: string): Promise<string> => {
   const { projects } = ProjectsListSchema.parse(await api('GET', `${url}/v1/projects`, token));
   const lc = wanted.toLowerCase();
   const match = projects.find((p) => p.projectId === wanted || p.name.toLowerCase() === lc);
-  if (match === undefined)
-    throw new Error(
-      `no project "${wanted}" — create it with \`reticle project create "${wanted}"\``,
-    );
-  return match.projectId;
+  if (match !== undefined) return match.projectId;
+  const created = CreatedProjectSchema.parse(
+    await api('POST', `${url}/v1/projects`, token, { name: wanted }),
+  );
+  hint(`created project "${wanted}" (${created.projectId}) — it did not exist yet`);
+  return created.projectId;
 };
 
 /**
@@ -579,6 +602,21 @@ const cmdLink = async (argv: readonly string[]): Promise<number> => {
   await writeFile(credPath, `${JSON.stringify(credObj, null, 2)}\n`);
 
   emit({ linked: projectName, projectId, cloudJson: linkPath, credentials: credPath });
+  /*
+   * Say what just happened, in the vocabulary of somebody who has used other tools.
+   *
+   * `link` mints the key and stores it for you, which is the product's whole edge — and it is
+   * invisible, which is its whole cost. A real report: somebody pasted a masked placeholder key
+   * into a `.env` because their mental model said "I must make a key and put it somewhere". One had
+   * already been minted and filed outside the repo. They did not need another step; they needed to
+   * be told the step had happened.
+   *
+   * The key is identified the way the dashboard identifies it — a prefix, never the secret — so
+   * this can be read aloud, pasted into an issue, or left in a terminal without leaking anything.
+   */
+  hint(`bound this repo to project "${projectName}"`);
+  hint(`minted key ${keyHint(key)} — stored in ${credPath}, not in your repo`);
+  hint('to change it: `reticle link --project <other>`; to inspect: `reticle whoami`');
   hint(
     'linked ✓ runs auto-push on `reticle verify`; `reticle push` sends existing local runs; `reticle whoami` shows state',
   );

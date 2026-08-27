@@ -368,6 +368,82 @@ describe('cloud-cli verb contracts (#555)', () => {
     expect(creds['proj_1']).toBe(TEST_KEY);
   });
 
+  it('link --project creates the project when it does not exist yet, and says so', async () => {
+    // Before this, `link --project storefront` refused with "create it with `reticle project
+    // create`" — a second command to satisfy a bookkeeping step the tool can do itself, and the
+    // only reason the magic path (bare `link`) existed was to avoid it. Naming a project you have
+    // not created yet is the COMMON case for a first repo, not an error.
+    await writeHomeFile([SESSION_FILE], `{"token":"tok","orgName":"Acme","url":"${TEST_URL}"}`);
+    // The stub sees only the URL, and the list and the create share one path — so distinguish by
+    // order: the list is asked first, the create second.
+    let projectCalls = 0;
+    responder = (url) => {
+      if (url.endsWith('/v1/projects')) {
+        projectCalls += 1;
+        return 1 === projectCalls
+          ? { body: { projects: [] } }
+          : { body: { projectId: 'proj_new', name: 'Storefront' } };
+      }
+      return {
+        body: { projectId: 'proj_new', projectName: 'Storefront', key: 'rk_live_abcd1234ef' },
+      };
+    };
+
+    const code = await runCloudCommand(['link', '--project', 'Storefront']);
+
+    expect(code).toBe(0);
+    const created = requests.find((r) => 'POST' === r.method && r.url.endsWith('/v1/projects'));
+    expect(created, 'it creates the project instead of refusing').toBeDefined();
+    expect(created?.body).toEqual({ name: 'Storefront' });
+    // ...and SAYS it created one, because silently creating is its own surprise.
+    expect(stderrBuf).toContain('created');
+  });
+
+  it('link --project does NOT create a duplicate when the project already exists', async () => {
+    await writeHomeFile([SESSION_FILE], `{"token":"tok","orgName":"Acme","url":"${TEST_URL}"}`);
+    responder = (url) => {
+      if (true === url.endsWith('/v1/projects'))
+        return { body: { projects: [{ projectId: 'proj_1', name: 'Storefront' }] } };
+      return {
+        body: { projectId: 'proj_1', projectName: 'Storefront', key: 'rk_live_abcd1234ef' },
+      };
+    };
+
+    await runCloudCommand(['link', '--project', 'storefront']);
+
+    expect(requests.filter((r) => 'POST' === r.method && r.url.endsWith('/v1/projects'))).toEqual(
+      [],
+    );
+  });
+
+  it('link says what it just did, in the words a human needs to not repeat it by hand', async () => {
+    // The reported failure this exists for: somebody pasted a masked placeholder key into a .env
+    // because their mental model said "I must make a key and put it somewhere". A key had already
+    // been minted and stored OUTSIDE the repo. They did not need another step — they needed to be
+    // told the step had happened.
+    await writeHomeFile([SESSION_FILE], `{"token":"tok","orgName":"Acme","url":"${TEST_URL}"}`);
+    responder = (url) => {
+      if (true === url.endsWith('/v1/projects'))
+        return { body: { projects: [{ projectId: 'proj_1', name: 'Storefront' }] } };
+      return {
+        body: { projectId: 'proj_1', projectName: 'Storefront', key: 'rk_live_abcd1234ef' },
+      };
+    };
+
+    await runCloudCommand(['link', '--project', 'storefront']);
+
+    // Which project it bound to.
+    expect(stderrBuf).toContain('Storefront');
+    // That a key was minted, identified the way the dashboard identifies it — never in full.
+    expect(stderrBuf).toContain('rk_live_abcd1234');
+    expect(stderrBuf, 'the secret itself must never be printed').not.toContain(
+      'rk_live_abcd1234ef',
+    );
+    // And that it lives outside the repo, which is the fact that stops the .env paste.
+    expect(stderrBuf).toContain('credentials.json');
+    expect(stderrBuf).toContain('not in your repo');
+  });
+
   it('config rewrites sync flags and verify mode in place without dialling', async () => {
     await writeRepoFile(
       [CLOUD_LINK_FILE],
