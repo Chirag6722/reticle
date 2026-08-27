@@ -36,7 +36,19 @@ export const REPORT_TEXT = {
   TITLE: 'Impact',
   PROJECT: 'This project',
   GLOBAL: 'Everything on this machine',
-  HERO_DEFECTS: 'defects caught before you saw them',
+  /**
+   * What `counts.failed` actually is: a verdict whose declared consequence did not hold.
+   *
+   * It used to read "defects caught before you saw them", which overclaims in the one direction a
+   * verification tool must never overclaim. A failed verdict is not proof of a defect in the app —
+   * it is equally the shape of an assertion that was wrong. Measured in the field: an agent
+   * asserted a clean console on an app with ordinary dev-mode logging, the verdict went red, and
+   * the panel reported a defect nobody had found.
+   *
+   * The honest word is what Reticle DID: it refused to pass them. That is true of the assertion
+   * error and the real bug alike, and it still reads as the tool having done its job.
+   */
+  HERO_DEFECTS: 'checks Reticle refused to pass',
   VERDICTS: 'Verdicts',
   PASSED: 'passed',
   FAILED: 'failed',
@@ -96,7 +108,7 @@ export function buildShareText(scope: ImpactScope, projectName?: string): string
   const where = projectName !== undefined && projectName.length > 0 ? ` on ${projectName}` : '';
   const lines = [
     `My agent verified its own work ${String(c.verdicts)} times${where}.`,
-    `${String(c.failed)} defects caught before I looked at any of them.`,
+    `${String(c.failed)} checks it refused to pass before I looked at any of them.`,
   ];
   if (c.unknown > 0) {
     lines.push(

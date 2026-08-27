@@ -32,11 +32,14 @@ const defect = (over: Partial<ImpactDefect> = {}): ImpactDefect => ({
 });
 
 describe('the impact report', () => {
-  it('leads with defects caught and shows unknowns rather than hiding them', () => {
+  it('leads with what it refused to pass, and shows unknowns rather than hiding them', () => {
     const html = reportBodyHtml(
       scope({ calls: 40, verdicts: 12, passed: 9, failed: 2, unknown: 1 }),
     );
-    expect(html).toContain('defects caught');
+    // Not "defects caught": a failed verdict is equally the shape of a wrong assertion, and a
+    // verification tool must not overclaim in that direction. What is true of both is that Reticle
+    // refused to pass them.
+    expect(html).toContain('refused to pass');
     expect(html).toContain('unknown');
   });
 
@@ -67,7 +70,7 @@ describe('the share text', () => {
   it('leads with verdicts and defects, and never carries an estimate', () => {
     const text = buildShareText(scope({ verdicts: 217, failed: 9, unknown: 14 }), 'checkout-app');
     expect(text).toContain('217');
-    expect(text).toContain('9 defects');
+    expect(text).toContain('9 checks it refused to pass');
     expect(text).toContain('unknown');
     expect(text).toContain('checkout-app');
     expect(text).not.toMatch(/saved|estimate/i);
@@ -132,7 +135,9 @@ describe('the pushed impact record reaches the panel', () => {
     const btn = document.querySelector('[data-reticle-report-btn]');
     (btn as HTMLElement | null)?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     const body = document.querySelector('[data-reticle-report-body]');
-    expect(body?.textContent, 'the pushed record is what the panel shows').toContain('defects');
+    expect(body?.textContent, 'the pushed record is what the panel shows').toContain(
+      'refused to pass',
+    );
     expect(body?.textContent).toContain('1');
     p.destroy();
   });
