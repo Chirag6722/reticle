@@ -5,6 +5,7 @@ import { realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { stateDirProblem } from './daemon/state-dir.js';
 import { statusNextAction } from './cli/status-next-action.js';
+import { readDevServers } from './daemon/dev-servers.js';
 import { hasConnectedBefore, hasProjectConnectedBefore } from './session/connection-memory.js';
 import { attachStatusFields } from './mcp/attach-memory.js';
 import { reticleStateHome } from './daemon/daemon.js';
@@ -319,6 +320,7 @@ function withNextAction(facts: {
   sessionCount: number;
   previouslyConnected: boolean;
   initialized: boolean;
+  devServerPorts?: readonly number[];
 }): { nextAction?: string } {
   const next = statusNextAction(facts);
   return next === undefined ? {} : { nextAction: next };
@@ -357,6 +359,10 @@ function handleStatus(port: number): void {
   // Reticle and never lists its tools looks exactly like an abandoned install from here — same idle
   // daemon, same zero sessions — and the user sees a tool that does nothing. See attach-memory.ts.
   const client = attachStatusFields(reticleStateHome(), port);
+  // What the dev servers themselves said. The reason this command could previously only guess at
+  // whether the app was running is that it had no way to see one; now the ones carrying Reticle
+  // announce, and the advice below stops contradicting the terminal the reader is looking at.
+  const devServerPorts = readDevServers(reticleStateHome()).map((d) => d.port);
   // The failure where every individual check is green and the chain is broken: the agent's proxy and
   // the app resolved their ports independently and landed on two different daemons. Reported from
   // BOTH stances, because neither one can see it alone — the empty daemon knows the app connected
@@ -375,7 +381,13 @@ function handleStatus(port: number): void {
         // `init` promises this command says why the app has not connected. Without it the answer was
         // `running: false` and nothing else, which reads as "Reticle is broken" for what is usually
         // just a daemon that has not been asked to do anything yet.
-        ...withNextAction({ running, sessionCount: 0, previouslyConnected, initialized }),
+        ...withNextAction({
+          running,
+          sessionCount: 0,
+          previouslyConnected,
+          initialized,
+          devServerPorts,
+        }),
         ...client,
         ...split,
       });
@@ -395,7 +407,13 @@ function handleStatus(port: number): void {
         running: true,
         pid,
         ...nudge,
-        ...withNextAction({ running: true, sessionCount: 0, previouslyConnected, initialized }),
+        ...withNextAction({
+          running: true,
+          sessionCount: 0,
+          previouslyConnected,
+          initialized,
+          devServerPorts,
+        }),
         ...client,
         ...split,
       });
@@ -407,7 +425,13 @@ function handleStatus(port: number): void {
     // answers pointing different ways, which is worse than one.
     const next =
       summary.why === undefined
-        ? withNextAction({ running: true, ...summary, previouslyConnected, initialized })
+        ? withNextAction({
+            running: true,
+            ...summary,
+            previouslyConnected,
+            initialized,
+            devServerPorts,
+          })
         : {};
     log('reticle_status', {
       port,

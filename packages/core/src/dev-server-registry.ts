@@ -57,8 +57,14 @@ export const DevServerEntrySchema = z.object({
   root: z.string(),
   /** Where the app is actually served, as the dev server itself reports it. Never assembled here. */
   url: z.string(),
-  /** The SDK version in the bundle, so a skew can be named rather than guessed at. */
-  sdkVersion: z.string(),
+  /**
+   * The SDK version in the bundle, so a skew can be named rather than guessed at.
+   *
+   * Optional, and ABSENT rather than empty when it cannot be resolved. `""` reads as "the version is
+   * empty"; a missing field reads as "not known", which is the true statement — and the difference
+   * matters to the one reader who exists for this field, a skew diagnosis.
+   */
+  sdkVersion: z.string().min(1).optional(),
   startedAt: z.number(),
   /**
    * Optional because an app can be running before `init` has ever named it — which is exactly the

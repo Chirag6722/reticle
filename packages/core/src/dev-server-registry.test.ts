@@ -46,6 +46,16 @@ describe('DevServerEntrySchema', () => {
     const { url: _dropped, ...noUrl } = entry(5173, 10);
     expect(DevServerEntrySchema.safeParse(noUrl).success).toBe(false);
   });
+
+  /**
+   * An unresolvable SDK version must be ABSENT, never empty: the only reader of this field is a
+   * skew diagnosis, and `''` would be reported as a version rather than as "not known".
+   */
+  it('accepts a missing sdkVersion but rejects an empty one', () => {
+    const { sdkVersion: _none, ...absent } = entry(5173, 10);
+    expect(DevServerEntrySchema.safeParse(absent).success).toBe(true);
+    expect(DevServerEntrySchema.safeParse(entry(5173, 10, { sdkVersion: '' })).success).toBe(false);
+  });
 });
 
 describe('liveDevServers', () => {

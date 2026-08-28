@@ -819,8 +819,23 @@ export const InitConfirmation = {
   CONNECTED: 'connected',
   /** Nothing was listening on the bridge port, so no session could arrive. Not a failed install. */
   NO_DAEMON: 'no_daemon',
-  /** A daemon was up and no app connected inside the window — the dev server is the outstanding step. */
+  /**
+   * A daemon was up, no app connected, and no instrumented dev server announced itself either — so
+   * the dev server is the outstanding step.
+   *
+   * Meaning unchanged, deliberately, so the funnel stays comparable across the change that added
+   * NO_PAGE below. It is also still the honest answer for every stack whose plugin does not announce
+   * yet: nothing was observed, and "not observed" must never be reported as "not running".
+   */
   NO_SESSION: 'no_session',
+  /**
+   * A dev server with Reticle loaded IS running, and no page dialled.
+   *
+   * The half of NO_SESSION that used to be invisible, and the one with a completely different fix:
+   * the config is right and the process was restarted, so telling this person to restart their dev
+   * server is an instruction they have already followed. They need to open the app.
+   */
+  NO_PAGE: 'no_page',
 } as const;
 export type InitConfirmation = (typeof InitConfirmation)[keyof typeof InitConfirmation];
 

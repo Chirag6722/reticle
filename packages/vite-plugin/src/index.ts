@@ -844,7 +844,9 @@ export function reticle(options: ReticleVitePluginOptions = {}): ReticleVitePlug
           pid: process.pid,
           root: opts.root ?? process.cwd(),
           url: server.resolvedUrls?.local[0] ?? `http://localhost:${String(port)}/`,
-          sdkVersion: opts.sdkVersion ?? '',
+          ...(opts.sdkVersion === undefined || 0 === opts.sdkVersion.length
+            ? {}
+            : { sdkVersion: opts.sdkVersion }),
           startedAt: Date.now(),
           ...(opts.projectId === undefined ? {} : { projectId: opts.projectId }),
         });
