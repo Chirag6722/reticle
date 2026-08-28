@@ -63,6 +63,7 @@ const CLOUD_COMMANDS: ReadonlySet<string> = new Set([
   'project',
   'config',
   'issues',
+  'memory',
   'push',
   'sync',
   'runs',
@@ -684,6 +685,32 @@ const cmdIssues = async (argv: readonly string[]): Promise<number> => {
   return 0;
 };
 
+/**
+ * `reticle memory [--subject <name>]` — what this project knows, where an agent can reach it.
+ *
+ * Shared memory only pays for itself if something READS it. An agent about to verify checkout should
+ * be able to ask what the team already knows about checkout before it starts, and it cannot open a
+ * browser to find out — so the knowledge has to arrive on stdout like everything else it consumes.
+ *
+ * Every call is recorded server-side as a consultation. That is the number which separates memory
+ * that is worth keeping from a wiki nobody opens, and it cannot be measured from the writing side.
+ *
+ * `--subject` narrows to one area, which is the call an agent should actually make: pulling the
+ * whole corpus to answer one question is the cost the sharded store was built to avoid.
+ */
+const cmdMemory = async (argv: readonly string[]): Promise<number> => {
+  const { url, apiKey } = await repoCloud();
+  const at = argv.indexOf('--subject');
+  const subject = -1 === at ? undefined : argv[at + 1];
+  if (-1 !== at && subject === undefined) {
+    err('usage: reticle memory [--subject <name>]');
+    return 2;
+  }
+  const query = subject === undefined ? '' : `?subject=${encodeURIComponent(subject)}`;
+  emit(await api('GET', `${url}/v1/memory${query}`, apiKey));
+  return 0;
+};
+
 /** `reticle regression` — the CI gate: broken flows vs before. Exit 3 if any regressed (pipeline-friendly). */
 const cmdRegression = async (): Promise<number> => {
   const { url, apiKey } = await repoCloud();
@@ -732,6 +759,8 @@ export const runCloudCommand = async (argv: readonly string[]): Promise<number> 
         return await cmdRuns();
       case 'issues':
         return await cmdIssues(rest);
+      case 'memory':
+        return await cmdMemory(rest);
       case 'regression':
         return await cmdRegression();
       case 'share':

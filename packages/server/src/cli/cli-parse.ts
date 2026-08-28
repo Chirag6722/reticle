@@ -148,6 +148,7 @@ const KNOWN_COMMANDS: ReadonlySet<string> = new Set([
   'push',
   'runs',
   'issues',
+  'memory',
   'regression',
   'share',
   'doctor',
