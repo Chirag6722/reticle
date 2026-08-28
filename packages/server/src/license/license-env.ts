@@ -24,13 +24,12 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { LICENSE_KEY_ENV } from './license.js';
+import { discoverProjectConfigs } from '../cli/config-discovery.js';
 
 /** The files a framework tells people to put secrets in, most specific first. */
 const ENV_FILES = ['.env.local', '.env'] as const;
 /** Stop the upward walk here: a licence belongs to a project, not to a machine. */
 const ROOT_MARKERS = ['.git', 'package.json', 'pnpm-workspace.yaml'] as const;
-/** How far down to look. One level of `apps/*` or `packages/*` is the monorepo shape, not a crawl. */
-const CHILD_DIRS = ['apps', 'packages'] as const;
 /** A bound on the upward walk, so a pathological path cannot spin. */
 const MAX_DEPTH = 12;
 
@@ -69,9 +68,28 @@ function isRoot(dir: string): boolean {
   return ROOT_MARKERS.some((marker) => existsSync(join(dir, marker)));
 }
 
-/** One level into `apps/*` and `packages/*` — the monorepo shape, not a filesystem crawl. */
-function inChildren(dir: string): string | undefined {
-  for (const group of CHILD_DIRS) {
+/**
+ * The directories that hold a `.reticle.json`: the apps that were actually instrumented.
+ *
+ * This is the closest thing the daemon has to "the session's project directory", and it is the same
+ * discovery the no-session diagnosis uses to tell an agent where the app really is. Reusing it means
+ * the licence search and that diagnosis can never disagree about where the project lives.
+ *
+ * It replaced a guess at `apps/*` and `packages/*`, which missed exactly the repo shape
+ * `findWorkspaceApps` was written for: three apps at `web/`, `admin/` and `space/`.
+ */
+/**
+ * The conventional layout, kept as a fallback beside the declaration-driven search above.
+ *
+ * `discoverProjectConfigs` descends only into DECLARED workspaces, which is right and is what a real
+ * monorepo has. But `apps/web` with no `workspaces` entry is a shape people genuinely ship, and for
+ * a licence key the cost of one extra `readdir` is nothing against reporting a paying customer as
+ * unlicensed. Strictly widens coverage; it can never contradict the discovery, only add to it.
+ */
+const CONVENTIONAL_DIRS = ['apps', 'packages'] as const;
+
+function inConventionalChildren(dir: string): string | undefined {
+  for (const group of CONVENTIONAL_DIRS) {
     const base = join(dir, group);
     let entries: string[];
     try {
@@ -84,6 +102,20 @@ function inChildren(dir: string): string | undefined {
       const found = inDir(join(base, entry));
       if (found !== undefined) return found;
     }
+  }
+  return undefined;
+}
+
+function inDiscoveredProjects(dir: string): string | undefined {
+  let found: readonly { directory: string }[];
+  try {
+    found = discoverProjectConfigs(dir).found;
+  } catch {
+    return undefined;
+  }
+  for (const config of found) {
+    const key = inDir(config.directory);
+    if (key !== undefined) return key;
   }
   return undefined;
 }
@@ -103,7 +135,7 @@ export function licenseKeyFromEnvFiles(
 
   let dir = startDir;
   for (let depth = 0; depth < MAX_DEPTH; depth++) {
-    const here = inDir(dir) ?? inChildren(dir);
+    const here = inDir(dir) ?? inDiscoveredProjects(dir) ?? inConventionalChildren(dir);
     if (here !== undefined) return here;
     if (isRoot(dir)) break;
     const parent = dirname(dir);

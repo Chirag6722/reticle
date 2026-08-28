@@ -24,6 +24,7 @@ function repo(): string {
   const root = mkdtempSync(join(tmpdir(), 'reticle-licenv-'));
   mkdirSync(join(root, '.git'), { recursive: true });
   mkdirSync(join(root, 'apps', 'web'), { recursive: true });
+  writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'root' }));
   return root;
 }
 
@@ -91,5 +92,72 @@ describe('finding a licence key the customer placed in a .env', () => {
 
   it('never throws, whatever it finds', () => {
     expect(() => licenseKeyFromEnvFiles('/nonexistent/path/xyz')).not.toThrow();
+  });
+});
+
+/**
+ * The key resolved from the SESSION's project directory, not the daemon's cwd.
+ *
+ * The daemon inherits the editor's cwd, which is frequently neither the repo root nor the app. The
+ * directories that actually matter are the ones holding a `.reticle.json`, because those are the
+ * apps that were instrumented and therefore the apps a licence covers. `discoverProjectConfigs` is
+ * the same discovery the no-session diagnosis already uses to tell an agent where the app really is;
+ * reusing it means the licence search and the diagnosis can never disagree about where the project
+ * lives.
+ *
+ * This replaces an earlier guess at `apps/*` and `packages/*`, which missed the real repo shape that
+ * `findWorkspaceApps` exists to handle: three Next apps at `web/`, `admin/` and `space/`.
+ */
+describe('resolving from the instrumented project rather than the daemon cwd', () => {
+  it('finds a key beside a .reticle.json in a directory the daemon never stood in', () => {
+    const root = repo();
+    // A DECLARED workspace, because that is what a real monorepo has and it is the only shape
+    // `discoverProjectConfigs` descends into. The undeclared `apps/*` layout is covered separately.
+    writeFileSync(
+      join(root, 'package.json'),
+      JSON.stringify({ name: 'root', workspaces: ['apps/*'] }),
+    );
+    writeFileSync(join(root, 'apps', 'web', '.reticle.json'), JSON.stringify({ projectId: 'p1' }));
+    writeFileSync(join(root, 'apps', 'web', '.env'), `${LICENSE_KEY_ENV}=${KEY}\n`);
+    expect(licenseKeyFromEnvFiles(root)).toBe(KEY);
+  });
+
+  it('finds it in a declared workspace that is not apps/ or packages/', () => {
+    const root = repo();
+    writeFileSync(
+      join(root, 'package.json'),
+      JSON.stringify({ name: 'root', workspaces: ['services/*'] }),
+    );
+    for (const name of ['admin', 'space']) {
+      mkdirSync(join(root, 'services', name), { recursive: true });
+      writeFileSync(
+        join(root, 'services', name, '.reticle.json'),
+        JSON.stringify({ projectId: name }),
+      );
+    }
+    writeFileSync(join(root, 'services', 'space', '.env.local'), `${LICENSE_KEY_ENV}=${KEY}\n`);
+    expect(licenseKeyFromEnvFiles(root)).toBe(KEY);
+  });
+
+  // The guard still holds on the widened search: a `.env` reached this way may still only ever
+  // yield the licence key, never the rest of its contents.
+  it('still takes ONLY the licence key from a project directory it discovered', () => {
+    const root = repo();
+    writeFileSync(
+      join(root, 'package.json'),
+      JSON.stringify({ name: 'root', workspaces: ['services/*'] }),
+    );
+    mkdirSync(join(root, 'services', 'web'), { recursive: true });
+    writeFileSync(
+      join(root, 'services', 'web', '.reticle.json'),
+      JSON.stringify({ projectId: 'p1' }),
+    );
+    writeFileSync(
+      join(root, 'services', 'web', '.env'),
+      `RETICLE_PORT=9999\n${LICENSE_KEY_ENV}=${KEY}\n`,
+    );
+    const env: NodeJS.ProcessEnv = {};
+    expect(licenseKeyFromEnvFiles(root, env)).toBe(KEY);
+    expect(env['RETICLE_PORT']).toBeUndefined();
   });
 });
