@@ -1,12 +1,13 @@
 import * as http from 'node:http';
 import {
   localInitializeResponse,
+  degradedInstructions,
   isHandshakeLine,
   drainLines,
   MAX_STDIN_LINE_BYTES,
 } from './proxy-handshake.js';
-import { isToolsListRequest, ToolCatalogCache } from './tool-catalog-cache.js';
-import { rememberEnumerated, rememberProxyStarted } from './attach-memory.js';
+import { isToolCallRequest, isToolsListRequest, ToolCatalogCache } from './tool-catalog-cache.js';
+import { rememberEnumerated, rememberProxyStarted, rememberToolCalled } from './attach-memory.js';
 import { toolsChangedNotification } from './proxy-handshake.js';
 import {
   LOOPBACK_HOST,
@@ -831,10 +832,10 @@ export function startMcpProxy(
      */
     const armLocalHandshake = (line: string): void => {
       if (handshakeAnswered) return;
-      // Ask the same question the daemon would, from the same durable memory, so the client gets
-      // the same answer it would have got had a daemon been up to give it.
-      const response = localInitializeResponse(line, proxyInstructions(port));
-      if (null === response) return;
+      // Only an `initialize` REQUEST is ours to answer. Asked with no instructions because the ones
+      // we will actually send name the reason the daemon failed, and the reason is not known until
+      // the deliver closure runs — see degradedInstructions.
+      if (null === localInitializeResponse(line, '')) return;
       // Take the debt NOW, not when the timer fires.
       //
       // Three paths can answer this id — the daemon, the stream-loss drain, and the timer below —
@@ -850,6 +851,15 @@ export function startMcpProxy(
       if (claimed?.id !== undefined) pending.take(claimed.id);
       deliverHandshakeLocally = (reason: string): void => {
         if (handshakeAnswered || postUrl !== null) return;
+        // Built here, not at arm time, so the notice can name WHY no daemon answered. The client
+        // reads `instructions` exactly once, at initialize, and this response is the only one it
+        // will ever get — so a handshake that does not say it is unbacked never says it at all.
+        // See degradedInstructions for the field report this closes.
+        const response = localInitializeResponse(
+          line,
+          degradedInstructions(proxyInstructions(port), port, reason),
+        );
+        if (null === response) return;
         handshakeAnswered = true;
         deliverHandshakeLocally = undefined;
         // The catalog we are about to serve is ours, not the daemon's, so it has to be corrected
@@ -899,6 +909,10 @@ export function startMcpProxy(
         // different problem with its own diagnosis. Recording the answer instead would let a host
         // that never asks look identical to one that asked and was refused.
         if (isToolsListRequest(trimmed)) rememberEnumerated(reticleStateHome(), port);
+        // The hop every other check misses. Recorded on the REQUEST rather than a reply, because
+        // the question is whether anything ever left the agent — a call that leaves and gets no
+        // answer is a different fault from one that was never made, and only this side sees it.
+        if (isToolCallRequest(trimmed)) rememberToolCalled(reticleStateHome(), port);
         const action = onClientRequest(postUrl !== null, dormant);
         if (action === OnRequest.SEND && postUrl !== null) {
           forward(postUrl, trimmed);
