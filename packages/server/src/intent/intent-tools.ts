@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { IntentStore } from './intent-store.js';
+import { IntentShardStore } from './intent-shard-store.js';
+import { IntentStatus } from './intent-shard.js';
 import { ReticleTool } from '../tools/tool-names.js';
 import { sessionIdShape } from '../tools/tool-kit.js';
 import { sessionRoot } from '../project/session-root.js';
@@ -20,6 +22,12 @@ import type { ToolDef, ToolDeps } from '../tools/tool-kit.js';
 const DECLARE = 'declare';
 const LIST = 'list';
 const BIND = 'bind';
+/* The sharded store's surface. Same tool, because a second tool name is a second thing to discover. */
+const INDEX = 'index';
+const SUBJECT = 'subject';
+const GET = 'get';
+const RECORD = 'record';
+const MIGRATE = 'migrate';
 
 export const INTENT_TOOLS: ToolDef[] = [
   {
@@ -33,7 +41,24 @@ export const INTENT_TOOLS: ToolDef[] = [
       ],
     },
     inputSchema: {
-      action: z.enum([DECLARE, LIST, BIND]),
+      action: z.enum([DECLARE, LIST, BIND, INDEX, SUBJECT, GET, RECORD, MIGRATE]),
+      subject: z
+        .string()
+        .optional()
+        .describe('subject/record: what the intent is ABOUT — the shard it lives in.'),
+      statement: z.string().optional().describe('record only: what must be true, in prose.'),
+      why: z
+        .string()
+        .optional()
+        .describe('record only: WHY it must be true. The thing somebody says once and forgets.'),
+      source: z
+        .string()
+        .optional()
+        .describe('record only: where it came from — a person, a ticket, a conversation.'),
+      status: z
+        .enum([IntentStatus.PROPOSED, IntentStatus.AGREED, IntentStatus.PROVED, IntentStatus.STALE])
+        .optional()
+        .describe('record only: how settled it is. Defaults to proposed.'),
       intents: z
         .array(
           z.object({
@@ -66,11 +91,49 @@ export const INTENT_TOOLS: ToolDef[] = [
         ),
       bound: z.boolean().optional().describe('bind only: false when the id names no intent.'),
       path: z.string().optional().describe('Where the ledger was written.'),
+      entries: z
+        .array(z.unknown())
+        .optional()
+        .describe(
+          'index only: one line per intent — { id, subject, statement (summarised), status }. The cheap read: enough to decide WHICH subject to open, without loading any of them.',
+        ),
+      records: z
+        .array(z.unknown())
+        .optional()
+        .describe('subject only: every full record for that subject.'),
+      record: z.unknown().optional().describe('get/record: the single full record, or null.'),
+      migrated: z
+        .number()
+        .optional()
+        .describe('migrate only: how many flat-file intents were folded into shards.'),
+      subjects: z
+        .array(z.string())
+        .optional()
+        .describe('migrate only: which subjects received them.'),
     },
     handler: async (deps: ToolDeps, args) => {
       const root = sessionRoot(deps, asString(args['sessionId']));
       const store = new IntentStore(deps.fs, root, { now: deps.now });
+      const shards = new IntentShardStore(deps.fs, root, { now: deps.now });
       const action = asString(args['action']);
+
+      if (INDEX === action) return { entries: (await shards.index()).entries, path: root };
+      if (SUBJECT === action)
+        return { records: await shards.subject(asString(args['subject']) ?? ''), path: root };
+      if (GET === action) return { record: await shards.get(asString(args['id']) ?? '') };
+      if (MIGRATE === action) return { ...(await shards.migrate()), path: root };
+      if (RECORD === action) {
+        const written = await shards.record({
+          id: asString(args['id']) ?? '',
+          statement: asString(args['statement']) ?? '',
+          subject: asString(args['subject']),
+          why: asString(args['why']),
+          source: asString(args['source']),
+          status: asString(args['status']) as IntentStatus | undefined,
+          binding: args['binding'],
+        });
+        return { record: written, path: root };
+      }
 
       if (BIND === action) {
         const id = asString(args['id']) ?? '';
