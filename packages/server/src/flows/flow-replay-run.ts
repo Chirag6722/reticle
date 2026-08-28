@@ -31,6 +31,7 @@ import { cloudFetch, syncRunRecordToCloud, SyncOutcome } from '../cloud/cloud-sy
 import { resolveProjectCloud } from '../cloud/cloud-config.js';
 import { log } from '../log.js';
 import type { ToolDeps } from '../tools/tools.js';
+import { flowsForSession } from './flow-store-for-session.js';
 
 export function latestRecordedFlow(
   events: ReticleEvent[],
@@ -148,7 +149,9 @@ export async function replayNamedFlow(
   } catch {
     projectId = undefined;
   }
-  const loaded = await deps.flows.load(name, projectId);
+  // The app's store, not the daemon's: this load answering `flow_not_found` for a flow plainly on
+  // disk is what made replay unusable from a daemon started outside the project.
+  const loaded = await flowsForSession(deps, projectId).flows.load(name, projectId);
   if (!loaded.ok) {
     await recordReplayRun(deps, name, ReplayStatus.ERROR, 0, deps.now() - startedAt, projectId);
     return {

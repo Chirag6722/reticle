@@ -732,6 +732,13 @@ export async function startDaemon(options: StartOptions = {}): Promise<RunningSe
     project,
     fs,
     reticleRoot,
+    // The long-lived daemon needs this MORE than the standalone MCP process does, not less: it is
+    // the one that outlives a single project and serves every app on the machine. Omitting it here
+    // silently disabled per-session artifact resolution for every agent that attaches to a running
+    // daemon — the common case — so flows were listed, loaded and healed against wherever the
+    // daemon happened to be launched. Wired in only one of the two places, a resolver is a resolver
+    // that does not run.
+    artifactRootFor: artifactRootResolver(reticleRoot),
     now,
     bridgePort: port,
     browserProbe: probeChromium,
