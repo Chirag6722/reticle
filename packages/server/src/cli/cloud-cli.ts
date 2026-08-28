@@ -62,6 +62,7 @@ const CLOUD_COMMANDS: ReadonlySet<string> = new Set([
   'link',
   'project',
   'config',
+  'issues',
   'push',
   'sync',
   'runs',
@@ -630,6 +631,59 @@ const cmdRuns = async (): Promise<number> => {
   return 0;
 };
 
+/**
+ * `reticle issues [--fix <fingerprint>]` — the triage queue, where the agent can reach it.
+ *
+ * The dashboard is a place a PERSON looks. The defects it lists were found by an agent, are usually
+ * fixed by an agent, and every one of them carries the prompt that would fix it — so requiring a
+ * browser to read them puts a human copy-paste in the middle of a loop that has no other human step
+ * in it.
+ *
+ * `--fix <fingerprint>` prints that one issue's fix prompt as BARE TEXT on stdout, nothing else: no
+ * JSON envelope, no label, no trailing commentary. That is what makes it pipeable — `reticle issues
+ * --fix <fp> | pbcopy`, or straight into an agent's stdin. Anything wrapped around it would have to
+ * be stripped by every caller, and the ones that forgot would paste our prose into their codebase.
+ */
+const cmdIssues = async (argv: readonly string[]): Promise<number> => {
+  const { url, apiKey } = await repoCloud();
+  const fixAt = argv.indexOf('--fix');
+  const wanted = -1 === fixAt ? undefined : argv[fixAt + 1];
+  if (fixAt !== -1 && wanted === undefined) {
+    err('usage: reticle issues --fix <fingerprint>');
+    return 2;
+  }
+  const body = await api('GET', `${url}/v1/issues`, apiKey);
+  if (wanted === undefined) {
+    emit(body);
+    return 0;
+  }
+  const parsed = z
+    .object({
+      issues: z.array(
+        z.object({ fingerprint: z.string(), title: z.string(), fixPrompt: z.string().nullish() }),
+      ),
+    })
+    .safeParse(body);
+  if (!parsed.success) {
+    err('the server did not return an issue list this build understands');
+    return 1;
+  }
+  const found = parsed.data.issues.find((i) => i.fingerprint === wanted);
+  if (found === undefined) {
+    err(`no issue with fingerprint '${wanted}' — run \`reticle issues\` to list them`);
+    return 2;
+  }
+  const prompt = found.fixPrompt;
+  if (prompt === undefined || null === prompt || 0 === prompt.length) {
+    // Silent on stdout, explicit on stderr: a caller piping this into an agent must get NOTHING
+    // rather than an apology, or the apology becomes the prompt.
+    err(`issue '${found.title}' carries no suggested fix — not every origin produces one`);
+    return 4;
+  }
+  process.stdout.write(`${prompt}\n`);
+  return 0;
+};
+
 /** `reticle regression` — the CI gate: broken flows vs before. Exit 3 if any regressed (pipeline-friendly). */
 const cmdRegression = async (): Promise<number> => {
   const { url, apiKey } = await repoCloud();
@@ -676,6 +730,8 @@ export const runCloudCommand = async (argv: readonly string[]): Promise<number> 
         return await cmdSync(rest);
       case 'runs':
         return await cmdRuns();
+      case 'issues':
+        return await cmdIssues(rest);
       case 'regression':
         return await cmdRegression();
       case 'share':
