@@ -593,12 +593,25 @@ function findWindowContradictions(
   // Ordering cannot decide this: an optimistic UI legitimately fires its success signal BEFORE the
   // response, so "the claim must follow the failure" would miss the real defect. What separates them
   // is not when the app spoke, it is whether it took it back.
-  if (failed.length > 0 && successSignals.length > 0 && !failureAcknowledged(events)) {
+  // WHAT failed decides this, not whether an action was attributed.
+  //
+  // The claim is a thing the app said, so the attribution floor does not apply to it — the flagship
+  // false green is an app asserting success on a PASSIVE assert while its own write failed, and
+  // requiring an action would lose exactly that. But the COUNTER was any failure in the window, and
+  // that is the same window statement scoped out of every other rule here. Measured: two of the
+  // three false positives surviving the first scoping pass were this rule.
+  //
+  // A success signal claims a CHANGE was made. A failed mutation is evidence against that claim; a
+  // failed read is not. Background polls, prefetches and telemetry GETs fail constantly in healthy
+  // apps and say nothing about whether a write landed. Structural, not a timing heuristic, and the
+  // distinction was already encoded next door in `isMutating`.
+  const failedWrites = failed.filter(isMutating);
+  if (failedWrites.length > 0 && successSignals.length > 0 && !failureAcknowledged(events)) {
     found.push({
       kind: ContradictionKind.SIGNAL_CONTRADICTED,
       claim: `the app fired ${successSignals.map((s) => `"${s}"`).join(', ')}`,
-      counter: `${String(failed.length)} request(s) in the same window failed`,
-      detail: failed.map(describe).join('; '),
+      counter: `${String(failedWrites.length)} write(s) in the same window failed`,
+      detail: failedWrites.map(describe).join('; '),
     });
   } else if (
     unexpected.length > 0 &&

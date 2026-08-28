@@ -57,6 +57,16 @@ function withCellTimeout(run) {
 // in isolation — the external tools' numbers are fixed, so an Reticle-only pass is enough to recompute VE.
 const TOOLS = (process.env['BENCH_TOOLS'] ?? 'playwright,devtools,reticle').split(',');
 
+/**
+ * A contradiction was REPORTED.
+ *
+ * `contradictions` is omitted from a clean verdict, so its presence in the payload is the detector
+ * having fired — whether or not the verdict itself went red. The tool surface says so in as many
+ * words: "treat any entry as a finding even when the verdict is green". `verifiedReason` is matched
+ * too so a shape change on either side cannot quietly turn every negative case green.
+ */
+const CONTRADICTION_RX = /"contradictions"\s*:\s*\[|"verifiedReason"\s*:\s*"contradicted"/;
+
 // Each scenario: steps (run before observe), observe kind, grade mode + regex.
 // mode 'present'  -> detected if rx matches evidence.
 // mode 'absent'   -> detected if rx does NOT match evidence (expected thing is gone).
@@ -221,6 +231,136 @@ const SCENARIOS = [
     signal: 'request to /api/broken/timeout still unresolved (the endpoint never responds)',
   },
 
+  // ── NEGATIVE CASES: the correct answer is "nothing is wrong, the verdict stands" ────────────
+  //
+  // Ten of the scenarios above expect a detection and one does not, so precision was barely
+  // measured: a detector that fired on absolutely everything scored 0.909 on this grid, and the
+  // correctness defect reported most often from the field — a `contradicted` verdict citing traffic
+  // the assertion never mentioned — could not move a single number here.
+  //
+  // These six are that missing denominator. Each one drives an action that GENUINELY SUCCEEDS while
+  // the page carries traffic the user did not cause (`?ambient=…`, apps/bench-app/src/reticle-ambient.ts),
+  // and each is a shape a naive detector fires on. `expectDetect: false` grades them through exactly
+  // the same tp/tn/fp/fn arithmetic as everything above.
+  //
+  // They observe `verdict` rather than a listing. That is not a convenience: a false positive is a
+  // statement a tool MAKES, and a network listing containing a failed beacon is not a statement —
+  // reading the listing would mark every tool wrong for correctly showing what happened. Only
+  // Reticle publishes a verdict, so these scenarios name `tools` and the rest record NOT MEASURED,
+  // the same way `cross-component-regression` does for a measurement no tool can be graded on.
+  {
+    id: 'third-party-beacon-fails',
+    regression: null,
+    expectDetect: false,
+    ambient: 'beacon',
+    tools: ['reticle'],
+    observe: 'verdict',
+    steps: [
+      { view: 'saved-items' },
+      { wait: 300 },
+      { fill: { testid: 'saved-item-input', value: 'beacon-negative' } },
+    ],
+    verdict: { testid: 'saved-item-submit', until: { kind: 'signal', name: 'item:saved' } },
+    mode: 'present',
+    rx: CONTRADICTION_RX,
+    signal:
+      "NONE — the save succeeded; a failing third-party analytics beacon (collect.telemetry-vendor.invalid) is somebody else's server and cannot answer for this app. Any contradiction is a false positive",
+  },
+
+  {
+    id: 'adblocked-third-party',
+    regression: null,
+    expectDetect: false,
+    ambient: 'adblock',
+    tools: ['reticle'],
+    observe: 'verdict',
+    steps: [
+      { view: 'saved-items' },
+      { wait: 300 },
+      { fill: { testid: 'saved-item-input', value: 'adblock-negative' } },
+    ],
+    verdict: { testid: 'saved-item-submit', until: { kind: 'signal', name: 'item:saved' } },
+    mode: 'present',
+    rx: CONTRADICTION_RX,
+    signal:
+      'NONE — the save succeeded while an ad-blocked third-party pixel failed. Blocked vendor traffic is the ordinary state of the open web, not a defect in the app under test',
+  },
+
+  {
+    id: 'first-party-pageload-burst',
+    regression: null,
+    expectDetect: false,
+    ambient: 'pageload',
+    tools: ['reticle'],
+    observe: 'verdict',
+    // A WHOLE-SESSION assert window (`since: 0`) — what an assert falls back to when the caller does
+    // not narrow it. This is the shape behind the worst field report: an app that fires one call on
+    // page load, and every assertion after it coming back contradicted forever.
+    steps: [{ view: 'diagnostics' }, { wait: 400 }],
+    verdict: { passive: true, since: 0, until: { kind: 'text', contains: 'Fault injection' } },
+    mode: 'present',
+    rx: CONTRADICTION_RX,
+    signal:
+      "NONE — a FIRST-party bootstrap failed once at page load, long before the action. It is the app's own traffic, so no origin test can exclude it; only the attribution floor can. Any contradiction is a false positive",
+  },
+
+  {
+    id: 'first-party-poll-concurrent',
+    regression: null,
+    expectDetect: false,
+    ambient: 'poll',
+    tools: ['reticle'],
+    observe: 'verdict',
+    steps: [
+      { view: 'saved-items' },
+      { wait: 300 },
+      { fill: { testid: 'saved-item-input', value: 'poll-negative' } },
+    ],
+    verdict: { testid: 'saved-item-submit', until: { kind: 'signal', name: 'item:saved' } },
+    mode: 'present',
+    rx: CONTRADICTION_RX,
+    signal:
+      'NONE — a FIRST-party background poll keeps failing DURING the action. Unrelated concurrent traffic, first-party and inside the window: neither the origin test nor the attribution floor can exclude it, so this is the hardest of the six and the one most likely to expose a real false positive',
+  },
+
+  {
+    id: 'passive-assert-ambient-traffic',
+    regression: null,
+    expectDetect: false,
+    ambient: 'poll',
+    tools: ['reticle'],
+    observe: 'verdict',
+    // Diagnostics because its build-log stream keeps the DOM moving: a passive window with a still
+    // page proves nothing, since "the UI advanced while a request failed" needs a UI that advanced.
+    steps: [{ view: 'diagnostics' }, { wait: 1500 }],
+    verdict: { passive: true, until: { kind: 'text', contains: 'Fault injection' } },
+    mode: 'present',
+    rx: CONTRADICTION_RX,
+    signal:
+      'NONE — a passive assertion performs nothing, so nothing in its window is its consequence. Ambient failures plus a ticking DOM are co-occurrence, not causation',
+  },
+
+  {
+    id: 'strictmode-duplicate-effect',
+    regression: null,
+    expectDetect: false,
+    ambient: 'strictdup',
+    tools: ['reticle'],
+    observe: 'verdict',
+    // The ACTION is the navigation: StrictMode double-invokes the mount effect of the view being
+    // navigated to, so both writes land inside the action's own window. Nothing scopes them out.
+    steps: [{ wait: 300 }],
+    verdict: {
+      testid: 'nav-saved-items',
+      until: { kind: 'text', contains: 'Saved items' },
+      timeoutMs: 4000,
+    },
+    mode: 'present',
+    rx: CONTRADICTION_RX,
+    signal:
+      'NONE — React StrictMode invokes a mount effect twice in dev. Two identical writes, one user action, and no defect: the second request exists because the framework asked for it',
+  },
+
   {
     id: 'no-regression-control',
     regression: null,
@@ -233,14 +373,18 @@ const SCENARIOS = [
   },
 ];
 
-async function runRecipe(adapter, steps, observe) {
+async function runRecipe(adapter, steps, observe, verdictSpec) {
   const cycle = [];
   for (const s of steps) {
     if (s.view) cycle.push(await adapter.gotoView(s.view));
     else if (s.tap) cycle.push(await adapter.tap(s.tap));
+    else if (s.fill) cycle.push(await adapter.fillTestid(s.fill.testid, s.fill.value));
     else if (s.wait) await sleep(s.wait);
   }
-  const obs = await adapter.observe(observe);
+  // A verdict is produced BY acting, not by looking afterwards — the act and the judgement are one
+  // call, which is the whole point of the surface the negative cases exercise.
+  const obs =
+    'verdict' === observe ? await adapter.prove(verdictSpec) : await adapter.observe(observe);
   cycle.push(obs);
   return { cycle, obsText: obs.text ?? '', allText: cycle.map((c) => c.text ?? '').join('\n') };
 }
@@ -262,6 +406,19 @@ function normalize(s) {
     .replace(/"(lastSeenMs|opened_at|t|bytes|tokens)":\s*\d+/g, '"$1":N')
     .replace(/\d+/g, '#')
     .trim();
+}
+
+/**
+ * What the verdict itself said, for the row's notes.
+ *
+ * A negative case is only a negative case if the action it drove actually SUCCEEDED. One whose
+ * verdict came back `no` or `unknown` for an unrelated reason would still record `detected=false`
+ * and still count as a true negative, while measuring nothing at all — the same shape of empty
+ * green this whole harness exists to refuse. Recorded so a reader can see it rather than assume it.
+ */
+function verifiedField(text) {
+  const m = text.match(/"verified"\s*:\s*"([a-z]+)"/);
+  return m ? m[1] : 'absent';
 }
 
 function grade(sc, regr, baseline) {
@@ -288,8 +445,26 @@ function grade(sc, regr, baseline) {
 }
 
 const rows = [];
-const which = process.argv[2]; // optional single scenario id
-const list = which ? SCENARIOS.filter((s) => s.id === which) : SCENARIOS;
+// Optional scenario filter: one id, or a comma-separated list. The list form exists so the negative
+// cases can be re-measured together without paying for the ten positive ones.
+const which = process.argv[2];
+const wanted = which ? which.split(',') : null;
+const list = wanted ? SCENARIOS.filter((s) => wanted.includes(s.id)) : SCENARIOS;
+
+/**
+ * The URL a scenario drives.
+ *
+ * Ambient traffic is a property of the PAGE, not of a control the agent clicks — an analytics
+ * snippet is in the document before the agent arrives. So it is switched on in the URL, exactly as
+ * every other fixture knob in this app is (`?reticle-break=`, `?opaque=`, `?nosource=`), and a
+ * scenario that asks for none drives the byte-identical URL it drove before.
+ */
+function scenarioUrl(sc) {
+  if (sc.ambient === undefined) return URL;
+  const u = new globalThis.URL(URL);
+  u.searchParams.set('ambient', sc.ambient);
+  return u.toString();
+}
 
 for (const sc of list) {
   for (const tool of TOOLS) {
@@ -318,6 +493,16 @@ for (const sc of list) {
       console.log(JSON.stringify({ s: row.scenario, t: tool, v: 'NOT MEASURED' }));
       continue;
     }
+    // A scenario graded on a VERDICT can only be run against a tool that publishes one. Recorded as
+    // NOT MEASURED rather than skipped silently, for the reason anchor drift is checked up front:
+    // a cell that leaves the grid without saying so shrinks coverage while the headline holds.
+    if (sc.tools !== undefined && !sc.tools.includes(tool)) {
+      row.verdict = 'NOT MEASURED';
+      row.notes = `graded on a verdict; ${tool} publishes none (measured tools: ${sc.tools.join(', ')})`;
+      rows.push(row);
+      console.log(JSON.stringify({ s: row.scenario, t: tool, v: 'NOT MEASURED' }));
+      continue;
+    }
     // Held outside the cell so an ABANDONED cell can still be torn down: on timeout the inner
     // `stop()` never runs, and without this each hang would leak a browser for the rest of the pass.
     let openAdapter = null;
@@ -326,11 +511,11 @@ for (const sc of list) {
         let baseline = null;
         // baseline scenarios: clean capture first
         if ('baseline' === sc.mode) {
-          const a0 = makeAdapter(tool, URL);
+          const a0 = makeAdapter(tool, scenarioUrl(sc));
           openAdapter = a0;
           await a0.start();
           await a0.login();
-          baseline = await runRecipe(a0, sc.steps, sc.observe);
+          baseline = await runRecipe(a0, sc.steps, sc.observe, sc.verdict);
           if (sc.differsAfterFilter) {
             // type a filter and re-observe to compare effect on the table
             if (tool !== 'devtools') {
@@ -346,11 +531,11 @@ for (const sc of list) {
         }
         if (sc.regression) inject(sc.regression);
         await sleep(400); // let vite HMR apply
-        const a = makeAdapter(tool, URL);
+        const a = makeAdapter(tool, scenarioUrl(sc));
         openAdapter = a;
         await a.start();
         await a.login();
-        const regr = await runRecipe(a, sc.steps, sc.observe);
+        const regr = await runRecipe(a, sc.steps, sc.observe, sc.verdict);
         await a.stop();
         openAdapter = null;
         if (sc.regression) revert(sc.regression);
@@ -370,7 +555,7 @@ for (const sc of list) {
           verdict: detected ? 'ISSUE DETECTED' : 'NO ISSUE FOUND',
           detected_issue: detected,
           confidence: detected === sc.expectDetect ? 1 : 0,
-          notes: `obs=${sc.observe}; signal=${sc.signal}; ${detail}; calls=${regr.cycle.map((c) => c.call).join('>')}`,
+          notes: `obs=${sc.observe}; signal=${sc.signal}; ${detail}; ${'verdict' === sc.observe ? `verified=${verifiedField(regr.obsText)}; ` : ''}calls=${regr.cycle.map((c) => c.call).join('>')}`,
           _obsTokens: regr.cycle.at(-1)?.tokens_o200k ?? null,
         };
       });

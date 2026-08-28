@@ -124,3 +124,48 @@ describe('contradictions — the attribution floor', () => {
     ]);
   });
 });
+
+/**
+ * What a success signal can and cannot be contradicted BY.
+ *
+ * The first scoping pass guarded the rules that reason from UI movement and deliberately left the
+ * rules that read the app's own claims alone. That was right about the CLAIM — "the app fired
+ * `saved`" is a thing the app said, true whoever caused it — and wrong about the COUNTER, which is
+ * "N request(s) in the same window failed": a window statement, exactly the shape scoped out
+ * everywhere else. Measured on the benchmark's negative cases, two of the three surviving false
+ * positives were this rule.
+ *
+ * The fix is not the attribution floor. Requiring an attributed action would break the flagship
+ * false green pinned above, where the app claims success on a PASSIVE assert while its own write
+ * failed — and that case is the whole reason this rule exists.
+ *
+ * The discriminator is what FAILED. A success signal is a claim that a change was made, so a failed
+ * MUTATION is evidence against it and a failed READ is not. A background poll, a prefetch, a
+ * telemetry GET: those fail constantly in healthy apps and say nothing about whether a write landed.
+ * `isMutating` already exists here and encodes exactly that distinction.
+ */
+describe('a success signal is contradicted by a failed WRITE, not by any failure', () => {
+  it('is not contradicted by a failed background READ', () => {
+    const poll = ev(EventType.NET_REQUEST, {
+      id: 'n-poll',
+      method: 'GET',
+      url: '/api/poll',
+      status: 500,
+      ok: false,
+    });
+    expect(kinds([ev(EventType.SIGNAL, { name: 'item:saved' }), poll])).not.toContain(
+      ContradictionKind.SIGNAL_CONTRADICTED,
+    );
+  });
+
+  // The flagship, restated here so this rule's true positive cannot be lost to a later change.
+  it('IS contradicted by the app’s own failed write, on a passive assert', () => {
+    const claimed = [
+      ev(EventType.SIGNAL, { name: 'compose:generated' }),
+      failedCall('/api/generate-script'),
+    ];
+    expect(kinds(claimed, { actionSince: undefined })).toEqual([
+      ContradictionKind.SIGNAL_CONTRADICTED,
+    ]);
+  });
+});

@@ -326,7 +326,8 @@ export class ReticleAdapter {
     let blocked = null;
     try {
       const first = await this.c.callTool('reticle_act', { ref: q.ref, action: 'click' });
-      if (!/confirmDangerous/.test(first.text ?? '')) return rec('reticle_act', first);
+      if (!/confirmDangerous/.test(first.text ?? ''))
+        return this._recordCursor(rec('reticle_act', first));
       blocked = rec('reticle_act', first);
     } catch (error) {
       if (!/confirmDangerous/.test(String(error))) throw error;
@@ -347,8 +348,92 @@ export class ReticleAdapter {
       retry.tokens_o200k += blocked.tokens_o200k;
       retry.latency_ms += blocked.latency_ms;
     }
-    return retry;
+    return this._recordCursor(retry);
   }
+  /** Type a value into a field. Needed by the negative cases: their action is a real form submit. */
+  async fillTestid(id, value) {
+    const q = await this._refByTestid(id);
+    if (!q.ref)
+      return {
+        call: 'reticle_act',
+        error: `no ref for ${id}`,
+        latency_ms: 0,
+        chars: 0,
+        bytes: 0,
+        tokens_o200k: 0,
+        text: '',
+      };
+    return this._recordCursor(
+      rec(
+        'reticle_act',
+        await this.c.callTool('reticle_act', { ref: q.ref, action: 'fill', args: { value } }),
+      ),
+    );
+  }
+
+  /**
+   * Remember the cursor an act returned, so a later PASSIVE assertion can be floored above it.
+   *
+   * A passive assert is one that performs nothing and therefore causes nothing — the shape four
+   * field reports described. This harness cannot reach it by simply not acting, because it has to
+   * log in first, and that click leaves a cursor that `reticle_assert` would adopt as its window
+   * floor. Passing an explicit `since` ABOVE the last act reproduces the real shape: a window with
+   * no action attributed to it.
+   */
+  _recordCursor(recorded) {
+    const m = (recorded.text ?? '').match(/"(?:since|cursor)"\s*:\s*(\d+)/);
+    if (m) this.lastCursor = Number(m[1]);
+    return recorded;
+  }
+
+  /**
+   * The only observation that carries a VERDICT rather than a listing.
+   *
+   * Every other `observe` kind returns what the tool SAW; this returns what it CONCLUDED, which is
+   * the surface the contradiction detector speaks through and the one the field reports are about.
+   * `contradictions` is omitted from a clean result, so its presence in the payload IS the detector
+   * having fired — including when the verdict still passes, which the tool surface itself calls a
+   * finding.
+   */
+  async prove(spec) {
+    if (true === spec.passive) {
+      // `since: 0` is the whole-session window an assert falls back to when nothing has acted — the
+      // shape behind "every assertion came back contradicted forever". Default is the floor ABOVE
+      // the last act, which is the other passive shape: a window with no action attributed to it.
+      const since = spec.since ?? (this.lastCursor ?? 0) + 1;
+      return rec(
+        'reticle_assert',
+        await this.c.callTool('reticle_assert', {
+          predicate: spec.until,
+          since,
+          timeout_ms: spec.timeoutMs ?? 4000,
+        }),
+      );
+    }
+    const q = await this._refByTestid(spec.testid);
+    if (!q.ref)
+      return {
+        call: 'reticle_act_and_wait',
+        error: `no ref for ${spec.testid}`,
+        latency_ms: 0,
+        chars: 0,
+        bytes: 0,
+        tokens_o200k: 0,
+        text: '',
+      };
+    return this._recordCursor(
+      rec(
+        'reticle_act_and_wait',
+        await this.c.callTool('reticle_act_and_wait', {
+          ref: q.ref,
+          action: spec.action ?? 'click',
+          until: spec.until,
+          timeout_ms: spec.timeoutMs ?? 6000,
+        }),
+      ),
+    );
+  }
+
   async console() {
     return rec('reticle_console', await this.c.callTool('reticle_console', { level: 'error' }));
   }
@@ -570,6 +655,7 @@ const NAV = {
   deployments: { testid: 'nav-deployments', nameRe: /"Deployments/ },
   compose: { testid: 'nav-compose', nameRe: /"Compose/ },
   diagnostics: { testid: 'nav-diagnostics', nameRe: /"Diagnostics/ },
+  'saved-items': { testid: 'nav-saved-items', nameRe: /"Saved Items/ },
 };
 for (const Cls of [PlaywrightAdapter, ReticleAdapter]) {
   Cls.prototype.tap = function (spec) {
@@ -596,6 +682,10 @@ for (const Cls of [
   PlaywrightCliAdapter,
 ]) {
   Cls.prototype.observe = function (kind) {
+    // 'verdict' is not a listing — it is this tool's JUDGEMENT, and only Reticle emits one. The
+    // scenario restricts itself to the tools that can answer (see SCENARIOS[].tools), so reaching
+    // here with it would be a harness bug, not a tool limitation to be measured.
+    if ('verdict' === kind) throw new Error(`${this.name} has no verdict surface`);
     if ('console' === kind) return this.console();
     if ('network' === kind) return this.network();
     if ('networkAll' === kind) return this.networkAll ? this.networkAll() : this.network();
