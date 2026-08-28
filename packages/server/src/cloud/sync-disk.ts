@@ -80,6 +80,55 @@ const DERIVED_FILE = {
   intent: ReticleDir.INTENT_FILE,
 } as const;
 
+/** The directory the sharded intent store writes into, beside the legacy flat file. */
+const INTENT_SUBDIR = 'intent';
+const INTENT_INDEX = 'index.json';
+
+/**
+ * Every intent this project holds, flat file and shards merged.
+ *
+ * The store was split into one file per subject so that writing one record stops rewriting all of
+ * them. Sync was not told, and kept reading `intent.json` alone — which the migration deliberately
+ * does not delete. The result was the worst shape a sync bug can take: not an error, but a corpus
+ * that looked healthy on the dashboard and had silently stopped moving, because every intent
+ * captured after the migration stayed on the engineer's laptop.
+ *
+ * Shards WIN on a collision, matching the store's own rule: an id present in both has been migrated
+ * and possibly edited since, and letting the flat copy overwrite that would revert the edit on every
+ * cycle. `index.json` is derived from the shards and is skipped — sending it would duplicate every
+ * record as a summary of itself.
+ *
+ * Returns undefined when there is no memory at all, so a project with nothing to say sends nothing
+ * rather than an empty envelope the server has to store.
+ */
+function readIntent(reticleRoot: string): unknown {
+  const legacy = readJson(join(reticleRoot, ReticleDir.INTENT_FILE));
+  const merged: Record<string, unknown> = {
+    ...((legacy as { intents?: Record<string, unknown> } | undefined)?.intents ?? {}),
+  };
+  let shards = 0;
+  for (const file of safeReaddir(join(reticleRoot, INTENT_SUBDIR))) {
+    if (!file.endsWith(JSON_SUFFIX) || INTENT_INDEX === file) continue;
+    const shard = readJson(join(reticleRoot, INTENT_SUBDIR, file)) as
+      { intents?: Record<string, unknown> } | undefined;
+    // A hand-edited or half-written shard costs one subject, never the whole sync.
+    if (shard?.intents === undefined) continue;
+    shards++;
+    for (const [id, record] of Object.entries(shard.intents)) merged[id] = record;
+  }
+  if (legacy === undefined && 0 === shards) return undefined;
+  return { version: 1, intents: merged };
+}
+
+/** Directory listing that tolerates absence — an unmigrated project has no `intent/`. */
+function safeReaddir(dir: string): string[] {
+  try {
+    return readdirSync(dir);
+  } catch {
+    return [];
+  }
+}
+
 /** What the cycle reads, backed by a real `.reticle` directory. */
 export function diskSource(reticleRoot: string): SyncSource {
   return {
@@ -93,7 +142,9 @@ export function diskSource(reticleRoot: string): SyncSource {
         // mean re-sending it every cycle forever. Dropped rather than uploaded repeatedly.
         .filter((r): r is { runId: string; payload: unknown } => r !== undefined),
     flows: () => readFlows(reticleRoot),
-    derived: (kind) => readJson(join(reticleRoot, DERIVED_FILE[kind])),
+    // Intent is the only derived record that is no longer one file. See readIntent.
+    derived: (kind) =>
+      'intent' === kind ? readIntent(reticleRoot) : readJson(join(reticleRoot, DERIVED_FILE[kind])),
   };
 }
 
