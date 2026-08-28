@@ -36,6 +36,7 @@ export * from './browser-misdirect.js';
 
 // ── INTERNAL cross-package plumbing (shared impl; not a stable outside API — may change in a minor) ─
 export * from './daemon-registry.js'; // daemon discovery, used by the vite plugin + server
+export * from './dev-server-registry.js'; // the return leg: dev servers announcing themselves
 export * from './project-registry.js'; // projectId -> directory, so a cross-repo daemon can still resolve
 export * from './intent.js'; // what a change was supposed to make true, captured while somebody knows
 export * from './run-context.js'; // what a run established, folded and capped, for the agent to pull back

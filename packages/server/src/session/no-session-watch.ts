@@ -19,7 +19,8 @@ import type { NoSessionNextAction } from './no-session-next-action.js';
 import { readProjectFramework, readProjectId, readProjectPort } from '../cli/cli-port.js';
 import { discoverProjectConfigs } from '../cli/config-discovery.js';
 import { hasProjectConnectedBefore, rememberConnected } from './connection-memory.js';
-import { reticleStateHome } from '../daemon/daemon.js';
+import { isAlive, reticleStateHome } from '../daemon/daemon.js';
+import { daemonsServingProjectElsewhere, splitBrainNote } from '../daemon/daemon-resolve.js';
 import { stallUptime } from './stall-clock.js';
 import type { SessionManager } from './session-manager.js';
 import { probeDaemon } from '../mcp/mcp-proxy.js';
@@ -159,6 +160,25 @@ export function startNoSessionWatch(options: NoSessionWatchOptions): () => void 
   const connectedBefore = (): boolean =>
     hasProjectConnectedBefore(stateDir, options.port, readProjectId(directory));
 
+  /**
+   * The split brain, asked fresh every time like everything else here.
+   *
+   * Cheap — a directory listing of `~/.reticle` and a few small JSON reads — and only ever reached
+   * on a daemon with no session, which is the state this whole file exists for. Reading it once at
+   * boot would miss the ordinary case entirely: the app connects to the other daemon SECONDS after
+   * this one starts, which is precisely the window the agent then spends being told to start a dev
+   * server that is already running.
+   */
+  const splitBrain = (): string | undefined => {
+    const projectId = readProjectId(directory);
+    return splitBrainNote(
+      options.port,
+      daemonsServingProjectElsewhere(projectId, options.port, stateDir, isAlive, (port) =>
+        hasProjectConnectedBefore(stateDir, port, projectId),
+      ),
+    );
+  };
+
   // Every path that registers a session goes through SessionManager.add, so this is the one hook
   // that makes the bit durable. Recorded per port + projectId so a shared 4400 cannot make one
   // project's success into evidence about another's.
@@ -231,17 +251,20 @@ export function startNoSessionWatch(options: NoSessionWatchOptions): () => void 
   const timer = setInterval(refresh, REFRESH_MS);
   timer.unref();
 
-  const nextAction = (scope: ProjectScopeFacts): NoSessionNextAction =>
-    nextActionFor({
+  const nextAction = (scope: ProjectScopeFacts): NoSessionNextAction => {
+    const split = splitBrain();
+    return nextActionFor({
       everConnected: options.sessions.everConnected(),
       initialized: scope.initialized,
       ...(scope.configsElsewhere === undefined ? {} : { configsElsewhere: scope.configsElsewhere }),
       previouslyConnected: connectedBefore(),
+      ...(split === undefined ? {} : { splitBrain: split }),
       listening,
       // Read when asked, like everything else here: a `package.json` can gain a dev script, and a
       // daemon that cached "there is none" at boot would keep saying so for the rest of the day.
       dev: detectDevCommand(directory),
     });
+  };
 
   options.sessions.setNoSessionNextAction(() => nextAction(projectScopeFacts()));
 

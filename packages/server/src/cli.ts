@@ -5,11 +5,16 @@ import { realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { stateDirProblem } from './daemon/state-dir.js';
 import { statusNextAction } from './cli/status-next-action.js';
-import { hasConnectedBefore } from './session/connection-memory.js';
+import { hasConnectedBefore, hasProjectConnectedBefore } from './session/connection-memory.js';
 import { attachStatusFields } from './mcp/attach-memory.js';
 import { reticleStateHome } from './daemon/daemon.js';
 import { handleMcp } from './cli/mcp-command.js';
-import { resolveDaemonForProject } from './daemon/daemon-resolve.js';
+import {
+  daemonsServingProjectElsewhere,
+  resolveDaemonForProject,
+  splitBrainNote,
+  wrongDaemonNote,
+} from './daemon/daemon-resolve.js';
 import {
   handleWatch,
   handleCapsules,
@@ -319,6 +324,26 @@ function withNextAction(facts: {
   return next === undefined ? {} : { nextAction: next };
 }
 
+/**
+ * What `status` says about a project whose daemons have split in two.
+ *
+ * Both halves in one place because they are one condition asked from two positions, and a command
+ * can be standing on either. Silent — no key at all — when there is nothing to report, so a healthy
+ * run reads exactly as it did.
+ */
+function splitBrainFields(port: number, projectId: string | undefined): { splitBrain?: string } {
+  const home = reticleStateHome();
+  const elsewhere = splitBrainNote(
+    port,
+    daemonsServingProjectElsewhere(projectId, port, home, isAlive, (other) =>
+      hasProjectConnectedBefore(home, other, projectId),
+    ),
+  );
+  const note =
+    elsewhere ?? wrongDaemonNote(port, resolveDaemonForProject(projectId, home, isAlive));
+  return note === undefined ? {} : { splitBrain: note };
+}
+
 function handleStatus(port: number): void {
   const pid = readPid(port);
   // Durable, so it survives the daemon idling out — which is the state `status` is most often run in.
@@ -332,6 +357,11 @@ function handleStatus(port: number): void {
   // Reticle and never lists its tools looks exactly like an abandoned install from here — same idle
   // daemon, same zero sessions — and the user sees a tool that does nothing. See attach-memory.ts.
   const client = attachStatusFields(reticleStateHome(), port);
+  // The failure where every individual check is green and the chain is broken: the agent's proxy and
+  // the app resolved their ports independently and landed on two different daemons. Reported from
+  // BOTH stances, because neither one can see it alone — the empty daemon knows the app connected
+  // somewhere else, and the daemon holding the app knows only that this project owns another one.
+  const split = splitBrainFields(port, projectId);
   if (null === pid || !isAlive(pid)) {
     // `running: false` on its own has been reported about a port that was demonstrably occupied,
     // because the pid file is not the port. Ask the port before answering.
@@ -347,6 +377,7 @@ function handleStatus(port: number): void {
         // just a daemon that has not been asked to do anything yet.
         ...withNextAction({ running, sessionCount: 0, previouslyConnected, initialized }),
         ...client,
+        ...split,
       });
     });
     return;
@@ -366,6 +397,7 @@ function handleStatus(port: number): void {
         ...nudge,
         ...withNextAction({ running: true, sessionCount: 0, previouslyConnected, initialized }),
         ...client,
+        ...split,
       });
       return;
     }
@@ -377,7 +409,16 @@ function handleStatus(port: number): void {
       summary.why === undefined
         ? withNextAction({ running: true, ...summary, previouslyConnected, initialized })
         : {};
-    log('reticle_status', { port, running: true, pid, ...summary, ...next, ...client, ...nudge });
+    log('reticle_status', {
+      port,
+      running: true,
+      pid,
+      ...summary,
+      ...next,
+      ...client,
+      ...split,
+      ...nudge,
+    });
   });
 }
 

@@ -214,3 +214,71 @@ describe('the scan is narrow, and the reason must say so in both branches', () =
     expect(withScript.reason).toMatch(/URL|another port|different port/i);
   });
 });
+
+/**
+ * The split brain: the app is connected, wired and live — to a different daemon on the same machine.
+ *
+ * This is the shape of the field report where every individual check is green and the chain is
+ * broken, and every other action in this file is the wrong one for it. It has to outrank all of
+ * them, including `everConnected`, because it is the only cause here backed by positive evidence
+ * about another process rather than by an absence observed from this one.
+ */
+describe('nextActionFor — the app is on another daemon', () => {
+  const SPLIT = 'this project’s app is connected to a DIFFERENT Reticle daemon (:4400)';
+
+  it('names the split instead of telling the agent to start a running dev server', () => {
+    const next = nextActionFor({
+      everConnected: false,
+      initialized: true,
+      listening: [],
+      dev: DEV,
+      splitBrain: SPLIT,
+    });
+    expect(next.action).toBe(NoSessionAction.DAEMON_SPLIT);
+    expect(next.reason).toBe(SPLIT);
+    expect(next.command).toBeUndefined();
+  });
+
+  it('outranks a dev server that IS listening — opening the page again changes nothing', () => {
+    const next = nextActionFor({
+      everConnected: false,
+      initialized: true,
+      listening: [5173],
+      dev: DEV,
+      splitBrain: SPLIT,
+    });
+    expect(next.action).toBe(NoSessionAction.DAEMON_SPLIT);
+  });
+
+  it('outranks an unwired directory — `init` cannot fix a daemon on the wrong port', () => {
+    const next = nextActionFor({
+      everConnected: false,
+      initialized: false,
+      listening: [5173],
+      dev: DEV,
+      splitBrain: SPLIT,
+    });
+    expect(next.action).toBe(NoSessionAction.DAEMON_SPLIT);
+  });
+
+  it('outranks a session this daemon served earlier', () => {
+    const next = nextActionFor({
+      everConnected: true,
+      initialized: true,
+      listening: [5173],
+      dev: DEV,
+      splitBrain: SPLIT,
+    });
+    expect(next.action).toBe(NoSessionAction.DAEMON_SPLIT);
+  });
+
+  it('changes nothing when there is no split', () => {
+    const next = nextActionFor({
+      everConnected: false,
+      initialized: true,
+      listening: [],
+      dev: DEV,
+    });
+    expect(next.action).toBe(NoSessionAction.START_DEV_SERVER);
+  });
+});

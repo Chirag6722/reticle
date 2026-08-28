@@ -35,6 +35,13 @@ interface NextActionFacts {
   /** Configs found in other workspace directories: positive evidence of a scope mismatch. */
   configsElsewhere?: readonly { directory: string; projectId?: string }[];
   /**
+   * The sentence for a live daemon elsewhere that this project's app is actually connected to.
+   *
+   * Passed rendered rather than as ports, because the rule that produces it lives in the module that
+   * owns "which daemon is whose" and this file must stay pure. Absent when there is no split.
+   */
+  splitBrain?: string;
+  /**
    * An app for this project has connected on this port before, from durable state.
    *
    * Outranks `initialized`, which is only ever "is there a `.reticle.json` in the ONE directory this
@@ -52,6 +59,17 @@ const OPEN_COMMAND = 'reticle open';
 const LOCALHOST = 'http://localhost';
 
 export function nextActionFor(facts: NextActionFacts): NoSessionNextAction {
+  // FIRST, above every other cause, because it is the only one supported by positive evidence about
+  // a daemon rather than by an absence. This project's own connection record names a live daemon
+  // that is not this one, which means the app is up and instrumented and the agent is simply looking
+  // at the wrong process. Every branch below would send it to fix something that is not broken —
+  // start a dev server that is running, open a page that is open, or re-run `init` over a config
+  // that works — and the agent has no way to suspect the real cause from here.
+  const splitBrain = facts.splitBrain;
+  if (splitBrain !== undefined) {
+    return { action: NoSessionAction.DAEMON_SPLIT, reason: splitBrain };
+  }
+
   if (facts.everConnected) {
     return {
       action: NoSessionAction.REOPEN_APP,
