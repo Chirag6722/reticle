@@ -29,6 +29,8 @@ import { InitConfirmation, RETICLE_DEFAULT_PORT } from '@reticlehq/core';
 import type { DevServerEntry, InitOutcome } from '@reticlehq/core';
 import { fetchStatus, summarizeStatus } from '../cli/cli-launch.js';
 import { readDevServers } from '../daemon/dev-servers.js';
+import { devServersForProject } from '@reticlehq/core';
+import { readProjectId } from '../cli/cli-port.js';
 import { reticleStateHome } from '../daemon/daemon.js';
 import { reportInitOutcome } from '../telemetry/init-telemetry.js';
 
@@ -239,7 +241,13 @@ export function nodeConfirmDeps(port: number = RETICLE_DEFAULT_PORT): ConfirmDep
   port: number;
 } {
   return {
-    listDevServers: () => readDevServers(reticleStateHome()),
+    // Scoped to the project being set up. The registry is machine-wide, so unscoped it reported a
+    // sibling app's dev server as this one's — see devServersForProject.
+    listDevServers: () =>
+      devServersForProject(readDevServers(reticleStateHome()), {
+        projectId: readProjectId(process.cwd()),
+        root: process.cwd(),
+      }),
     listSessionIds: async () => {
       const payload = await fetchStatus(port);
       // `fetchStatus` resolves undefined when nothing answered, which is precisely the "no daemon"

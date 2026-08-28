@@ -84,6 +84,52 @@ export type DevServerEntry = z.infer<typeof DevServerEntrySchema>;
  *
  * Pure, so both the CLI and the plugins share one rule and it is testable without real processes.
  */
+/**
+ * The live entries that belong to THIS project.
+ *
+ * Scoping is not a refinement here, it is the difference between a diagnosis and a wrong answer. A
+ * dev server registry is machine-wide — one directory holds every app on the box — so "a dev server
+ * is running" is satisfied by somebody else's app, by another package in the same monorepo, by
+ * yesterday's terminal. Reported unscoped, `init` for app A told the user their dev server was wired
+ * and handed them app B's URL: confident, specific, and about a project they were not setting up.
+ *
+ * Two ways to belong, because both are true and neither covers the other:
+ *
+ *   - the projectId matches, which is exact and survives a moved directory
+ *   - the entry's root is the directory being set up, or inside it, which is what makes `init` at a
+ *     monorepo root see the apps underneath it — they genuinely are its apps
+ *
+ * With neither known nothing matches, and the caller gets the same less specific answer it had
+ * before. That is the conservative direction on purpose: a missed match costs one vaguer sentence,
+ * a wrong match sends somebody to another team's app.
+ */
+export function devServersForProject(
+  entries: readonly DevServerEntry[],
+  scope: { projectId?: string | undefined; root?: string | undefined },
+): DevServerEntry[] {
+  const { projectId, root } = scope;
+  if (
+    (projectId === undefined || 0 === projectId.length) &&
+    (root === undefined || 0 === root.length)
+  ) {
+    return [];
+  }
+  return entries.filter(
+    (e) =>
+      (projectId !== undefined && 0 < projectId.length && e.projectId === projectId) ||
+      isWithin(e.root, root),
+  );
+}
+
+/** `path` is `base`, or sits under it. Separator-aware, so `/repo/app2` is not inside `/repo/app`. */
+function isWithin(path: string, base: string | undefined): boolean {
+  if (base === undefined || 0 === base.length) return false;
+  const norm = (p: string): string => p.split('\\').join('/').replace(/\/+$/, '');
+  const target = norm(path);
+  const parent = norm(base);
+  return target === parent || target.startsWith(`${parent}/`);
+}
+
 export function liveDevServers(
   entries: readonly DevServerEntry[],
   isAlive: (pid: number) => boolean,

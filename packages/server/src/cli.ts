@@ -23,7 +23,12 @@ import {
   loadNamedFlows,
   resolveChangedFiles,
 } from './cli/cli-flow-commands.js';
-import { RETICLE_DEFAULT_PORT, ReticleDir, ReticleEnv } from '@reticlehq/core';
+import {
+  RETICLE_DEFAULT_PORT,
+  ReticleDir,
+  ReticleEnv,
+  devServersForProject,
+} from '@reticlehq/core';
 import { loadDotEnv } from './telemetry/dev-repo.js';
 import { licenseKeyFromEnvFiles } from './license/license-env.js';
 import { LICENSE_KEY_ENV } from './license/license.js';
@@ -362,7 +367,12 @@ function handleStatus(port: number): void {
   // What the dev servers themselves said. The reason this command could previously only guess at
   // whether the app was running is that it had no way to see one; now the ones carrying Reticle
   // announce, and the advice below stops contradicting the terminal the reader is looking at.
-  const devServerPorts = readDevServers(reticleStateHome()).map((d) => d.port);
+  // Scoped to THIS project: the registry is machine-wide, and an unrelated app's dev server must
+  // not make this project look like it is running.
+  const devServerPorts = devServersForProject(readDevServers(reticleStateHome()), {
+    projectId,
+    root: process.cwd(),
+  }).map((d) => d.port);
   // The failure where every individual check is green and the chain is broken: the agent's proxy and
   // the app resolved their ports independently and landed on two different daemons. Reported from
   // BOTH stances, because neither one can see it alone — the empty daemon knows the app connected

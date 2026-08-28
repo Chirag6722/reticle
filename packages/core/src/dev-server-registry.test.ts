@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   devServerRegistryFileName,
   devServerRegistryPort,
+  devServersForProject,
   DevServerEntrySchema,
   liveDevServers,
 } from './dev-server-registry.js';
@@ -78,5 +79,41 @@ describe('liveDevServers', () => {
 
   it('is empty, not throwing, when nothing is running', () => {
     expect(liveDevServers([], () => true)).toEqual([]);
+  });
+});
+
+describe('devServersForProject', () => {
+  const a = { ...entry(5173, 10), root: '/repo/apps/web', projectId: 'web-1' };
+  const b = { ...entry(3000, 11), root: '/repo/apps/admin', projectId: 'admin-2' };
+
+  it('matches on projectId', () => {
+    expect(devServersForProject([a, b], { projectId: 'web-1' })).toEqual([a]);
+  });
+
+  it('matches the directory being set up', () => {
+    expect(devServersForProject([a, b], { root: '/repo/apps/admin' })).toEqual([b]);
+  });
+
+  /** `init` at a monorepo root is setting up the apps underneath it — those genuinely are its apps. */
+  it('matches every app under a monorepo root', () => {
+    expect(devServersForProject([a, b], { root: '/repo' })).toEqual([a, b]);
+  });
+
+  /**
+   * The defect this function exists for: unscoped, `init` for one app reported another app's dev
+   * server as "your dev server" and handed over its URL.
+   */
+  it('excludes an unrelated project', () => {
+    expect(devServersForProject([b], { projectId: 'web-1', root: '/repo/apps/web' })).toEqual([]);
+  });
+
+  it('is not fooled by a shared path prefix', () => {
+    const sibling = { ...entry(4000, 12), root: '/repo/apps/web-legacy', projectId: 'legacy-3' };
+    expect(devServersForProject([sibling], { root: '/repo/apps/web' })).toEqual([]);
+  });
+
+  /** Nothing to scope BY must match nothing — never everything, which is the failure being fixed. */
+  it('matches nothing when neither projectId nor root is known', () => {
+    expect(devServersForProject([a, b], {})).toEqual([]);
   });
 });
