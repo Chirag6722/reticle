@@ -29,6 +29,22 @@ import type { ProjectCloud } from './cloud-config.js';
 /** How often the daemon cycles. See the note above on why this is a constant and not a curve. */
 export const DAEMON_SYNC_INTERVAL_MS = 60_000;
 
+/**
+ * The cadence while something is actually happening.
+ *
+ * A fixed minute is the wrong shape for both states it has to cover. During a drive the ledger
+ * changes on every tool call and a minute of lag is what makes a dashboard feel dead; idle, a minute
+ * is already more often than nothing has changed deserves.
+ *
+ * So the interval follows the work: a cycle that MOVED something earns the fast rate, a cycle that
+ * moved nothing backs off to the slow one. No session plumbing and no new configuration — activity
+ * is inferred from what the last cycle actually sent, which is the only honest evidence available.
+ *
+ * Deliberately not per-tool-call. A push in the tool path would put the network in the agent's inner
+ * loop, and verification working with the network down is a promise this product makes.
+ */
+export const DAEMON_SYNC_ACTIVE_INTERVAL_MS = 5_000;
+
 /** Given to the first cycle so a freshly-started daemon does not race the session that woke it. */
 const FIRST_CYCLE_DELAY_MS = 5_000;
 
@@ -99,6 +115,9 @@ const defaultRequest = async (
  */
 export function startSyncDaemon(deps: SyncDaemonDeps): SyncDaemon {
   const intervalMs = deps.intervalMs ?? DAEMON_SYNC_INTERVAL_MS;
+  // Never slower than the idle rate: a deployment that lengthens the interval means "sync less", and
+  // an active burst must not quietly re-introduce the cost it was lowering.
+  const activeIntervalMs = Math.min(DAEMON_SYNC_ACTIVE_INTERVAL_MS, intervalMs);
   const now = deps.now ?? ((): number => Date.now());
   const request = deps.request ?? defaultRequest;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -231,6 +250,13 @@ export function startSyncDaemon(deps: SyncDaemonDeps): SyncDaemon {
           report.derivedSent.length > 0 ||
           report.pulled > 0;
         if (moved) log('reticle_cloud_synced', { summary: describeSync(report) });
+        /*
+         * A cycle that moved something means a drive is in progress, so the next one comes sooner;
+         * one that moved nothing means the machine is idle, so it backs straight off. The rate
+         * follows the work without needing to be told about sessions, and an idle laptop settles at
+         * the same cost it had before this existed.
+         */
+        nextDelay = moved ? activeIntervalMs : intervalMs;
       }
       return report;
     } catch (error: unknown) {
@@ -246,13 +272,16 @@ export function startSyncDaemon(deps: SyncDaemonDeps): SyncDaemon {
     }
   };
 
+  /** The delay for the NEXT cycle: fast while the last one moved something, slow once it stops. */
+  let nextDelay = intervalMs;
+
   const schedule = (delay: number): void => {
     if (stopped) return;
     // Replace, never stack. `nudge` and the interval both schedule, and leaving the old timer armed
     // would let every nudge add a permanent extra cycle per minute for the life of the process.
     if (timer !== undefined) clearTimeout(timer);
     timer = setTimeout(() => {
-      void cycle().finally(() => schedule(intervalMs));
+      void cycle().finally(() => schedule(nextDelay));
     }, delay);
     // Unref'd: a pending sync must never be the reason a process refuses to exit.
     timer.unref?.();

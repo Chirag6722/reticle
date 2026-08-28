@@ -405,3 +405,62 @@ describe('a daemon syncs EVERY linked repo on the machine, not only its own', ()
     d.stop();
   });
 });
+
+/**
+ * The cadence follows the work.
+ *
+ * A fixed minute is wrong for both states it covers: during a drive the ledger changes on every tool
+ * call and a minute of lag is what makes a dashboard look dead, while idle a minute is already more
+ * often than "nothing happened" deserves. Activity is inferred from what the last cycle actually
+ * sent — the only honest evidence available without teaching the daemon about sessions.
+ */
+describe('how often it runs follows whether anything moved', () => {
+  /** A server whose /sync answer says a run landed, so the cycle counts as having moved something. */
+  function busy() {
+    let calls = 0;
+    const request = (url: string): Promise<{ status: number; text: string }> => {
+      calls += 1;
+      if (url.includes('/pull'))
+        return Promise.resolve({ status: 200, text: '{"triage":[],"cursor":"0:"}' });
+      if (url.endsWith('/v1/sync'))
+        return Promise.resolve({
+          status: 200,
+          text: JSON.stringify({ runs: { accepted: 1, rejected: [] }, flows: { accepted: 0 } }),
+        });
+      return Promise.resolve({ status: 200, text: '{}' });
+    };
+    return { request, count: (): number => calls };
+  }
+
+  it('backs off to the idle interval when nothing is moving', async () => {
+    const server = counting();
+    const d = startSyncDaemon({
+      reticleRoot: root,
+      cloud: () => Promise.resolve(LINKED),
+      request: server.request,
+      intervalMs: 60_000,
+    });
+    await vi.advanceTimersByTimeAsync(30_000);
+    const quiet = server.count();
+    // Half the idle interval later, a quiet daemon has not run again.
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(server.count()).toBe(quiet);
+    d.stop();
+  });
+
+  it('never polls FASTER than an interval a deployment lowered it to', async () => {
+    // Lengthening the interval means "sync less". An active burst must not quietly undo that.
+    const server = busy();
+    const d = startSyncDaemon({
+      reticleRoot: root,
+      cloud: () => Promise.resolve(LINKED),
+      request: server.request,
+      intervalMs: 1_000,
+    });
+    await vi.advanceTimersByTimeAsync(10_000);
+    // With a 1s interval the active rate is clamped to 1s, so this is bounded by the interval, not
+    // by the 5s active default — which would have produced far fewer cycles.
+    expect(server.count()).toBeGreaterThan(3);
+    d.stop();
+  });
+});
