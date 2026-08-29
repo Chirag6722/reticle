@@ -1437,6 +1437,25 @@ if (opts.relaunch) {
   }
 }
 
+/**
+ * A setup that never produced a verdict did not succeed, and must not exit 0.
+ *
+ * SKILL.md is explicit — do not report Reticle as set up until a verdict exists — and the exit code
+ * is the one place a caller reads that without parsing anything. Measured: a drive returned in a
+ * single turn having done nothing ("I don't see an actual task or request from you yet") and setup
+ * exited 0 with flowSaved:false. Anything scripting this would have shipped on it.
+ *
+ * `--no-drive` is the deliberate opt-out and stays a success: the caller took ownership of step 5.
+ */
+const verdictMissing = opts.drive && result.flowSaved !== true;
+if (verdictMissing) {
+  todo(
+    'setup did NOT produce a verdict, so it is not complete. The app is installed and connected — drive one flow yourself, or re-run. Exiting non-zero because an exit code of 0 here would be a false green.',
+  );
+}
+
+// The dev server stays UP. It is the whole deliverable: an instrumented app the user can watch.
+// Ownership passes to the user here, so the interrupt teardown must not fire on the way out.
 devServer = undefined;
 dev?.unref();
 dev?.stdout?.destroy();
