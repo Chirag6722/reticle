@@ -502,6 +502,69 @@ const SCENARIOS = [
     // exists and is wired to the grade, verified by the unit gate below rather than a live drive.
     expect: 'nothing is serving',
   },
+  {
+    name: 'relaunch-refuses-a-session-with-no-transcript',
+    why: 'the failure that looks exactly like success: `--resume` on an id with no transcript opens an EMPTY conversation under that id, with no error anywhere. A restart that lands there is worse than no restart',
+    build: () => app({ 'package.json': pkg({ dev: 'true' }) }),
+    run: (dir) =>
+      run(dir, ['--url', 'http://127.0.0.1:59982/', '--relaunch'], {
+        // A session id that no transcript backs. Nothing may be opened for it.
+        CLAUDE_CODE_SESSION_ID: 'definitely-not-a-real-session-id-0000',
+        CLAUDE_PID: String(process.pid),
+      }),
+    expect: 'nothing is serving',
+  },
+  {
+    name: 'a-bug-of-our-own-is-not-a-stack-trace',
+    why: 'setup can have bugs. When it does, the user must get one sentence and a tidy machine — not a TypeError naming a line in our code, with the dev server we started still running behind it',
+    build: () => app({ 'package.json': pkg({ dev: 'true' }) }),
+    // NODE_OPTIONS injects a throw into the module's own tick: the closest thing to a real internal
+    // fault that a test can arrange from outside.
+    // Straight at reticle.mjs, not through the launcher: NODE_OPTIONS also applies to the
+    // launcher's `node -e` version probe, and breaking that made this scenario measure the Node
+    // guard instead of the crash handler.
+    run: (dir) => {
+      const boom = join(dir, 'boom.cjs');
+      // AFTER the module body has run, because that is when its handlers exist — and when a real
+      // bug of ours would fire. A fault raised before registration is uncatchable by definition,
+      // and pretending otherwise would make this scenario test nothing.
+      writeFileSync(
+        boom,
+        "setTimeout(() => { throw new Error('injected internal fault'); }, 800);\n",
+      );
+      try {
+        return {
+          code: 1,
+          out: execFileSync(
+            process.execPath,
+            [
+              '--require',
+              boom,
+              join(HERE, 'reticle.mjs'),
+              '--json',
+              '--timeout',
+              '3',
+              '--no-drive',
+              '--no-open',
+              '--url',
+              'http://127.0.0.1:59981/',
+            ],
+            {
+              cwd: dir,
+              encoding: 'utf8',
+              stdio: 'pipe',
+              timeout: 60_000,
+            },
+          ),
+        };
+      } catch (err) {
+        return { code: err.status ?? 'timeout', out: `${err.stdout ?? ''}${err.stderr ?? ''}` };
+      }
+    },
+    // One sentence naming what happened, and where the trace went. The harness's own no-stack check
+    // does the rest of the work on this scenario.
+    expect: 'setup hit a bug of its own',
+  },
 ];
 
 const selected = SCENARIOS.filter((s) => only === undefined || s.name === only);

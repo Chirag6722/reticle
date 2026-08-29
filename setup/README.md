@@ -58,6 +58,28 @@ Auto-restarting the caller is deliberately NOT attempted. Resuming its conversat
 - **Finishes the capabilities file** when the session reports `hasCapabilities:false`, before driving — otherwise `reticle_state` returns nothing and every verdict rests on the DOM alone.
 - **Replays instead of re-driving** once a flow is saved. The first drive is a model choosing what to prove (~70% of wall clock). Every one after it is `reticle verify`: deterministic, no model.
 
+## Registering with the other agents
+
+`init` registers the MCP server with eight clients, and only where it already finds them. That left a real hole: VS Code's **user-scope** `mcp.json` exists on machines today and init only ever writes the project-scope `.vscode/mcp.json`, so a VS Code user has no tools outside the directory they ran init in. Zed, Warp, Kiro, Amp, Copilot CLI, Amazon Q, Factory Droid, Cline and Roo were not covered at all.
+
+`agents.mjs` adds twelve more, under one rule:
+
+- **A documented path is written even when the agent is absent**, so a later install is already wired. That is the "future installs" case.
+- **A path that cannot be evidenced is refused.** Cline's and Roo's live under VS Code globalStorage, which moves under Insiders, portable installs and a custom `--user-data-dir` — so they are written only where the host's standard layout is actually present. A config file at a guessed location is one nobody reads, which looks exactly like success.
+- **Formats that cannot be merged safely are never rewritten** — TOML, an existing YAML, JSONC carrying comments. The snippet is printed instead. Reformatting somebody's config to add one entry is not ours to do.
+
+Keys are per-client and getting one wrong writes a file the client silently ignores: Zed wants `context_servers`, Amp wants a dotted top-level `amp.mcpServers`, VS Code wants `servers`, and Continue's is a YAML _list_ whose items carry a `name`. Eighteen tests run the planner against a pretend filesystem for all three platforms, which is also the only way the Windows rows get checked.
+
+The `/reticle` skill goes to the agents with a documented skills directory — Zed's `~/.agents/skills/`, Kiro's `~/.kiro/steering/` — and only when they are installed, because scaffolding a skills tree for absent software is litter.
+
+## Restarting the caller
+
+`claude-supervised.sh` launches Claude Code in a loop so that `reticle.sh --relaunch` can restart it and resume the same conversation. It exists because a client reads its MCP server list ONCE, at startup, and nothing inside the process can make it re-read that — Gemini's `/mcp reload` re-discovers from the map built at startup and does not re-read `settings.json` either, so this is structural rather than one client's quirk. Only whatever launched the process can restart it.
+
+**You do not need this to onboard.** The verdict comes from a child agent that reads the MCP list at its own startup, so the caller gets its tools whenever it next starts anyway. The supervisor only removes the wait.
+
+It refuses to resume a session id with no transcript behind it. That is the failure that looks like success: `--resume` on an unknown id opens an EMPTY conversation under that id, with no error anywhere.
+
 ## The gates
 
 ```bash

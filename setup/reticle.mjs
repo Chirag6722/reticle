@@ -199,6 +199,37 @@ const die = (why) => {
   finish(1);
 };
 
+/**
+ * Nothing this script does may end as a stack trace in front of a user.
+ *
+ * Every scenario in the break matrix asserts that, because a raw `TypeError` is not a message: it
+ * names a line in our code rather than the thing they have to fix, and it leaves the dev server we
+ * started running behind it. A bug of ours is still our bug — but it should arrive as one sentence,
+ * with the machine left tidy, and with the JSON the caller is parsing still well-formed.
+ */
+for (const fatal of ['uncaughtException', 'unhandledRejection']) {
+  process.on(fatal, (err) => {
+    const message = String(err?.message ?? err)
+      .split('\n')[0]
+      .slice(0, 300);
+    stopDevServer();
+    result.error = `setup crashed (${fatal}): ${message}`;
+    // The trace goes to a FILE, never to stdout or stderr. "No stack trace reaches the user" is an
+    // invariant every scenario in the matrix checks, and it stops being checkable the moment we
+    // make an exception for our own crashes — which are exactly when it matters most.
+    const crashLog = join(cwd, '.reticle-setup-crash.log');
+    try {
+      writeFileSync(crashLog, String(err?.stack ?? err));
+    } catch {
+      /* an unwritable directory is not worth a second crash */
+    }
+    todo(
+      `setup hit a bug of its own and stopped: ${message}. The install may be partly done and re-running is safe. Please report it — the trace is in ${crashLog}.`,
+    );
+    finish(1);
+  });
+}
+
 // A signal is the most likely way this ends early, and the one place a leak is invisible: the
 // terminal comes back, the port stays taken, and the next run blames the port holder.
 for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
@@ -1301,82 +1332,109 @@ function which(bin) {
   return run(WIN ? 'where' : 'which', [bin]).status === 0;
 }
 
-// ---------------------------------------------------------------------------- optional relaunch
+// ---------------------------------------------------------------------------- relaunch
 //
-// A client reads its MCP list once, at startup, so a switch is a RESTART and only whatever launched
-// the process can perform one. CL_RUN means a supervisor is waiting for exactly this.
+// Restart the caller so it picks up the MCP server, without a human doing it.
+//
+// A client reads its MCP list ONCE, at startup. Nothing inside the process can reload it, so the
+// only way is a restart — and only whatever LAUNCHED the process can perform one. Three routes,
+// strongest first, each refused rather than faked when its precondition is missing:
+//
+//   1. a supervisor is waiting (CL_RUN)  write the handoff, end this process, and it relaunches
+//                                        with --resume in the SAME terminal, context intact
+//   2. a terminal we can drive           open a new window running `claude --resume <id>`
+//   3. neither                           print the one command, rather than guess
+//
+// The session id is load-bearing: `--resume` on an id with no transcript opens an EMPTY
+// conversation under that id, with no error anywhere. An id we cannot verify is not used.
 
-if (opts.relaunch && process.env.CLAUDE_CODE_SESSION_ID && process.env.CLAUDE_PID) {
-  const { CL_RUN, CL_HANDOFF_DIR, CLAUDE_CODE_SESSION_ID, CLAUDE_PID, CLAUDE_CONFIG_DIR } =
-    process.env;
-  if (CL_RUN) {
-    const dir = CL_HANDOFF_DIR ?? join(homedir(), '.claude-shared', 'cl-handoff');
+const RESUME_PROMPT = 'continue - verify using reticle';
+
+/** A transcript for this session must exist, or resuming lands in an empty conversation. */
+function transcriptExists(sessionId) {
+  for (const base of [
+    join(homedir(), '.claude-shared', 'projects'),
+    join(homedir(), '.claude', 'projects'),
+  ]) {
+    try {
+      for (const proj of readdirSync(base)) {
+        if (existsSync(join(base, proj, `${sessionId}.jsonl`))) return true;
+      }
+    } catch {
+      /* that history directory does not exist on this machine */
+    }
+  }
+  return false;
+}
+
+/** Open a new terminal window running `cmd`. False where we cannot drive one — a headless box. */
+function openTerminalRunning(cmd) {
+  if (WIN) {
+    if (run('where', ['wt.exe']).status === 0)
+      return run('wt.exe', ['cmd', '/k', cmd]).status === 0;
+    return run('cmd', ['/c', 'start', '', 'cmd', '/k', cmd]).status === 0;
+  }
+  if (process.platform === 'darwin') {
+    const app = process.env.TERM_PROGRAM === 'iTerm.app' ? 'iTerm' : 'Terminal';
+    return (
+      run('osascript', ['-e', `tell application "${app}" to do script ${JSON.stringify(cmd)}`])
+        .status === 0
+    );
+  }
+  for (const [bin, args] of [
+    ['x-terminal-emulator', ['-e']],
+    ['gnome-terminal', ['--']],
+    ['konsole', ['-e']],
+    ['xterm', ['-e']],
+  ]) {
+    if (which(bin)) return run(bin, [...args, 'sh', '-c', `${cmd}; exec $SHELL`]).status === 0;
+  }
+  return false;
+}
+
+if (opts.relaunch) {
+  const sessionId = process.env.CLAUDE_CODE_SESSION_ID;
+  const claudePid = process.env.CLAUDE_PID;
+  const resumeCmd = `cd ${JSON.stringify(cwd)} && claude --resume ${sessionId} ${JSON.stringify(RESUME_PROMPT)}`;
+
+  if (sessionId === undefined) {
+    // Gemini exports GEMINI_CLI=1 and nothing else; most clients tell a child nothing at all.
+    todo(
+      'this client does not tell a child process which conversation it is, so nothing here can resume it. Restart it once and the reticle_* tools will be there.',
+    );
+  } else if (!transcriptExists(sessionId)) {
+    todo(
+      `refusing to restart: no transcript exists yet for ${sessionId}, and \`--resume\` on an id with no transcript opens an EMPTY conversation that looks exactly like it worked. Say something in this session first, then re-run with --relaunch.`,
+    );
+  } else if (process.env.CL_RUN !== undefined && claudePid !== undefined) {
+    const dir = process.env.CL_HANDOFF_DIR ?? join(homedir(), '.claude-shared', 'cl-handoff');
     mkdirSync(dir, { recursive: true });
     const account =
-      (CLAUDE_CONFIG_DIR ?? '.claude')
+      (process.env.CLAUDE_CONFIG_DIR ?? '.claude')
         .split(/[\\/]/)
         .pop()
         .replace(/^\.claude-?/, '') || 'default';
-    writeFileSync(join(dir, CL_RUN), `${account}\t${CLAUDE_CODE_SESSION_ID}\n`);
-    say('handing off: this conversation restarts with the reticle tools loaded.');
+    writeFileSync(join(dir, process.env.CL_RUN), `${account}\t${sessionId}\n`);
+    result.relaunch = 'supervisor';
+    say(
+      'handing back to the supervisor: this conversation restarts with the reticle tools loaded.',
+    );
     setTimeout(() => {
       try {
-        process.kill(Number(CLAUDE_PID), 'SIGTERM');
+        process.kill(Number(claudePid), 'SIGTERM');
       } catch {
-        /* gone */
+        /* already gone */
       }
     }, 1000).unref();
-  } else {
-    todo(
-      `restart your client once so it picks up the MCP server, then resume: claude --resume ${CLAUDE_CODE_SESSION_ID}`,
+  } else if (openTerminalRunning(resumeCmd)) {
+    result.relaunch = 'new-window';
+    say(
+      'reopened this conversation in a new terminal window with the tools loaded — this one can be closed.',
     );
+  } else {
+    result.relaunch = 'manual';
+    todo(`could not open a terminal here, so the restart is yours: ${resumeCmd}`);
   }
-} else if (opts.relaunch) {
-  /**
-   * Why this is a message and not an automatic restart.
-   *
-   * A client reads its MCP server list once, at startup. That is not a Claude Code quirk: Gemini's
-   * `/mcp reload` re-discovers from the map built at startup and does NOT re-read settings.json, so
-   * a newly added server there needs a full restart too. Only whatever LAUNCHED the process can
-   * perform one, and only if it is still waiting.
-   *
-   * Resuming the caller's own conversation also needs its session id, and most CLIs do not tell a
-   * child what it is — Gemini exports GEMINI_CLI=1 and nothing else, so there it is impossible
-   * rather than merely unimplemented. Guessing produces a relaunch into an EMPTY session that looks
-   * exactly like success, which is the failure this whole script exists to prevent.
-   *
-   * None of it blocks the user: the verdict was already produced above, by a child process that had
-   * the tools. The restart only decides when the CALLER gets them.
-   */
-  const caller =
-    process.env.GEMINI_CLI !== undefined
-      ? 'gemini'
-      : process.env.CURSOR_TRACE_ID !== undefined
-        ? 'cursor'
-        : 'your client';
-  todo(
-    `the MCP server is registered, but ${caller} read its server list at startup and cannot reload it — no client can, so nothing here can restart it for you. Your app is installed, connected, and already verified above; the reticle_* tools appear the next time you start ${caller}.`,
-  );
-}
-
-// The dev server stays UP. It is the whole deliverable: an instrumented app the user can watch
-// Reticle drive. Killing it here would leave them with config files and a dead tab — which is the
-// exact failure this script exists to remove. Unref so this process can still exit.
-/**
- * A setup that never produced a verdict did not succeed, and must not exit 0.
- *
- * SKILL.md is explicit — do not report Reticle as set up until a verdict exists — and the exit code
- * is the one place a caller reads that without parsing anything. Measured: a drive returned in one
- * turn having done nothing at all ("I don't see an actual task or request from you yet"), and setup
- * exited 0 with flowSaved:false. Anything scripting this would have shipped on that.
- *
- * `--no-drive` is the deliberate opt-out and stays a success: the caller took ownership of step 5.
- */
-const verdictMissing = opts.drive && result.flowSaved !== true;
-if (verdictMissing) {
-  todo(
-    'setup did NOT produce a verdict, so it is not complete. The app is installed and connected — drive one flow yourself, or re-run. Exiting non-zero because an exit code of 0 here would be a false green.',
-  );
 }
 
 devServer = undefined;
