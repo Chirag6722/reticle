@@ -80,6 +80,22 @@ The `/reticle` skill goes to the agents with a documented skills directory — Z
 
 It refuses to resume a session id with no transcript behind it. That is the failure that looks like success: `--resume` on an unknown id opens an EMPTY conversation under that id, with no error anywhere.
 
+## How long it actually takes
+
+Measured on a pristine `npm create vite` app. The drive is a model, so it is most of the clock and it varies a great deal — 19 to 49 turns for the same trivial counter app.
+
+|                                | time                       |
+| ------------------------------ | -------------------------- |
+| install + connect (no model)   | **13-28s**                 |
+| first install, drive included  | **111-252s, median ~213s** |
+| re-run, replaying a saved flow | **~20s, no model at all**  |
+
+A faster `--drive-model` reaches the same `verified: "yes"` about three times quicker, and leaves a weaker artifact: `assertion-free` or `presence-only` flows in three runs of four. Those only ACT, so they pass even when the feature is broken — and since a re-run REPLAYS the saved flow, a weak one becomes a permanent green. Setup therefore re-records once with the stronger model when the grade comes back weak. Across four runs that produced `asserted` every time, and cost back most of the speed: the escalated runs land at 220-252s.
+
+`--flow` roughly doubles the chance the fast model gets there first try (2 of 4 against about 1 of 4), because the turns go into FINDING a journey and naming one removes that search. It does not reliably buy the target: the best run was 111s and the median was still ~213s. One good sample is not a result, which is the whole reason these numbers are stated at n=4 rather than n=1.
+
+**So: sub-30s is real for re-runs and not honest for a first install.** The only way to a fast first install is to skip the drive, and a setup that reports success without a verdict is the false green this entire script exists to prevent.
+
 ## The gates
 
 ```bash
