@@ -3,7 +3,7 @@
 // run each tool's idiomatic recipe, measure every payload, grade detection by a
 // fixed rule, revert. Any failed cell is recorded verdict="NOT MEASURED".
 import { writeFileSync } from 'node:fs';
-import { makeAdapter } from './adapters.mjs';
+import { makeAdapter, NAV } from './adapters.mjs';
 import { inject, revert, revertAll } from './inject.mjs';
 import { BENCH_URL } from './ports.mjs';
 
@@ -66,6 +66,68 @@ const TOOLS = (process.env['BENCH_TOOLS'] ?? 'playwright,devtools,reticle').spli
  * too so a shape change on either side cannot quietly turn every negative case green.
  */
 const CONTRADICTION_RX = /"contradictions"\s*:\s*\[|"verifiedReason"\s*:\s*"contradicted"/;
+
+/**
+ * THE NEGATIVE-CASE GRADING RULE — one question, three vocabularies.
+ *
+ * The negative cases ask: *would an agent reading this tool's answer to "did my action work?"
+ * conclude something is broken, when nothing is?* That question has to be asked of each tool's own
+ * answer, and the tools answer in different words, so the rule is written per tool. What must NOT
+ * differ is the standard, and the standard is taken from the POSITIVE cases in this same file —
+ * because using two meanings of "detected" across the two halves of the grid is precisely how a
+ * comparison lies.
+ *
+ * On `hidden-api-500` a tool scores a TRUE POSITIVE because a failed request APPEARS in the network
+ * listing it hands the agent. Nobody claims Playwright "asserted a defect" there; it listed one, the
+ * agent read the list, and we credited the detection. So on a negative case the same listing showing
+ * the same shape of failure — this time caused by traffic the app is not answerable for — must cost
+ * a FALSE POSITIVE. An undifferentiated listing buys the true positives and pays the false positives
+ * with the same coin, and the point of these six scenarios is to make it pay.
+ *
+ *   Reticle       — answers with a VERDICT (`reticle_act_and_wait` / `reticle_assert`). It asserts
+ *                   failure by publishing `contradictions` / `verifiedReason:"contradicted"`.
+ *                   Graded by CONTRADICTION_RX.
+ *   Playwright,   — publish no verdict, so their answer is the recipe an agent actually runs: act,
+ *   DevTools        then look (adapters.mjs: proveByObservation → snapshot + network). They assert
+ *                   failure by presenting an ambient request in a FAILED state inside that evidence,
+ *                   with nothing marking it as not the action's. Graded by AMBIENT_FP_RX.
+ *
+ * Two rejected alternatives, and why:
+ *   - Grading them with CONTRADICTION_RX. Reticle's verdict vocabulary appears in no other tool's
+ *     output, so all six would be true negatives BY CONSTRUCTION and the external columns would look
+ *     perfect without being measured at all.
+ *   - Grading them on a broad error regex over raw output. "error" and "failed" occur in this
+ *     fixture for reasons that have nothing to do with the scenario (a favicon 404, a refused
+ *     WebSocket to a daemon these cells never start), so it would mark false positives that measure
+ *     our own apparatus.
+ *
+ * The honest caveat, recorded here rather than in a report nobody reads: Reticle is graded on a
+ * surface that ATTRIBUTES and the other two on surfaces that only LIST, because that is the
+ * difference between the tools — one has an act-and-verify call and the others do not. Reticle read
+ * off its own raw `reticle_network` listing would false-positive on the first-party cases exactly
+ * like DevTools does. What is being measured is not "who sees less", it is whether the tool's best
+ * answer to "did my action work" stays clean when the page is noisy.
+ *
+ * If Playwright or DevTools ever gains a way to say "this request was not your action's", this rule
+ * must be revisited — presence would stop implying unattributed presence.
+ */
+const HAS_VERDICT_SURFACE = new Set(['reticle']);
+
+/**
+ * An AMBIENT request shown in a FAILED state, on one line of the evidence.
+ *
+ * Endpoint AND failure marker together, never either alone: the URL alone matches a request that
+ * succeeded, and the marker alone matches the app's own legitimate traffic and the fixture's noise.
+ * The three endpoints are the ones apps/bench-app/src/reticle-ambient.ts fires and nothing else
+ * reaches. `Save failed` is the app's own alert (SavedItems.tsx) — if the action genuinely broke,
+ * that is a real detection and must count as one, which is also what keeps this rule two-sided.
+ *
+ * Line shapes it must match:
+ *   Playwright: `12. [GET] http://localhost:8787/api/broken/500 => [500] Internal Server Error`
+ *   DevTools:   `reqid=198 POST https://collect.telemetry-vendor.invalid/collect [net::ERR_NAME_NOT_RESOLVED]`
+ */
+const AMBIENT_FP_RX =
+  /^.*(?:telemetry-vendor\.invalid|tracker-network\.invalid|\/api\/broken\/500).*?(?:\[[45]\d\d\]|net::ERR_|\[failed\]).*$|Save failed/m;
 
 // Each scenario: steps (run before observe), observe kind, grade mode + regex.
 // mode 'present'  -> detected if rx matches evidence.
@@ -243,24 +305,35 @@ const SCENARIOS = [
   // and each is a shape a naive detector fires on. `expectDetect: false` grades them through exactly
   // the same tp/tn/fp/fn arithmetic as everything above.
   //
-  // They observe `verdict` rather than a listing. That is not a convenience: a false positive is a
-  // statement a tool MAKES, and a network listing containing a failed beacon is not a statement —
-  // reading the listing would mark every tool wrong for correctly showing what happened. Only
-  // Reticle publishes a verdict, so these scenarios name `tools` and the rest record NOT MEASURED,
-  // the same way `cross-component-regression` does for a measurement no tool can be graded on.
+  // They observe `verdict` rather than a listing, and every tool answers on the surface it actually
+  // has: Reticle's verdict, and — for tools that publish none — the act-then-look evidence bundle an
+  // agent really collects with them. The grading rule and the reasoning behind it are at the top of
+  // this file (HAS_VERDICT_SURFACE / AMBIENT_FP_RX). They used to be pinned `tools: ['reticle']`,
+  // which left Reticle scored on 17 cells and the others on 11 and made the headline comparison
+  // invalid; a scenario now records NOT MEASURED only where a tool's evidence is structurally
+  // incapable of producing the false positive (see `strictmode-duplicate-effect`).
   {
     id: 'third-party-beacon-fails',
     regression: null,
     expectDetect: false,
     ambient: 'beacon',
-    tools: ['reticle'],
     observe: 'verdict',
     steps: [
       { view: 'saved-items' },
       { wait: 300 },
-      { fill: { testid: 'saved-item-input', value: 'beacon-negative' } },
+      {
+        fill: {
+          testid: 'saved-item-input',
+          nameRe: /textbox "Item label/,
+          value: 'beacon-negative',
+        },
+      },
     ],
-    verdict: { testid: 'saved-item-submit', until: { kind: 'signal', name: 'item:saved' } },
+    verdict: {
+      testid: 'saved-item-submit',
+      nameRe: /button "Save"/,
+      until: { kind: 'signal', name: 'item:saved' },
+    },
     mode: 'present',
     rx: CONTRADICTION_RX,
     signal:
@@ -272,14 +345,23 @@ const SCENARIOS = [
     regression: null,
     expectDetect: false,
     ambient: 'adblock',
-    tools: ['reticle'],
     observe: 'verdict',
     steps: [
       { view: 'saved-items' },
       { wait: 300 },
-      { fill: { testid: 'saved-item-input', value: 'adblock-negative' } },
+      {
+        fill: {
+          testid: 'saved-item-input',
+          nameRe: /textbox "Item label/,
+          value: 'adblock-negative',
+        },
+      },
     ],
-    verdict: { testid: 'saved-item-submit', until: { kind: 'signal', name: 'item:saved' } },
+    verdict: {
+      testid: 'saved-item-submit',
+      nameRe: /button "Save"/,
+      until: { kind: 'signal', name: 'item:saved' },
+    },
     mode: 'present',
     rx: CONTRADICTION_RX,
     signal:
@@ -291,7 +373,6 @@ const SCENARIOS = [
     regression: null,
     expectDetect: false,
     ambient: 'pageload',
-    tools: ['reticle'],
     observe: 'verdict',
     // A WHOLE-SESSION assert window (`since: 0`) — what an assert falls back to when the caller does
     // not narrow it. This is the shape behind the worst field report: an app that fires one call on
@@ -309,14 +390,19 @@ const SCENARIOS = [
     regression: null,
     expectDetect: false,
     ambient: 'poll',
-    tools: ['reticle'],
     observe: 'verdict',
     steps: [
       { view: 'saved-items' },
       { wait: 300 },
-      { fill: { testid: 'saved-item-input', value: 'poll-negative' } },
+      {
+        fill: { testid: 'saved-item-input', nameRe: /textbox "Item label/, value: 'poll-negative' },
+      },
     ],
-    verdict: { testid: 'saved-item-submit', until: { kind: 'signal', name: 'item:saved' } },
+    verdict: {
+      testid: 'saved-item-submit',
+      nameRe: /button "Save"/,
+      until: { kind: 'signal', name: 'item:saved' },
+    },
     mode: 'present',
     rx: CONTRADICTION_RX,
     signal:
@@ -328,7 +414,6 @@ const SCENARIOS = [
     regression: null,
     expectDetect: false,
     ambient: 'poll',
-    tools: ['reticle'],
     observe: 'verdict',
     // Diagnostics because its build-log stream keeps the DOM moving: a passive window with a still
     // page proves nothing, since "the UI advanced while a request failed" needs a UI that advanced.
@@ -346,12 +431,19 @@ const SCENARIOS = [
     expectDetect: false,
     ambient: 'strictdup',
     tools: ['reticle'],
+    toolsReason:
+      'the ambient shape here is a duplicate SUCCESS, not a failure. A listing tool can only show ' +
+      'two identical 200s, and "two requests appeared" is not an assertion that anything is wrong ' +
+      'under the rule at the top of this file — no positive scenario grades duplication either. So ' +
+      'this cell cannot produce a false positive for a listing-only tool, and a case that cannot ' +
+      'fail measures nothing: recorded NOT MEASURED rather than banked as a free true negative.',
     observe: 'verdict',
     // The ACTION is the navigation: StrictMode double-invokes the mount effect of the view being
     // navigated to, so both writes land inside the action's own window. Nothing scopes them out.
     steps: [{ wait: 300 }],
     verdict: {
       testid: 'nav-saved-items',
+      nameRe: NAV['saved-items'].nameRe,
       until: { kind: 'text', contains: 'Saved items' },
       timeoutMs: 4000,
     },
@@ -378,7 +470,7 @@ async function runRecipe(adapter, steps, observe, verdictSpec) {
   for (const s of steps) {
     if (s.view) cycle.push(await adapter.gotoView(s.view));
     else if (s.tap) cycle.push(await adapter.tap(s.tap));
-    else if (s.fill) cycle.push(await adapter.fillTestid(s.fill.testid, s.fill.value));
+    else if (s.fill) cycle.push(await adapter.fill(s.fill));
     else if (s.wait) await sleep(s.wait);
   }
   // A verdict is produced BY acting, not by looking afterwards — the act and the judgement are one
@@ -498,11 +590,19 @@ for (const sc of list) {
     // a cell that leaves the grid without saying so shrinks coverage while the headline holds.
     if (sc.tools !== undefined && !sc.tools.includes(tool)) {
       row.verdict = 'NOT MEASURED';
-      row.notes = `graded on a verdict; ${tool} publishes none (measured tools: ${sc.tools.join(', ')})`;
+      row.notes =
+        sc.toolsReason ??
+        `graded on a verdict; ${tool} publishes none (measured tools: ${sc.tools.join(', ')})`;
       rows.push(row);
       console.log(JSON.stringify({ s: row.scenario, t: tool, v: 'NOT MEASURED' }));
       continue;
     }
+    // Same scenario, graded in the vocabulary this tool answers in — see the rule at the top of the
+    // file. A verdict-observed scenario is the only place the two differ: a tool with no verdict
+    // surface answers with the act-then-look evidence bundle its adapter returns, and is graded on
+    // whether that bundle presents ambient traffic as the action's own failure.
+    const gradesOnVerdict = 'verdict' !== sc.observe || HAS_VERDICT_SURFACE.has(tool);
+    const eff = gradesOnVerdict ? sc : { ...sc, rx: AMBIENT_FP_RX };
     // Held outside the cell so an ABANDONED cell can still be torn down: on timeout the inner
     // `stop()` never runs, and without this each hang would leak a browser for the rest of the pass.
     let openAdapter = null;
@@ -515,7 +615,7 @@ for (const sc of list) {
           openAdapter = a0;
           await a0.start();
           await a0.login();
-          baseline = await runRecipe(a0, sc.steps, sc.observe, sc.verdict);
+          baseline = await runRecipe(a0, eff.steps, eff.observe, eff.verdict);
           if (sc.differsAfterFilter) {
             // type a filter and re-observe to compare effect on the table
             if (tool !== 'devtools') {
@@ -535,12 +635,12 @@ for (const sc of list) {
         openAdapter = a;
         await a.start();
         await a.login();
-        const regr = await runRecipe(a, sc.steps, sc.observe, sc.verdict);
+        const regr = await runRecipe(a, eff.steps, eff.observe, eff.verdict);
         await a.stop();
         openAdapter = null;
         if (sc.regression) revert(sc.regression);
 
-        const g = grade(sc, regr, baseline);
+        const g = grade(eff, regr, baseline);
         const detected = 'object' === typeof g ? g.detected : g;
         const detail = 'object' === typeof g ? g.detail : '';
         const cycleTokens = regr.cycle.reduce((n, c) => n + (c.tokens_o200k ?? 0), 0);
@@ -555,7 +655,7 @@ for (const sc of list) {
           verdict: detected ? 'ISSUE DETECTED' : 'NO ISSUE FOUND',
           detected_issue: detected,
           confidence: detected === sc.expectDetect ? 1 : 0,
-          notes: `obs=${sc.observe}; signal=${sc.signal}; ${detail}; ${'verdict' === sc.observe ? `verified=${verifiedField(regr.obsText)}; ` : ''}calls=${regr.cycle.map((c) => c.call).join('>')}`,
+          notes: `obs=${gradesOnVerdict ? sc.observe : 'evidence(act+snapshot+network)'}; signal=${sc.signal}; ${detail}; ${'verdict' === sc.observe && gradesOnVerdict ? `verified=${verifiedField(regr.obsText)}; ` : ''}calls=${regr.cycle.map((c) => c.call).join('>')}`,
           _obsTokens: regr.cycle.at(-1)?.tokens_o200k ?? null,
         };
       });

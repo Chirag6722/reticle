@@ -77,6 +77,17 @@ export class PlaywrightAdapter {
       }),
     );
   }
+  /** Type a value into a field the negative cases must really submit. */
+  async fillTestid(id, value) {
+    return rec(
+      'browser_type',
+      await this.c.callTool('browser_type', {
+        element: id,
+        target: `[data-testid="${id}"]`,
+        text: value,
+      }),
+    );
+  }
   async console() {
     return rec(
       'browser_console_messages',
@@ -156,6 +167,22 @@ export class DevtoolsAdapter {
         text: '',
       };
     return rec('click', await this.c.callTool('click', { uid }));
+  }
+  /** DevTools has no testid selector, so a fill resolves by accessible name like every click here. */
+  async fillByName(nameRe, value, label) {
+    const snap = await this._snapText();
+    const uid = uidByName(snap, nameRe);
+    if (!uid)
+      return {
+        call: 'fill',
+        error: `no uid for ${label}`,
+        latency_ms: 0,
+        chars: 0,
+        bytes: 0,
+        tokens_o200k: 0,
+        text: '',
+      };
+    return rec('fill', await this.c.callTool('fill', { uid, value }));
   }
   async console() {
     return rec(
@@ -664,6 +691,29 @@ for (const Cls of [PlaywrightAdapter, ReticleAdapter]) {
   Cls.prototype.gotoView = function (v) {
     return this.clickTestid(NAV[v].testid, v);
   };
+  Cls.prototype.fill = function (spec) {
+    return this.fillTestid(spec.testid, spec.value);
+  };
+}
+// The two ref-CLI tools fill the way they click: resolve by accessible name, then act on the ref.
+for (const [Cls, prefix] of [
+  [AgentBrowserAdapter, '@'],
+  [PlaywrightCliAdapter, ''],
+]) {
+  Cls.prototype.fillByName = async function (nameRe, value, label) {
+    const ref = refByName(await this._snapText(), nameRe, prefix);
+    if (!ref)
+      return {
+        call: 'fill',
+        error: `no ref for ${label}`,
+        latency_ms: 0,
+        chars: 0,
+        bytes: 0,
+        tokens_o200k: 0,
+        text: '',
+      };
+    return rec('fill', await this._run(['fill', ref, value]));
+  };
 }
 // DevTools, agent-browser, and playwright-cli all resolve by accessible name from a discovery snapshot.
 for (const Cls of [DevtoolsAdapter, AgentBrowserAdapter, PlaywrightCliAdapter]) {
@@ -673,6 +723,48 @@ for (const Cls of [DevtoolsAdapter, AgentBrowserAdapter, PlaywrightCliAdapter]) 
   Cls.prototype.gotoView = function (v) {
     return this.clickByName(NAV[v].nameRe, v);
   };
+  Cls.prototype.fill = function (spec) {
+    return this.fillByName(spec.nameRe, spec.value, spec.testid);
+  };
+}
+
+/** One record out of several calls, so a multi-call observation costs what it actually costs. */
+function mergeRecs(parts) {
+  return {
+    call: parts.map((p) => p.call).join('+'),
+    latency_ms: parts.reduce((n, p) => n + (p.latency_ms ?? 0), 0),
+    chars: parts.reduce((n, p) => n + (p.chars ?? 0), 0),
+    bytes: parts.reduce((n, p) => n + (p.bytes ?? 0), 0),
+    tokens_o200k: parts.reduce((n, p) => n + (p.tokens_o200k ?? 0), 0),
+    text: parts.map((p) => p.text ?? '').join('\n'),
+  };
+}
+
+/**
+ * `prove` for a tool that publishes no verdict: act, then collect the evidence an agent would read.
+ *
+ * Reticle answers "did my action work?" in one call, because it has a verdict surface. These tools
+ * have none, so the honest equivalent is the recipe an agent actually runs with them — drive the
+ * action, then look at the page and at the network — and the evidence bundle it returns IS their
+ * answer. What that bundle has to contain for a negative case to count as a false positive is the
+ * grading rule at the top of run-observation.mjs. Every call in it is measured, so a tool that needs
+ * two looks pays for two looks.
+ *
+ * A passive spec performs nothing, exactly as `reticle_assert` with no action does: the evidence is
+ * whatever the page and the network show at that moment.
+ */
+async function proveByObservation(spec) {
+  const parts = [];
+  if (true !== spec.passive) {
+    parts.push(await this.tap({ testid: spec.testid, nameRe: spec.nameRe, label: spec.testid }));
+    await sleep(spec.settleMs ?? 800);
+  }
+  parts.push(await this.snapshot());
+  parts.push(await this.network());
+  return mergeRecs(parts);
+}
+for (const Cls of [PlaywrightAdapter, DevtoolsAdapter, AgentBrowserAdapter, PlaywrightCliAdapter]) {
+  Cls.prototype.prove = proveByObservation;
 }
 for (const Cls of [
   PlaywrightAdapter,
