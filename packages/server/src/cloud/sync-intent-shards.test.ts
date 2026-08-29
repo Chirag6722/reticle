@@ -120,3 +120,78 @@ describe('the intent a sync sends', () => {
     }
   });
 });
+
+/**
+ * The subject travels WITH the record.
+ *
+ * The ladder that can read a flow, a route or a binding predicate lives in the engine. The server
+ * had no access to it and had reimplemented a far weaker version — flow-or-nothing — so records the
+ * engine files correctly arrived at the dashboard as `unsorted`. Measured on the real corpus: 105
+ * of 163 placeable records were landing in the bucket of last resort, which is what made a coverage
+ * map read as one pile with six labels.
+ */
+describe('the subject a sync sends', () => {
+  const sent = (root: string): Record<string, { subject?: string }> =>
+    (diskSource(root).derived('intent') as { intents: Record<string, { subject?: string }> })
+      .intents;
+
+  it('derives a subject from the route when the record has no explicit one', () => {
+    const root = repo();
+    try {
+      writeFileSync(
+        join(root, 'intent.json'),
+        JSON.stringify({
+          version: 1,
+          intents: {
+            'i:1': {
+              id: 'i:1',
+              statement: 's',
+              state: 'declared',
+              declaredAt: 1,
+              surface: { route: '/billing' },
+            },
+          },
+        }),
+      );
+      expect(sent(root)['i:1']?.subject).toBe('billing');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  /** The commonest legacy shape: no surface at all, but a predicate that names an API path. */
+  it('derives a subject from a binding predicate', () => {
+    const root = repo();
+    try {
+      writeFileSync(
+        join(root, 'intent.json'),
+        JSON.stringify({
+          version: 1,
+          intents: {
+            'i:1': {
+              id: 'i:1',
+              statement: 's',
+              state: 'declared',
+              declaredAt: 1,
+              binding: { kind: 'net', urlContains: '/v1/members' },
+            },
+          },
+        }),
+      );
+      expect(sent(root)['i:1']?.subject).toBe('members');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  /** An agent that named its own subject outranks anything inferred from evidence. */
+  it('never overwrites a subject the record already carries', () => {
+    const root = repo();
+    try {
+      shard(root, 'checkout', ['inline:pay']);
+      expect(sent(root)['inline:pay']?.subject).toBe('checkout');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});

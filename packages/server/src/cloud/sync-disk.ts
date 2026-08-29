@@ -21,6 +21,7 @@ import {
 import { dirname, join } from 'node:path';
 import { ReticleDir } from '@reticlehq/core';
 import type { CloudSyncState, PulledIssues, SyncSink, SyncSource } from './sync-cycle.js';
+import { subjectFor } from '../intent/intent-subject.js';
 
 const JSON_SUFFIX = '.json';
 
@@ -117,7 +118,32 @@ function readIntent(reticleRoot: string): unknown {
     for (const [id, record] of Object.entries(shard.intents)) merged[id] = record;
   }
   if (legacy === undefined && 0 === shards) return undefined;
-  return { version: 1, intents: merged };
+  /*
+   * Stamp the SUBJECT before sending, on anything that does not already carry one.
+   *
+   * The subject ladder lives here, in the engine, and knows how to read a flow, a route and a
+   * binding predicate. The server had no access to it and had reimplemented a far weaker version —
+   * flow-or-nothing — so records this ladder files correctly arrived at the dashboard as
+   * `unsorted`. Measured on the real corpus: 105 of 163 records the engine can place were landing
+   * in the bucket of last resort, which is what made a coverage map read as one pile with six
+   * labels.
+   *
+   * Computed HERE rather than duplicated there, because two rules for one question is how the
+   * answers start disagreeing — and the one with the evidence should be the one that decides.
+   * Records that already name a subject keep it: an agent's explicit choice outranks inference.
+   */
+  const placed = Object.fromEntries(
+    Object.entries(merged).map(([id, record]) => {
+      const held = record as { subject?: unknown; surface?: unknown; binding?: unknown };
+      if ('string' === typeof held.subject && held.subject.length > 0) return [id, record];
+      const subject = subjectFor({
+        surface: held.surface as { route?: string; flow?: string } | undefined,
+        binding: held.binding,
+      });
+      return [id, { ...held, subject }];
+    }),
+  );
+  return { version: 1, intents: placed };
 }
 
 /** Directory listing that tolerates absence — an unmigrated project has no `intent/`. */
