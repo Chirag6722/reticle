@@ -17,12 +17,15 @@
  *
  * Flags:
  *   --app <dir>        monorepo: the app to wire (init refuses to guess between several)
+ *   --flow "<what>"    the flow to drive, in the caller's own words
+ *   --init-arg <arg>   forward a raw flag to `reticle init` (repeatable)
  *   --url <url>        the app is already served here; do not start a dev server
  *   --dev-cmd <cmd>    exact dev command, when it is not `<pm> run dev`
  *   --port <n>         bridge port (default 4400). NOT the dev server's port.
  *   --license <key>    write RETICLE_LICENSE_KEY into .env, and .env into .gitignore
  *   --no-restart-dev   do not restart a dev server that predates init
  *   --no-open          do not open a browser tab; something else will connect (CI, an existing tab)
+ *   --no-agents        do not register the MCP with other coding agents on this machine
  *   --no-drive         stop after a session connects; leave the verdict to the caller
  *   --json             machine-readable result on stdout, human progress on stderr
  *   --relaunch         restart the calling client so IT gets the MCP tools too
@@ -63,6 +66,7 @@ import { join, resolve } from 'node:path';
 import { homedir, platform } from 'node:os';
 
 import { pickSession } from './pick-session.mjs';
+import { planAgents, applyAgents, applySkills } from './agents.mjs';
 import {
   parseLsofListeners,
   parseNetstatListeners,
@@ -112,6 +116,17 @@ const opts = {
   license: flag('--license'),
   restartDev: !has('--no-restart-dev'),
   open: !has('--no-open'),
+  agents: !has('--no-agents'),
+  // What the CALLING agent knows and init cannot work out: which flow actually matters to the user.
+  // Without it the drive picks something plausible and demonstrates the wrong thing at the one
+  // moment the user is watching.
+  flow: flag('--flow'),
+  // Repeatable escape hatch: `--init-arg --yes --init-arg --no-install`. init grows flags faster
+  // than this script can learn them, and a caller that knows one should not have to wait for us.
+  initArgs: argv.reduce(
+    (acc, a, i) => (a === '--init-arg' && argv[i + 1] !== undefined ? [...acc, argv[i + 1]] : acc),
+    [],
+  ),
   drive: !has('--no-drive'),
   json: has('--json'),
   relaunch: has('--relaunch'),
@@ -429,10 +444,15 @@ const serveCmd =
   result.cli === undefined ? [CLI[0], [...CLI[1], 'serve']] : [result.cli, ['serve']];
 spawn(serveCmd[0], serveCmd[1], { cwd, shell: WIN, detached: !WIN, stdio: 'ignore' }).unref?.();
 
-let init = cli(['init', ...(opts.app === undefined ? [] : ['--app', opts.app])], {
-  cwd,
-  env: initEnv,
-});
+// `--port` is the BRIDGE port, and init writes it into .reticle.json. Not forwarding it meant a
+// non-default port polled a bridge the project had never been told about: the SDK dialled 4400
+// while this script watched 4500, and the failure read as "the SDK is not loading in the page".
+const initFlags = [
+  ...(opts.app === undefined ? [] : ['--app', opts.app]),
+  ...(opts.port === BRIDGE_DEFAULT_PORT ? [] : ['--port', String(opts.port)]),
+  ...opts.initArgs,
+];
+let init = cli(['init', ...initFlags], { cwd, env: initEnv });
 let initOut = `${init.stdout ?? ''}${init.stderr ?? ''}`;
 
 if (!existsSync(join(cwd, '.reticle.json'))) {
@@ -542,6 +562,40 @@ for (const f of ['CLAUDE.md', 'AGENTS.md']) {
   }
 }
 
+/**
+ * Register with the coding agents `init` does not reach.
+ *
+ * `init` covers eight clients and only where it finds them installed. That leaves a real hole: VS
+ * Code's USER-scope mcp.json exists on machines today and init only ever writes the project-scope
+ * one, so a VS Code user gets no tools outside the repo they ran init in. Zed, Warp, Kiro, Amp,
+ * Copilot CLI, Amazon Q, Factory Droid, Cline and Roo are not covered at all.
+ *
+ * The rules live in agents.mjs and are tested against a pretend filesystem for all three platforms.
+ * The one worth repeating here: a documented path is written even for an absent agent, so a later
+ * install is already wired — but a path we cannot evidence is refused, because a config file at a
+ * guessed location is one nobody reads, which looks exactly like success.
+ */
+if (opts.agents) {
+  const io = {
+    exists: (f) => existsSync(f),
+    readFile: (f) => readFileSync(f, 'utf8'),
+    writeFile: (f, c) => writeFileSync(f, c),
+    mkdir: (d) => mkdirSync(d, { recursive: true }),
+  };
+  const rows = applyAgents(planAgents({ exists: io.exists, readFile: io.readFile }), io);
+  const wrote = rows.filter((r) => r.action === 'created' || r.action === 'merged');
+  const manual = rows.filter((r) => r.action === 'manual');
+  result.agents = rows.map((r) => ({ id: r.id, action: r.action, file: r.file }));
+  if (wrote.length > 0)
+    say(
+      `registered the MCP server with ${wrote.length} more agent(s): ${wrote.map((r) => r.name).join(', ')}`,
+    );
+  for (const r of manual) todo(`${r.name}: ${r.why} — add the reticle entry to ${r.file} by hand.`);
+  const skills = applySkills(io);
+  result.skills = skills;
+  if (skills.length > 0) say(`wrote the /reticle skill for ${skills.length} agent(s)`);
+}
+
 // Now the app is known — from --app, or it was the root all along.
 appDir = opts.app === undefined ? cwd : resolve(cwd, opts.app);
 let devCmd = resolveDev(appDir);
@@ -561,7 +615,7 @@ if (devCmd === null && opts.url === undefined && opts.app === undefined) {
     opts.app = pick;
     appDir = resolve(cwd, pick);
     devCmd = resolveDev(appDir);
-    const reinit = cli(['init', '--app', pick], { cwd, env: initEnv });
+    const reinit = cli(['init', '--app', pick, ...opts.initArgs], { cwd, env: initEnv });
     initOut += `\n--- re-run with --app ${pick} ---\n${reinit.stdout ?? ''}${reinit.stderr ?? ''}`;
     for (const line of `${reinit.stdout ?? ''}${reinit.stderr ?? ''}`.split('\n')) {
       if (/^\s*[⚠ℹ]/.test(line)) todo(`init --app ${pick}: ${line.trim()}`);
@@ -1094,8 +1148,8 @@ if (opts.drive && savedFlows.length > 0) {
   // model answered "I don't see an actual task or request from you yet" and drove nothing — one
   // turn, no verdict, and setup called it a success. Context after the ask, never before it.
   const prompt =
-    'TASK: drive one user flow in this running app and produce a verdict. Do it now; do not ask ' +
-    'questions, there is nobody to answer.\n\n' +
+    `TASK: drive ${opts.flow === undefined ? 'one user flow' : `THIS flow — ${opts.flow}`} in this ` +
+    'running app and produce a verdict. Do it now; do not ask questions, there is nobody to answer.\n\n' +
     `The app is at ${url} and Reticle session ${session.sessionId} is connected to it.${caps}${capsTask}${throttleWarning}\n\n` +
     'Drive the single most important user flow, in as few calls as you can: ONE ' +
     "reticle_snapshot({mode:'interactive'}) for the whole flow, reticle_act_sequence for every fill " +
