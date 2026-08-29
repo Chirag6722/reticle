@@ -379,7 +379,9 @@ async function runTestidStep(
     act = await session.command(ReticleCommand.ACT, {
       ref,
       action: step.action ?? '',
-      args: replayActionArgs(step.args, confirmDangerous),
+      // `value` is the anchor's own name — the field this step types into — so a redacted fill can
+      // be supplied from RETICLE_SECRET_<FIELD> without the flow carrying the secret.
+      args: replayActionArgs(step.args, confirmDangerous, value),
     });
   } finally {
     session.finishAction?.();
