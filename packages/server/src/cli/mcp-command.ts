@@ -25,16 +25,8 @@ import {
 } from '../mcp/mcp-proxy.js';
 import { installProxyResilience } from '../daemon/daemon-resilience.js';
 import { readProjectId } from './cli-port.js';
-import {
-  DAEMON_INNER_COMMAND,
-  PORT_FLAG,
-  DRIVE_FLAG,
-  HEADED_FLAG,
-  HTTP_FLAG,
-  HTTP_PORT_FLAG,
-  HTTP_TOKEN_FLAG,
-} from './cli-parse.js';
 import { resolveMcpPort, daemonProjectAt } from '../daemon/daemon-resolve.js';
+import { daemonSpawnArgs } from './daemon-start-options.js';
 import { WakeAction, decideWake } from '../daemon/wake-decision.js';
 import { pickDaemonPortToBind } from '../daemon/free-port.js';
 import { fetchStatus } from './cli-launch.js';
@@ -127,17 +119,14 @@ export async function handleMcp(opts: {
       log('reticle_mcp_no_script', {});
       process.exit(1);
     }
-    const daemonArgs = [DAEMON_INNER_COMMAND, PORT_FLAG, String(port)];
-    if (driveUrl !== undefined) {
-      daemonArgs.push(DRIVE_FLAG, driveUrl);
-      if (!headless) daemonArgs.push(HEADED_FLAG);
-    }
-    // Forward the HTTP-verify flags too (previously silently dropped for `reticle mcp`).
-    if (http) {
-      daemonArgs.push(HTTP_FLAG);
-      if (httpPort !== undefined) daemonArgs.push(HTTP_PORT_FLAG, String(httpPort));
-      if (httpToken !== undefined) daemonArgs.push(HTTP_TOKEN_FLAG, httpToken);
-    }
+    const daemonArgs = daemonSpawnArgs({
+      port,
+      headless,
+      http,
+      ...(driveUrl !== undefined ? { driveUrl } : {}),
+      ...(httpPort !== undefined ? { httpPort } : {}),
+      ...(httpToken !== undefined ? { httpToken } : {}),
+    });
     spawnDaemon(process.execPath, scriptPath, daemonArgs, port);
     // Announce the daemon only once the PORT ACCEPTS. This line used to be written the instant the
     // child was spawned, which on a Windows first bootstrap meant `reticle_mcp_daemon_started`

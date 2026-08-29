@@ -10,6 +10,7 @@ import { hasConnectedBefore, hasProjectConnectedBefore } from './session/connect
 import { attachStatusFields } from './mcp/attach-memory.js';
 import { reticleStateHome } from './daemon/daemon.js';
 import { handleMcp } from './cli/mcp-command.js';
+import { daemonSpawnArgs, daemonStartOptions } from './cli/daemon-start-options.js';
 import {
   daemonsServingProjectElsewhere,
   resolveDaemonForProject,
@@ -91,17 +92,7 @@ import {
 } from './cli/cli-port.js';
 import type { StartOptions } from './index.js';
 
-import {
-  DAEMON_INNER_COMMAND,
-  PORT_FLAG,
-  DRIVE_FLAG,
-  HEADED_FLAG,
-  HTTP_FLAG,
-  HTTP_PORT_FLAG,
-  HTTP_TOKEN_FLAG,
-  parseCliArgs,
-  CLI_USAGE,
-} from './cli/cli-parse.js';
+import { DAEMON_INNER_COMMAND, PORT_FLAG, parseCliArgs, CLI_USAGE } from './cli/cli-parse.js';
 import { handleFeedback, handleIdentify, handleTelemetry } from './telemetry/feedback-cli.js';
 import { installDaemonTelemetry } from './telemetry/daemon-telemetry.js';
 import { reportCliRun } from './telemetry/cli-telemetry.js';
@@ -192,16 +183,7 @@ async function serveWithHonestExit(parsed: {
     process.exit(1);
     return;
   }
-  const daemonArgs = [DAEMON_INNER_COMMAND, PORT_FLAG, String(parsed.port)];
-  if (parsed.driveUrl !== undefined) {
-    daemonArgs.push(DRIVE_FLAG, parsed.driveUrl);
-    if (!parsed.headless) daemonArgs.push(HEADED_FLAG);
-  }
-  if (parsed.http) {
-    daemonArgs.push(HTTP_FLAG);
-    if (parsed.httpPort !== undefined) daemonArgs.push(HTTP_PORT_FLAG, String(parsed.httpPort));
-    if (parsed.httpToken !== undefined) daemonArgs.push(HTTP_TOKEN_FLAG, parsed.httpToken);
-  }
+  const daemonArgs = daemonSpawnArgs(parsed);
   spawnDaemon(process.execPath, scriptPath, daemonArgs, parsed.port);
   // The child binds asynchronously and, when it cannot, exits 1 long after this process would have
   // reported success. Wait for it to ANSWER — `/status` responding is the only evidence a daemon
@@ -677,19 +659,7 @@ function handleDaemonInner(parsed: {
   httpPort?: number;
   httpToken?: string;
 }): void {
-  const options: StartOptions = {
-    port: parsed.port,
-    ...(parsed.driveUrl !== undefined
-      ? { driveUrl: parsed.driveUrl, headless: parsed.headless }
-      : {}),
-    ...(parsed.http
-      ? {
-          httpVerify: true,
-          ...(parsed.httpPort !== undefined ? { httpVerifyPort: parsed.httpPort } : {}),
-          ...(parsed.httpToken !== undefined ? { httpVerifyToken: parsed.httpToken } : {}),
-        }
-      : {}),
-  };
+  const options: StartOptions = daemonStartOptions(parsed);
 
   startDaemon(options)
     .then((server) => {
