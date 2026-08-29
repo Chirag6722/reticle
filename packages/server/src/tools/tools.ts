@@ -26,6 +26,7 @@ import { FLOW_TOOLS } from '../flows/flow-tools.js';
 import { INTENT_TOOLS } from '../intent/intent-tools.js';
 import { CONTEXT_TOOLS } from '../runs/context-tools.js';
 import { PROJECT_TOOLS } from '../project/project-tools.js';
+import { MEMORY_TOOLS } from '../memory/memory-tools.js';
 import { RUN_TOOLS } from '../runs/run-tools.js';
 import { VISUAL_TOOLS } from '../visual/visual-tools.js';
 import { AFFECTED_TOOLS } from '../flows/affected-tools.js';
@@ -555,6 +556,7 @@ export const RAW_TOOLS: ToolDef[] = [
   ...FLOW_TOOLS,
   // reticle_project (read history + diff-vs-last) / reticle_run_record. See project-tools.ts.
   ...PROJECT_TOOLS,
+  ...MEMORY_TOOLS,
   // reticle_run_export — export the verification-run verdict artifact (.reticle/runs/). See run-tools.ts.
   ...RUN_TOOLS,
   // reticle_screenshot / reticle_visual_diff — opt-in, CDP-driven. See visual-tools.ts.

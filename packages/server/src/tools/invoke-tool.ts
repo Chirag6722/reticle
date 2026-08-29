@@ -125,6 +125,10 @@ export const SESSION_EXEMPT_TOOLS: ReadonlySet<string> = new Set([
   ReticleTool.INTENT, // reads/writes .reticle/intent.json; sessionId only picks the project
   ReticleTool.CONTEXT, // folds the journal + intent ledger; must still answer when nothing is connected
   ReticleTool.PROJECT, // reads .reticle/project.json
+  // Reads the team's shared memory over HTTP; sessionId only resolves WHICH project's link file to
+  // use. It must answer with no tab connected — "what does this project know?" is a question an
+  // agent asks before it has opened anything.
+  ReticleTool.MEMORY,
   ReticleTool.RUN_EXPORT, // reads .reticle/runs/<id>.json (verification-run artifact)
   ReticleTool.SESSION, // merged lifecycle/human-channel family (tune/yield/end/resume/messages/review/narrate)
   ReticleTool.SCREENSHOT, // own contract; provider-driven, not a live-DOM-health read
