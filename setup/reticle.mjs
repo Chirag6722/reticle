@@ -31,6 +31,7 @@
  *   --relaunch         restart the calling client so IT gets the MCP tools too
  *   --timeout <s>      per-phase budget (default 120)
  *   --drive-budget <n> dollars the drive may spend before it is stopped (default 3)
+ *   --no-escalate      accept a weak saved flow instead of re-recording it with a stronger model
  *   --drive-model <m>  model for the drive. It is 90% of the wall clock, so this is the only
  *                      lever that materially changes how long setup takes — and the one that can
  *                      buy speed with a worse verdict, so it is measured, not assumed.
@@ -133,6 +134,7 @@ const opts = {
   timeoutMs: Number(flag('--timeout', DEFAULT_PHASE_TIMEOUT_S)) * 1000,
   driveBudget: Number(flag('--drive-budget', DRIVE_BUDGET_USD)),
   driveModel: flag('--drive-model'),
+  escalate: !has('--no-escalate'),
 };
 
 // ---------------------------------------------------------------------------- reporting
@@ -1059,6 +1061,14 @@ const DRIVERS = [
   },
 ];
 
+/** The grade `reticle_flow_save` reported, read out of the child's own prose. */
+function readGrade(text) {
+  return (
+    /assertions?\.?grade\W+`?([a-z-]+)/i.exec(text ?? '')?.[1] ??
+    /grade\W+`?([a-z-]+)/i.exec(text ?? '')?.[1]
+  );
+}
+
 /** On PATH AND actually runnable. The second half is the one that has bitten. */
 function usableDriver() {
   for (const d of DRIVERS) {
@@ -1218,9 +1228,53 @@ if (opts.drive && savedFlows.length > 0) {
    * `verified: "yes"` with an `assertion-free` saved flow in two runs out of three. The verdict was
    * real; the artifact it left behind was not.
    */
-  const grade =
-    /assertions?\.?grade\W+`?([a-z-]+)/i.exec(result.verdict ?? '')?.[1] ??
-    /grade\W+`?([a-z-]+)/i.exec(result.verdict ?? '')?.[1];
+  let grade = readGrade(result.verdict);
+
+  /**
+   * A weak artifact is escalated, not accepted.
+   *
+   * Measured: a faster drive model reaches the same `verified: "yes"` three times faster and leaves
+   * an `assertion-free` or `presence-only` flow — one that only ACTS, so it passes even when the
+   * feature is broken. Since setup replays saved flows on every later run, that is a permanent
+   * green. Presenting this as a trade the user must choose between is worse than resolving it: run
+   * the fast model, and when the artifact comes back weak, re-record ONCE with the stronger one.
+   * The common case keeps the speed; the bad case costs a second drive and yields a real flow.
+   */
+  if (
+    opts.escalate &&
+    opts.driveModel !== undefined &&
+    result.flowSaved &&
+    grade !== undefined &&
+    grade !== 'asserted'
+  ) {
+    say(
+      `the saved flow graded \`${grade}\`, not \`asserted\` — re-recording once with the default model so the flow is worth replaying`,
+    );
+    const strong = run(
+      driver.bin,
+      driver
+        .argv(tools, prompt)
+        .filter((a2, i, arr) => a2 !== '--model' && arr[i - 1] !== '--model'),
+      {
+        cwd,
+        timeout: DRIVE_TIMEOUT_MS,
+        input: prompt,
+      },
+    );
+    const reparsed = driver.parse(`${strong.stdout ?? ''}`);
+    const regrade = readGrade(reparsed.text);
+    result.escalated = { from: grade, to: regrade ?? 'unknown' };
+    if (regrade === 'asserted') {
+      result.verdict = (reparsed.text ?? '').trim().slice(-2000);
+      grade = regrade;
+      say('re-record produced an `asserted` flow');
+    } else {
+      say(
+        `re-record still graded \`${regrade ?? 'unknown'}\` — reporting the weakness rather than hiding it`,
+      );
+    }
+  }
+
   result.assertionsGrade = grade;
   if (result.flowSaved && grade !== undefined && grade !== 'asserted') {
     todo(

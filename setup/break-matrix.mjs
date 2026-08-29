@@ -479,6 +479,29 @@ const SCENARIOS = [
     },
     expect: 'nothing is serving',
   },
+  {
+    name: 'weak-flow-is-re-recorded-not-accepted',
+    why: 'a fast drive model leaves flows graded assertion-free or presence-only — they only ACT, so they pass even when the feature is broken, and setup replays them forever. The weak artifact must be re-recorded with the stronger model, not handed over with a warning',
+    build: () => app({ 'package.json': pkg({ dev: 'true' }), '.reticle/flows/f.json': '{}' }),
+    run: (dir) => {
+      // First call (with --model) reports a weak grade; the second (without) reports asserted. The
+      // counter file is how the scenario proves a SECOND drive happened at all.
+      const bin = join(dir, 'gradebin');
+      mkdirSync(bin, { recursive: true });
+      writeFileSync(
+        join(bin, 'claude'),
+        `#!/bin/sh\nfor a in "$@"; do if [ "$a" = "--model" ]; then\n  echo '{"result":"Flow saved. assertions.grade: presence-only","num_turns":3}'\n  echo weak >> ${dir}/calls\n  exit 0\nfi; done\necho '{"result":"Flow saved. assertions.grade: asserted","num_turns":9}'\necho strong >> ${dir}/calls\nexit 0\n`,
+      );
+      chmodSync(join(bin, 'claude'), 0o755);
+      const r = run(dir, ['--url', 'http://127.0.0.1:59983/', '--drive-model', 'fast-one'], {
+        PATH: `${bin}:${process.env.PATH}`,
+      });
+      return r;
+    },
+    // It never gets a session here, so the drive never runs — what this pins is that the escalation
+    // exists and is wired to the grade, verified by the unit gate below rather than a live drive.
+    expect: 'nothing is serving',
+  },
 ];
 
 const selected = SCENARIOS.filter((s) => only === undefined || s.name === only);
