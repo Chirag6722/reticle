@@ -465,6 +465,20 @@ const SCENARIOS = [
     run: (dir) => run(dir, ['--url', 'http://127.0.0.1:59985/']),
     expect: 'nothing is serving',
   },
+  {
+    name: 'drive-does-nothing-must-not-exit-zero',
+    why: 'the drive can return having done nothing at all — measured, a model answered "I don\'t see an actual task or request from you yet" in one turn. Setup exited 0 with no verdict, and anything scripting the exit code would have shipped on that false green',
+    build: () => app({ 'package.json': pkg({ dev: 'true' }) }),
+    // A `claude` that succeeds and produces nothing: exactly the shape of the real failure.
+    run: (dir) => {
+      const bin = join(dir, 'idlebin');
+      mkdirSync(bin, { recursive: true });
+      writeFileSync(join(bin, 'claude'), '#!/bin/sh\nexit 0\n');
+      chmodSync(join(bin, 'claude'), 0o755);
+      return run(dir, ['--url', 'http://127.0.0.1:59984/'], { PATH: `${bin}:${process.env.PATH}` });
+    },
+    expect: 'nothing is serving',
+  },
 ];
 
 const selected = SCENARIOS.filter((s) => only === undefined || s.name === only);

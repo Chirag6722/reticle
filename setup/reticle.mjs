@@ -1090,13 +1090,23 @@ if (opts.drive && savedFlows.length > 0) {
   const throttleWarning = result.session.visible
     ? ''
     : '\n\nNOTE: this tab is hidden or throttled, so timers and rAF are clamped. If an action seems to land on a page that never advances, that is why — say so rather than reporting `unknown` as if the app were at fault.';
+  // The TASK LEADS. Measured: with the situation first and a capabilities dump in the middle, a
+  // model answered "I don't see an actual task or request from you yet" and drove nothing — one
+  // turn, no verdict, and setup called it a success. Context after the ask, never before it.
   const prompt =
-    `Reticle is installed in the app at ${url} and session ${session.sessionId} is connected.${caps}${capsTask}${throttleWarning}\n\n` +
+    'TASK: drive one user flow in this running app and produce a verdict. Do it now; do not ask ' +
+    'questions, there is nobody to answer.\n\n' +
+    `The app is at ${url} and Reticle session ${session.sessionId} is connected to it.${caps}${capsTask}${throttleWarning}\n\n` +
     'Drive the single most important user flow, in as few calls as you can: ONE ' +
     "reticle_snapshot({mode:'interactive'}) for the whole flow, reticle_act_sequence for every fill " +
     'and intermediate click in one call, then ONE reticle_act_and_wait({ref,action,until}) — that is ' +
     'the call that produces the verdict, and `until` names the expected consequence BEFORE the action ' +
     'fires. Then reticle_state() once. Wrap it in reticle_record start/stop and reticle_flow_save.\n\n' +
+    'Then CHECK the grade `reticle_flow_save` returns. If it is not `asserted`, the flow only ACTS: ' +
+    'it will pass even when the feature is broken, and this setup replays that flow on every later ' +
+    'run — so an unasserted flow becomes a permanent green that proves nothing. If the grade is not ' +
+    '`asserted`, record it again with an `until` that names a consequence the action CHANGES (the ' +
+    'text that appears, the request that fires, the route that moves), and keep going until it is.\n\n' +
     'Report: the flow name, the verdict, and assertions.grade. A verdict of "unknown" or "no-fault" ' +
     'is NOT a pass — say so plainly rather than weakening the check until it passes.';
   // Comma-separated, and the prompt goes on STDIN. `--allowedTools` is variadic: with the prompt
@@ -1141,6 +1151,28 @@ if (opts.drive && savedFlows.length > 0) {
   say(result.verdict);
   const flows = join(cwd, '.reticle', 'flows');
   result.flowSaved = existsSync(flows) && readdirSync(flows).length > 0;
+
+  /**
+   * A saved flow is only worth replaying if it ASSERTS something.
+   *
+   * `reticle_flow_save` grades what it recorded, and anything other than `asserted` means the flow
+   * merely acts: it will pass even when the feature is broken. That matters more here than in a
+   * hand-driven session, because this script makes replay the fast path for every later run — so an
+   * assertion-free flow turns each of those into a green that proves nothing, cheaply and forever.
+   *
+   * Measured, and this is why it is checked rather than trusted: a faster drive model produced
+   * `verified: "yes"` with an `assertion-free` saved flow in two runs out of three. The verdict was
+   * real; the artifact it left behind was not.
+   */
+  const grade =
+    /assertions?\.?grade\W+`?([a-z-]+)/i.exec(result.verdict ?? '')?.[1] ??
+    /grade\W+`?([a-z-]+)/i.exec(result.verdict ?? '')?.[1];
+  result.assertionsGrade = grade;
+  if (result.flowSaved && grade !== undefined && grade !== 'asserted') {
+    todo(
+      `the saved flow graded \`${grade}\`, not \`asserted\` — it only ACTS, so it will pass even when the feature is broken. Re-running setup will replay it and report a green that proves nothing. Re-record it with an \`until\` that names a consequence the action CHANGES.`,
+    );
+  }
   if (!result.flowSaved)
     todo(
       'the drive saved no flow — step 5 is unfinished, and setup is not complete without a verdict.',
@@ -1222,8 +1254,25 @@ if (opts.relaunch && process.env.CLAUDE_CODE_SESSION_ID && process.env.CLAUDE_PI
 // The dev server stays UP. It is the whole deliverable: an instrumented app the user can watch
 // Reticle drive. Killing it here would leave them with config files and a dead tab — which is the
 // exact failure this script exists to remove. Unref so this process can still exit.
+/**
+ * A setup that never produced a verdict did not succeed, and must not exit 0.
+ *
+ * SKILL.md is explicit — do not report Reticle as set up until a verdict exists — and the exit code
+ * is the one place a caller reads that without parsing anything. Measured: a drive returned in one
+ * turn having done nothing at all ("I don't see an actual task or request from you yet"), and setup
+ * exited 0 with flowSaved:false. Anything scripting this would have shipped on that.
+ *
+ * `--no-drive` is the deliberate opt-out and stays a success: the caller took ownership of step 5.
+ */
+const verdictMissing = opts.drive && result.flowSaved !== true;
+if (verdictMissing) {
+  todo(
+    'setup did NOT produce a verdict, so it is not complete. The app is installed and connected — drive one flow yourself, or re-run. Exiting non-zero because an exit code of 0 here would be a false green.',
+  );
+}
+
 devServer = undefined;
 dev?.unref();
 dev?.stdout?.destroy();
 dev?.stderr?.destroy();
-finish(0);
+finish(verdictMissing ? 1 : 0);
