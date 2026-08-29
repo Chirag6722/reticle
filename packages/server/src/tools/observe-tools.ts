@@ -516,11 +516,23 @@ export const OBSERVE_TOOLS: ToolDef[] = [
       // The id is checked HERE rather than only inside the helper so a caller that declared no intent
       // touches nothing at all, not even the clock.
       if (intentId !== undefined && Verified.YES === decision['verified']) {
-        await dischargeInlineIntent(deps, asString(args['sessionId']), intentId, {
-          verdictId: inlineVerdictId(ReticleTool.ASSERT, deps.now()),
-          grade: gradeOfPredicate(predicate),
-          at: deps.now(),
-        });
+        await dischargeInlineIntent(
+          deps,
+          asString(args['sessionId']),
+          intentId,
+          {
+            verdictId: inlineVerdictId(ReticleTool.ASSERT, deps.now()),
+            grade: gradeOfPredicate(predicate),
+            at: deps.now(),
+          },
+          /*
+           * An assertion has no element of its own — it observes, it does not act. The file it names
+           * is the one the LAST action touched, which is the code path that produced the state being
+           * asserted about. Already remembered on the session for exactly this reason: an assertion
+           * whose failure has nothing to point at still needs to name a file.
+           */
+          session.lastAct.source(),
+        );
       }
       // Journal the verdict so a LATER turn can read what this one proved. A verdict that lives only
       // in the response lives only in the agent's context window, which is the copy a compaction

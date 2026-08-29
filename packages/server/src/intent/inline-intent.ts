@@ -90,10 +90,21 @@ export function inlineVerdictId(tool: string, at: number): string {
  * says nothing reads as a capture that looked for a location and found none, rather than one that
  * never had one — and the second is the truth.
  */
+/**
+ * Strip a trailing `:line` from a `file:line` label.
+ *
+ * Anchored to the END and to digits, because a Windows path carries its own colon: splitting on the
+ * first one turns `C:\\app\\src\\cart.tsx:12` into `C`, which is a path to nothing and would be
+ * filed as though it were real.
+ */
+const SOURCE_LINE_SUFFIX = /:\d+$/;
+
 export function surfaceForInlineIntent(
   url: string | undefined,
   flow: string | undefined,
-): { route?: string; flow?: string } | undefined {
+  /** `file` or `file:line` for the element the verdict acted on, when it had one. */
+  sourceLabel?: string,
+): { route?: string; flow?: string; files?: string[] } | undefined {
   let route: string | undefined;
   if (url !== undefined) {
     try {
@@ -105,10 +116,21 @@ export function surfaceForInlineIntent(
       route = undefined;
     }
   }
-  if (route === undefined && flow === undefined) return undefined;
+  /*
+   * The file, without its line.
+   *
+   * A record is about a FILE; the line is where one verdict happened to touch it, and keeping it
+   * would make the same rule look like a different one every time the file was edited above it.
+   */
+  const file =
+    sourceLabel === undefined || 0 === sourceLabel.length
+      ? undefined
+      : sourceLabel.replace(SOURCE_LINE_SUFFIX, '');
+  if (route === undefined && flow === undefined && file === undefined) return undefined;
   return {
     ...(route === undefined ? {} : { route }),
     ...(flow === undefined ? {} : { flow }),
+    ...(file === undefined ? {} : { files: [file] }),
   };
 }
 
@@ -160,6 +182,8 @@ export async function dischargeInlineIntent(
   sessionId: string | undefined,
   id: string | undefined,
   proof: { verdictId: string; grade: string; at: number },
+  /** `file:line` of the element this verdict acted on, when there was one. */
+  sourceLabel?: string,
 ): Promise<void> {
   if (id === undefined) return;
   try {
@@ -172,7 +196,7 @@ export async function dischargeInlineIntent(
      * the record under the page it left, or under nothing at all. The route that describes what the
      * intent is about is the one that exists once the consequence has landed.
      */
-    const surface = surfaceForInlineIntent(sessionUrl(deps, sessionId), undefined);
+    const surface = surfaceForInlineIntent(sessionUrl(deps, sessionId), undefined, sourceLabel);
     if (surface !== undefined) await store.place(id, surface);
     await store.discharge(id, proof);
   } catch {

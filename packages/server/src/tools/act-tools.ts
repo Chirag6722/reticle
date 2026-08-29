@@ -914,11 +914,19 @@ export const ACT_TOOLS: ToolDef[] = [
         // checked here rather than only inside the helper so a caller that declared no intent touches
         // nothing at all, not even the clock.
         if (intentId !== undefined && Verified.YES === decision.verified) {
-          await dischargeInlineIntent(deps, asString(args['sessionId']), intentId, {
-            verdictId: inlineVerdictId(ReticleTool.ACT_AND_WAIT, deps.now()),
-            grade,
-            at: deps.now(),
-          });
+          await dischargeInlineIntent(
+            deps,
+            asString(args['sessionId']),
+            intentId,
+            {
+              verdictId: inlineVerdictId(ReticleTool.ACT_AND_WAIT, deps.now()),
+              grade,
+              at: deps.now(),
+            },
+            // Where the acted element is written, so the record can name a file somebody would open
+            // to change the thing it describes.
+            actedSourceLabel,
+          );
         }
         verdictEffect = {
           claim: describeWaitTarget(until),
