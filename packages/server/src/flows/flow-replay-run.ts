@@ -29,6 +29,7 @@ import type { DeviationReport } from '../journal/deviation-report.js';
 import { homedir } from 'node:os';
 import { cloudFetch, syncRunRecordToCloud, SyncOutcome } from '../cloud/cloud-sync.js';
 import { resolveProjectCloud } from '../cloud/cloud-config.js';
+import { consultSubjectFor, selectConsulted, type ConsultedMemory } from './flow-memory-consult.js';
 import { log } from '../log.js';
 import type { ToolDeps } from '../tools/tools.js';
 import { flowsForSession } from './flow-store-for-session.js';
@@ -83,6 +84,8 @@ async function recordReplayRun(
   driftSteps: number,
   durationMs: number,
   projectId: string | undefined,
+  /** The APP's `.reticle`, resolved from the session — never the daemon's own. */
+  recordRoot: string,
 ): Promise<void> {
   const runStatus = replayToRunStatus(status);
   await deps.project.recordRun({
@@ -93,7 +96,10 @@ async function recordReplayRun(
     durationMs,
   });
   // Per-project cloud: push memory outcomes only when cloud is attached AND memory sync is enabled.
-  const cloud = await resolveProjectCloud(deps.fs, deps.reticleRoot, homedir(), process.env);
+  // Rooted at the APP, not the daemon — see consultProjectMemory. This call had the same defect and
+  // it was worse here: a replay outcome that should have reached the dashboard silently did not,
+  // because the daemon's own directory has no link file.
+  const cloud = await resolveProjectCloud(deps.fs, recordRoot, homedir(), process.env);
   if (null === cloud.config || !cloud.policy.memory) return; // not attached / memory disabled → local only
   const result = await syncRunRecordToCloud(
     { kind: RunKind.FLOW_REPLAY, name, status: runStatus, at: deps.now(), durationMs },
@@ -103,6 +109,54 @@ async function recordReplayRun(
   );
   if (result.outcome !== SyncOutcome.SYNCED) {
     log('cloud-run-record-sync-failed', { flow: name, status: result.status, error: result.error });
+  }
+}
+
+/**
+ * Ask the project what it already knows about this flow.
+ *
+ * Best-effort in the strongest sense: an unlinked project, a disabled memory policy, an offline
+ * laptop and a server that answers nonsense all reach the same place — the verdict returns without
+ * a memory block. A verification that FAILED because the knowledge lookup failed would be a worse
+ * product than one that never looked, and this is the path every replay takes.
+ *
+ * The read is also what makes the coverage map's fetch counts mean anything: they were zero across
+ * the entire corpus, not because memory is useless but because consulting it was a separate act
+ * nobody performed. Now the platform performs it.
+ */
+async function consultProjectMemory(
+  deps: ToolDeps,
+  flow: FlowFile,
+  root: string,
+): Promise<ConsultedMemory[] | undefined> {
+  const subject = consultSubjectFor(flow);
+  if (subject === undefined) return undefined;
+  try {
+    // The APP's root, not the daemon's. `deps.reticleRoot` is wherever the daemon was launched,
+    // which for a user-scoped MCP registration is almost never the project being verified — so the
+    // link file it reads is the wrong one, or absent, and every project silently reads as
+    // "not attached". Same class of bug as the flow store resolving per daemon instead of per
+    // session, and it is invisible: the feature simply never appears.
+    const cloud = await resolveProjectCloud(deps.fs, root, homedir(), process.env);
+    if (null === cloud.config || !cloud.policy.memory) return undefined;
+    const url = `${cloud.config.url}/v1/memory?subject=${encodeURIComponent(subject)}`;
+    const res = await cloudFetch(url, {
+      method: 'GET',
+      headers: { authorization: `Bearer ${cloud.config.apiKey}` },
+    });
+    if (200 !== res.status) return undefined;
+    // `cloudFetch` hands back a real `Response`, so the body is a METHOD. Reading `res.json` as a
+    // property yields the function itself, `.entries` on it is undefined, and the whole feature
+    // fails silently to "the project knows nothing" — which is indistinguishable from the honest
+    // empty case and is why this took a live drive to notice at all.
+    const body = (await res.json()) as { entries?: unknown } | undefined;
+    const entries = body?.entries;
+    if (!Array.isArray(entries)) return undefined;
+    const picked = selectConsulted(entries as { statement?: unknown; status?: unknown }[]);
+    return 0 === picked.length ? undefined : picked;
+  } catch {
+    // See the note above: never the reason a verdict fails to return.
+    return undefined;
   }
 }
 
@@ -153,7 +207,15 @@ export async function replayNamedFlow(
   // disk is what made replay unusable from a daemon started outside the project.
   const loaded = await flowsForSession(deps, projectId).flows.load(name, projectId);
   if (!loaded.ok) {
-    await recordReplayRun(deps, name, ReplayStatus.ERROR, 0, deps.now() - startedAt, projectId);
+    await recordReplayRun(
+      deps,
+      name,
+      ReplayStatus.ERROR,
+      0,
+      deps.now() - startedAt,
+      projectId,
+      sessionRoot(deps, asString(args['sessionId'])),
+    );
     return {
       name,
       status: ReplayStatus.ERROR,
@@ -164,9 +226,13 @@ export async function replayNamedFlow(
   // What this flow is FOR, from the shared ledger — so a failure can report the business outcome
   // that stopped being true before the step that stopped being green. Undefined when nothing
   // declared one, which the decision then says plainly rather than inventing a goal from step names.
-  const intents = new IntentStore(deps.fs, sessionRoot(deps, asString(args['sessionId'])), {
-    now: deps.now,
-  });
+  /*
+   * The APP's `.reticle`, resolved once. Everything below that reaches the project's own files —
+   * the intent ledger, the cloud link, the memory consultation — takes THIS, not `deps.reticleRoot`,
+   * which is wherever the daemon happened to be launched.
+   */
+  const replayRoot = sessionRoot(deps, asString(args['sessionId']));
+  const intents = new IntentStore(deps.fs, replayRoot, { now: deps.now });
   const intentSaid = await flowIntentStatement(intents, loaded.value);
   const session = deps.sessions.resolve(asString(args['sessionId']));
   // Captured before replay: if the tab isn't on the flow's start page, a step-1 drift is a wrong-page
@@ -207,7 +273,15 @@ export async function replayNamedFlow(
   const driftSteps = steps.filter((s) => s.drift !== undefined).length;
   const allOk = steps.every((s) => s.ok);
   const status = driftSteps > 0 ? ReplayStatus.DRIFT : allOk ? ReplayStatus.OK : ReplayStatus.ERROR;
-  await recordReplayRun(deps, name, status, driftSteps, deps.now() - startedAt, projectId);
+  await recordReplayRun(
+    deps,
+    name,
+    status,
+    driftSteps,
+    deps.now() - startedAt,
+    projectId,
+    replayRoot,
+  );
   // Anti-reward-hacking baseline: record what this flow asserted ONLY when it passed clean. A
   // failing run must never become the baseline a later weakening is measured against.
   if (status === ReplayStatus.OK) {
@@ -235,6 +309,16 @@ export async function replayNamedFlow(
   }
   // Push-default: the deviation report over this drive's segments, learned across runs. Best-effort.
   const deviation = await computeReplayDeviation(deps, session, replayFloor);
+  /*
+   * What the team already knows about this flow, fetched on the agent's behalf.
+   *
+   * Attached to the FAILING path as well as the clean one, deliberately: a drift is exactly the
+   * moment somebody needs to know what this feature is supposed to do and who established it. A
+   * knowledge base you only see when everything is already fine is decoration.
+   */
+  // No projectId argument: the API key is already bound to one project server-side, so passing a
+  // second opinion about which project this is would only create a way for the two to disagree.
+  const knows = await consultProjectMemory(deps, loaded.value, replayRoot);
   const failed = steps.find((step) => !step.ok && step.drift === undefined);
   if (failed !== undefined) {
     const errored: FlowReplayResult = {
@@ -246,9 +330,11 @@ export async function replayNamedFlow(
     errored.decision = buildDecision(errored, loaded.value, intentSaid);
     applyStartPathHint(errored, startPathHint);
     if (deviation !== undefined) errored.deviation = deviation;
+    if (knows !== undefined) errored.knows = knows;
     return errored;
   }
   const result: FlowReplayResult = { name, status, steps };
+  if (knows !== undefined) result.knows = knows;
   // A green that cannot go red is not a pass. `reticle_flow_verify` already refuses to count these,
   // via this same function -- a single-flow caller saw a bare `ok` and had no way to learn the flow
   // asserts nothing. Derived from the same helper on purpose: two copies of this judgement would
