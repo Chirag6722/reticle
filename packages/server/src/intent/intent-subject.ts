@@ -13,8 +13,10 @@
  *   1. an explicit subject, when the caller knows one
  *   2. the flow it belongs to — the strongest signal, because a flow IS a feature
  *   3. the route it touches, which is how the product is navigated and therefore how it is discussed
- *   4. the API path its binding asserts on, which names the domain even when the UI does not
- *   5. failing all of that, a single shared bucket — visibly unsorted rather than silently misfiled
+ *   4. the feature directory of the FILE its verdict acted on — the grouping the codebase already
+ *      states about itself
+ *   5. the API path its binding asserts on, which names the domain even when the UI does not
+ *   6. failing all of that, a single shared bucket — visibly unsorted rather than silently misfiled
  *
  * Nothing here guesses from prose. A statement is a sentence written for a human, and clustering
  * sentences is exactly the kind of plausible-looking inference that puts "sign-in works" under
@@ -30,7 +32,9 @@ const MAX_SUBJECT = 40;
 /** Shape enough of an intent to derive a subject, without importing the whole record. */
 export interface SubjectEvidence {
   subject?: string | undefined;
-  surface?: { route?: string | undefined; flow?: string | undefined } | undefined;
+  surface?:
+    | { route?: string | undefined; flow?: string | undefined; files?: string[] | undefined }
+    | undefined;
   binding?: unknown;
 }
 
@@ -89,6 +93,62 @@ const fromBinding = (binding: unknown): string | undefined => {
 };
 
 /**
+ * Directory names that group CODE rather than name a feature.
+ *
+ * `src/ui/input.tsx` is every screen's shared control; filing knowledge under `ui` would put
+ * sign-in, billing and issues in one bucket named after a folder. Walked past rather than accepted,
+ * and if every directory is generic the file yields nothing — which is honest, because it genuinely
+ * did not say what the record is about.
+ */
+const GENERIC_DIRS: ReadonlySet<string> = new Set([
+  'src',
+  'app',
+  'apps',
+  'lib',
+  'libs',
+  'packages',
+  'components',
+  'ui',
+  'utils',
+  'util',
+  'helpers',
+  'shared',
+  'common',
+  'core',
+  'pages',
+  'features',
+  'modules',
+  'screens',
+  'views',
+  'test',
+  'tests',
+  '__tests__',
+  'dist',
+  'build',
+  'node_modules',
+]);
+
+/**
+ * The feature a file belongs to: the deepest directory that names something.
+ *
+ * A codebase already groups itself by feature, and the directory a file sits in is that grouping
+ * stated by the people who wrote it — structural evidence, not an inference from prose. Measured
+ * against the alternative before being written: 29 unsorted records carried a testid, and using the
+ * testid's prefix would have produced `confirm`, `new` and `delete` — verbs rather than areas.
+ */
+const featureOfFile = (file: string): string | undefined => {
+  // Windows paths arrive from Windows machines; splitting on `/` alone leaves one long segment.
+  const parts = file.split(/[/\\]/).filter((p) => p !== '');
+  // The last part is the filename, never a feature.
+  for (let i = parts.length - 2; i >= 0; i--) {
+    const dir = parts[i];
+    if (dir === undefined || GENERIC_DIRS.has(dir.toLowerCase())) continue;
+    return dir;
+  }
+  return undefined;
+};
+
+/**
  * The subject for one intent, by the ladder above.
  *
  * Total: it always returns something, because a store that can refuse to place a record is a store
@@ -105,6 +165,19 @@ export const subjectFor = (evidence: SubjectEvidence): string => {
   if ('string' === typeof route) {
     const seg = firstSegment(route);
     if (seg !== undefined) return slugifySubject(seg);
+  }
+
+  /*
+   * The file, before the binding. A path names the feature the code lives in; a binding's API path
+   * names the domain only indirectly, and its element predicates name controls rather than areas.
+   */
+  const files = evidence.surface?.files;
+  if (Array.isArray(files)) {
+    for (const file of files) {
+      if ('string' !== typeof file || '' === file) continue;
+      const feature = featureOfFile(file);
+      if (feature !== undefined) return slugifySubject(feature);
+    }
   }
 
   const bound = fromBinding(evidence.binding);

@@ -127,3 +127,65 @@ describe('a binding that names a filter, not an area', () => {
     ).toBe('billing');
   });
 });
+
+/**
+ * The FILE a verdict touched, as a subject.
+ *
+ * Added after measuring the alternative and rejecting it. 68 records had no subject; 29 of them
+ * carried a testid in their binding, and using the testid's prefix would have produced `confirm`,
+ * `new` and `delete` — verbs, not areas of a product — recreating the fragmentation that
+ * query-string subjects had just been fixed for. A path is structural rather than a guess: a
+ * codebase already groups itself by feature, and the directory a file sits in is that grouping
+ * stated by the people who wrote it.
+ *
+ * Ranked below the route, which is how the product is NAVIGATED and therefore how it is discussed,
+ * and above the binding's API path, which names the domain only indirectly.
+ */
+describe('the file a verdict acted on', () => {
+  it('takes the feature directory, which is the codebase’s own grouping', () => {
+    expect(subjectFor({ surface: { files: ['src/features/auth/login-view.tsx'] } })).toBe('auth');
+  });
+
+  it('works several levels down a monorepo', () => {
+    expect(
+      subjectFor({ surface: { files: ['apps/console/src/features/billing/plan-panel.tsx'] } }),
+    ).toBe('billing');
+  });
+
+  it('walks past a generic container rather than filing under "ui"', () => {
+    // `src/ui/input.tsx` is every screen's shared control. Filing knowledge under `ui` would put
+    // sign-in, billing and issues in one bucket named after a folder.
+    expect(subjectFor({ surface: { files: ['src/ui/input.tsx'] } })).toBe(UNSORTED_SUBJECT);
+  });
+
+  it('gives up rather than inventing when every directory is generic', () => {
+    expect(subjectFor({ surface: { files: ['src/lib/utils.ts'] } })).toBe(UNSORTED_SUBJECT);
+  });
+
+  it('handles a file at the root with no directory at all', () => {
+    expect(subjectFor({ surface: { files: ['index.ts'] } })).toBe(UNSORTED_SUBJECT);
+  });
+
+  it('is outranked by the route, which is how the product is discussed', () => {
+    expect(
+      subjectFor({ surface: { route: '/billing', files: ['src/features/auth/login-view.tsx'] } }),
+    ).toBe('billing');
+  });
+
+  it('outranks the binding, which names the domain only indirectly', () => {
+    expect(
+      subjectFor({
+        surface: { files: ['src/features/checkout/total.ts'] },
+        binding: { kind: 'net', urlContains: '/v1/orders' },
+      }),
+    ).toBe('checkout');
+  });
+
+  it('ignores an empty file list rather than treating it as evidence', () => {
+    expect(subjectFor({ surface: { files: [] } })).toBe(UNSORTED_SUBJECT);
+  });
+
+  it('copes with a Windows path', () => {
+    expect(subjectFor({ surface: { files: ['src\\features\\cart\\total.tsx'] } })).toBe('cart');
+  });
+});
