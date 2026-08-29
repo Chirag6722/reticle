@@ -73,3 +73,57 @@ describe('the slug is a filename somebody reads in a listing', () => {
     expect(s.endsWith('-')).toBe(false);
   });
 });
+
+/**
+ * Subjects mined from a BINDING, and the ones that were never product areas at all.
+ *
+ * Measured on a real corpus of 200 records: 34 subjects, six of which were query-string values —
+ * `category-minor`, `category-severe-status-open`, `category-vulnerability-2csevere`,
+ * `projectid-storefront`. Each held exactly one record, each was unreadable, and together they made
+ * the coverage map look like a product with two dozen tiny unrelated areas.
+ *
+ * The cause: rung 4 of the ladder mines `urlContains` for a path, and a `net` predicate's
+ * `urlContains` is routinely a QUERY fragment — `category=severe` — which has no `?` to split on,
+ * so the whole thing was taken as a path segment and slugified.
+ */
+describe('a binding that names a filter, not an area', () => {
+  it('does not turn a bare query fragment into a subject', () => {
+    expect(
+      subjectFor({ binding: { kind: 'net', urlContains: 'category=vulnerability%2Csevere' } }),
+    ).toBe(UNSORTED_SUBJECT);
+  });
+
+  it('does not turn a projectId filter into a subject', () => {
+    expect(subjectFor({ binding: { kind: 'net', urlContains: 'projectId=storefront' } })).toBe(
+      UNSORTED_SUBJECT,
+    );
+  });
+
+  it('still mines a real API path, which is the rung’s whole purpose', () => {
+    expect(subjectFor({ binding: { kind: 'net', urlContains: '/v1/issues' } })).toBe('issues');
+  });
+
+  it('takes the PATH from a url that also carries a query', () => {
+    expect(
+      subjectFor({ binding: { kind: 'net', urlContains: '/v1/issues?category=severe' } }),
+    ).toBe('issues');
+  });
+
+  it('still accepts a bare resource name — "issues" is a path hint, "issues=1" is not', () => {
+    expect(subjectFor({ binding: { kind: 'net', urlContains: 'issues' } })).toBe('issues');
+  });
+
+  it('skips the query part and keeps looking, rather than giving up on the whole binding', () => {
+    expect(
+      subjectFor({
+        binding: {
+          kind: 'allOf',
+          predicates: [
+            { kind: 'net', urlContains: 'status=open' },
+            { kind: 'route', pathname: '/billing' },
+          ],
+        },
+      }),
+    ).toBe('billing');
+  });
+});

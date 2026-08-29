@@ -51,6 +51,19 @@ const firstSegment = (path: string): string | undefined => {
   for (const part of clean.split('/')) {
     // Skip empties, the API version prefix, and anything that is plainly an id rather than a name.
     if ('' === part || /^v\d+$/i.test(part) || /^\d+$/.test(part)) continue;
+    /*
+     * A QUERY FRAGMENT is not a path segment.
+     *
+     * A `net` predicate's `urlContains` is frequently a filter rather than a URL —
+     * `category=vulnerability%2Csevere`, `projectId=storefront` — and with no `?` to split on, the
+     * whole thing survived as a "path" and was slugified into a subject. Measured on a real corpus:
+     * six of thirty-four subjects were query values, one record each, and together they made the
+     * coverage map read as a product with two dozen tiny unrelated areas.
+     *
+     * Skipped rather than aborting the walk, so a binding that asserts a filter AND a route still
+     * finds the route.
+     */
+    if (part.includes('=') || part.includes('&')) continue;
     return part;
   }
   return undefined;
