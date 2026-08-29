@@ -1046,16 +1046,47 @@ const DRIVERS = [
       ...(opts.driveModel === undefined ? [] : ['--model', opts.driveModel]),
       '--max-budget-usd',
       String(opts.driveBudget),
+      // stream-json, not json: `json` emits NOTHING until the run completes, so a drive killed at
+      // the timeout left no trace of where it got stuck — measured four times on the same app,
+      // every one reporting "the drive produced no output ... nothing on stderr either". spawnSync
+      // returns the stdout collected before it kills, so streaming turns that into evidence.
       '--output-format',
-      'json',
+      'stream-json',
+      '--verbose',
     ],
     parse: (out) => {
-      try {
-        const j = JSON.parse(out.slice(out.indexOf('{')));
-        return { text: j.result ?? '', turns: j.num_turns, cost: j.total_cost_usd };
-      } catch {
-        return { text: out };
+      // NDJSON. The last line carrying a cost is the result; if there is none, the run was killed
+      // mid-flight and the most recent assistant text is the best account of where it had got to.
+      const events = String(out)
+        .split('\n')
+        .filter(Boolean)
+        .map((l) => {
+          try {
+            return JSON.parse(l);
+          } catch {
+            return undefined;
+          }
+        })
+        .filter(Boolean);
+      const done = [...events].reverse().find((e) => e?.total_cost_usd !== undefined);
+      if (done !== undefined) {
+        return { text: done.result ?? '', turns: done.num_turns, cost: done.total_cost_usd };
       }
+      const lastSaid = [...events]
+        .reverse()
+        .flatMap((e) => (e?.type === 'assistant' ? (e.message?.content ?? []) : []))
+        .find((c) => c?.type === 'text' || c?.type === 'tool_use');
+      const where =
+        lastSaid?.type === 'tool_use'
+          ? `it was calling \`${lastSaid.name}\``
+          : lastSaid?.text !== undefined
+            ? `the last thing it said was: ${String(lastSaid.text).slice(0, 300)}`
+            : 'it produced no events at all';
+      return {
+        text: '',
+        turns: events.filter((e) => e?.type === 'assistant').length,
+        incomplete: where,
+      };
     },
   },
   // Verified flags, unverified end-to-end: neither has been watched driving a real app here, so
@@ -1238,6 +1269,11 @@ if (opts.drive && savedFlows.length > 0) {
   result.driveCostUsd = parsed.cost;
   // A drive that produced nothing is a FAILED drive, and it used to leave no trace at all: stderr
   // was discarded, so the one thing that could explain it was the one thing thrown away.
+  if (parsed.incomplete !== undefined) {
+    todo(
+      `the drive did not finish, and ${parsed.incomplete}. That is where to look — the app IS installed and connected at ${url}.`,
+    );
+  }
   if (result.verdict === '') {
     todo(
       `the drive produced no output (exit ${child.status}): ${`${child.stderr ?? ''}`.trim().split('\n').slice(-3).join(' ').slice(0, 400) || 'nothing on stderr either'}`,
