@@ -35,9 +35,9 @@ There are exactly three places you may stop, and none is a question about a pref
 
 1. **No recognisable dev script in `package.json`.** Say so; do not invent one.
 2. **Your host asks the human to approve a command.** That prompt belongs to the host. Never bypass or suppress it, and take a refusal as the answer.
-3. **On a first install only, the client restart that loads the MCP tools** (step 2). Even then, keep going until the app is running and connected, and stop for the restart last, with only the drive left.
+3. **Only if no agent CLI exists on the machine at all**, the client restart that loads the MCP tools (step 2). If `claude`, `codex`, `cursor-agent` or `gemini` is installed, you do NOT stop. Step 2 shows you how to drive from a child process instead, and that path is measured to be the difference between a verdict and a dead end.
 
-Setup requires a client restart, which ends your turn. This file was fetched into the context that just ended, so nothing carries it across unless you make it. **Before you trigger the restart, write the remaining steps into `RETICLE-SETUP.md` at the repo root**, one line each, with the step you stopped at marked. That file is what you re-read afterwards. Delete it once step 5 has produced a verdict.
+If you do have to stop, the restart ends your turn. This file was fetched into the context that just ended, so nothing carries it across unless you make it. **Before you trigger the restart, write the remaining steps into `RETICLE-SETUP.md` at the repo root**, one line each, with the step you stopped at marked. That file is what you re-read afterwards. Delete it once step 5 has produced a verdict.
 
 Better still, install the on-disk copy first. It survives the restart on its own, and it is the same content:
 
@@ -119,7 +119,27 @@ If it does not: your client read its server list at startup and has not re-read 
 
 **This is not a reason to stop.** Steps 3 and 4 need no MCP tools at all: they are a build config, a dev server and a browser tab, and every one of them is yours to do from the shell. An install that halts here leaves the user with config files, an uninstrumented page, and a question to answer; that is the single most common failure in the field, and it is this paragraph's fault when it happens.
 
-So carry straight on through steps 3 and 4. Ask for the restart **once, at the end**, when a session is connected and the only thing left is the drive:
+So carry straight on through steps 3 and 4.
+
+### Then drive it anyway, without a restart. This is the whole trick.
+
+You do not need the tools in THIS process. You need them in **a** process, and a child agent started after `init` reads the server list `init` just wrote. So spawn one and have it do step 5:
+
+```bash
+echo "Reticle is installed at <url> and a session is connected. Drive the single most important user
+flow and produce a verdict: reticle_snapshot({mode:'interactive'}) once, reticle_act_sequence for the
+setup steps, then ONE reticle_act_and_wait({ref,action,until}). Wrap it in reticle_record start/stop
+and reticle_flow_save, then report the flow, the verdict, and assertions.grade." \
+  | claude -p --permission-mode acceptEdits --allowedTools mcp__reticle --output-format json
+```
+
+Measured across five real applications: agents that stopped here for a restart produced **no verdict in three runs out of five**, having spent 26 to 80 turns getting the user to a dead end. The child process removes that entirely: no restart, no lost context, no waiting on a human.
+
+Put the prompt on **stdin**, not as an argument: `--allowedTools` is variadic and will swallow a positional prompt, and the run then exits in two seconds having done nothing.
+
+Substitute the CLI the user actually has: `claude`, `codex exec`, `cursor-agent -p`, `gemini -p ... --allowed-mcp-server-names reticle`. Check it RUNS first (`<cli> --version`); one that is installed but broken produces an empty session that looks exactly like success.
+
+**Only if no agent CLI exists at all** do you ask for the restart, once, at the end:
 
 > "Reticle is installed and your app is connected. Restart your client so it picks up the MCP server, then say **'continue Reticle setup'**. One step is left: driving a flow."
 
@@ -162,6 +182,8 @@ Four guards, none optional:
 3. **Never kill anything you did not start**, and never a daemon or a port holder. The one exception is the restart above, and say in one line that you did it.
 4. **The permission prompt belongs to your host.** Never bypass, suppress or auto-approve it, and take a refusal as the answer.
 
+**Wait for the port to answer before you open anything.** A URL in the dev server's output is an announcement, not readiness. Next prints `- Local: http://localhost:3000` before it can serve, so a tab opened on that line lands on a 404 and the whole connect budget is then spent blaming the SDK. Poll the URL until it responds. And if the launcher exits while the port keeps serving, the server has DAEMONIZED (`astro dev` does this); that is not a dead server, so do not treat it as one.
+
 Then open the app yourself. Do not ask the user to do it. A setup turn that ends on "now open your browser" ends with nothing verified:
 
 ```bash
@@ -201,7 +223,11 @@ Drive it in as few calls as you can. Every call is a full model turn, and in a c
 3. `reticle_act_and_wait({ ref, action, until })` for the final step only. This is the call that produces the verdict, and `until` names the expected consequence before the action fires.
 4. `reticle_state()` once at the end.
 
-Four calls for a login, not fourteen. If `reticle_state` comes back empty or `hasCapabilities` is false, the capabilities file `init` generated registered nothing, which is what its `ℹ AGENT: finish the capabilities file` line was telling you. **Finish it yourself, before you drive**: open `src/reticle-dev.*`, register the app's store if it has one, and list the `testids` the flow you picked actually touches. Do not offer, and do not ask; it is a few lines in a file `init` already wrote for you. Never report a clean install over an empty state read.
+Four calls for a login, not fourteen. **Check `hasCapabilities` before spending a turn here.** For a conventional app `init` has already done this: it finds `data-testid` values in your source and detects a state library, writing `registerStore(...)` and the testid list for you. There is then nothing to finish and no reason to open the file.
+
+Only when `reticle_state` comes back empty or `hasCapabilities` is false did detection actually fail: a store behind a scoped provider, or a library with no store object to import. **Then finish it yourself, before you drive**: open `src/reticle-dev.*`, register whatever the app's state is readable through, and list the `testids` your flow touches. Do not offer, and do not ask.
+
+**Edit that file and nothing else.** If the app is broken in a way that blocks the drive (a build error, a missing asset, an auth wall), say so and stop. That is a finding worth having and it belongs to whoever owns the repo; setup quietly editing their source is not a trade they agreed to. Never report a clean install over an empty state read.
 
 **Then save what you just drove.** Two calls, and they are what make every future check a single call instead of a repeat of this one. Wrap the drive above in a recording:
 
