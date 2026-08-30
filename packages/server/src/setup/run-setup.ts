@@ -58,6 +58,16 @@ export interface SetupEffects {
   readonly listSessions: () => Promise<CandidateSession[]>;
   /** Drive one flow. Returns the agent's report, or null when nobody could. */
   readonly drive: (url: string, session: CandidateSession) => Promise<string | null>;
+  /**
+   * Whether this machine has an agent CLI at all.
+   *
+   * Separate from `drive` returning null, because those are different facts and only one of them is
+   * a failure. A drive that RAN and proved nothing is a result worth a non-zero exit. A drive that
+   * could not run is the absence of a tool on the machine, and reporting the install as failed for
+   * it told CI runners — where no agent CLI is ever installed — that a perfectly good install had
+   * not worked.
+   */
+  readonly driverAvailable: () => boolean;
   readonly flowsSaved: () => boolean;
   readonly now: () => number;
   readonly sleep: (ms: number) => Promise<void>;
@@ -201,6 +211,26 @@ export async function runSetupPhases(input: SetupInput, fx: SetupEffects): Promi
       flowSaved: false,
       notes,
       fallback: [],
+    };
+  }
+  // Nothing to drive WITH is not the same as driving and proving nothing, and only the second is a
+  // failure of this command. The app is installed, instrumented, booted and connected; the one step
+  // left needs a tool this machine does not have, so it is reported and handed to the caller.
+  if (!fx.driverAvailable()) {
+    note(
+      'Installed and connected, but no agent CLI is on this machine (claude, codex, opencode, ' +
+        'cursor-agent or gemini), so nothing drove the app and no verdict was produced.',
+    );
+    return {
+      ok: true,
+      reachedPhase: SetupPhase.CONNECT,
+      url,
+      sessionId: session.sessionId,
+      flowSaved: false,
+      notes,
+      fallback: remainingSteps(
+        asProgress(input, { url, sessionId: session.sessionId, flowSaved: false }),
+      ),
     };
   }
   const verdict = await fx.drive(url, session);

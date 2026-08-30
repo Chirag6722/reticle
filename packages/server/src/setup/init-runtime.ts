@@ -134,6 +134,14 @@ export function continueAfterInit(
       io.print(outcome.verdict);
       io.print('');
     }
+    if (outcome.ok && !outcome.flowSaved) {
+      // Success, and no flow. Saying "a flow was driven" here would replace a wrong exit code with
+      // a wrong sentence, which is the worse of the two: the exit code is read by CI and the
+      // sentence is read by a person deciding whether their app is verified. It is not.
+      io.print(`✓ ${outcome.url ?? 'the app'} is instrumented and connected — but NOT verified.`);
+      for (const [i, step] of outcome.fallback.entries()) io.print(`   ${String(i + 1)}. ${step}`);
+      return;
+    }
     if (outcome.ok) {
       io.print(
         `✓ setup complete — ${outcome.url ?? 'the app'} is instrumented and a flow was driven.`,

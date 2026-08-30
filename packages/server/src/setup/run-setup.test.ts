@@ -35,6 +35,9 @@ function world(
       return Promise.resolve();
     },
     listSessions: (): Promise<CandidateSession[]> => Promise.resolve([{ sessionId: 'new', url }]),
+    // The default world has an agent CLI: that is the ordinary developer machine, and the case
+    // where its absence matters says so explicitly.
+    driverAvailable: () => true,
     drive: () => {
       state.driven += 1;
       return Promise.resolve('Flow: checkout. verified: yes. assertions.grade: asserted');
@@ -142,6 +145,42 @@ describe('when it cannot continue, it says what is left', () => {
     const fx = world({ drive: () => Promise.resolve(null), flowsSaved: () => false });
     const r = await runSetupPhases(INPUT, fx);
     expect(r.notes.join(' ')).toContain('nothing was proved');
+  });
+
+  /**
+   * An install with nothing to drive it is still an install.
+   *
+   * On a CI runner there is no `claude`, `codex`, `opencode`, `cursor-agent` or `gemini`, so the
+   * drive cannot happen — and `init` reported that as `⚠ setup did not finish` and exited 1, with
+   * every step ✓, the app booted and the daemon up. The install gate caught it on Linux, where
+   * nothing is installed; on a developer machine an agent CLI is always present, so nothing local
+   * could see it.
+   *
+   * The distinction is whether anything went WRONG. A drive that ran and proved nothing is a
+   * result. A drive that could not run is the absence of a tool, which is not a defect in the
+   * install and must not be reported as one — a non-zero exit says "this did not work", and it did.
+   */
+  it('succeeds when the machine has no agent CLI to drive with', async () => {
+    const fx = world({ driverAvailable: () => false, flowsSaved: () => false });
+    const r = await runSetupPhases(INPUT, fx);
+    expect(r.ok).toBe(true);
+    expect(r.notes.join(' ')).toContain('no agent CLI');
+  });
+
+  it('still says how to finish the job by hand', async () => {
+    const fx = world({ driverAvailable: () => false, flowsSaved: () => false });
+    const r = await runSetupPhases(INPUT, fx);
+    expect(r.fallback.length).toBeGreaterThan(0);
+  });
+
+  it('still FAILS when a driver existed and the drive proved nothing', async () => {
+    // The negative control. Silencing the no-driver case must not silence a real miss.
+    const fx = world({
+      driverAvailable: () => true,
+      drive: () => Promise.resolve(null),
+      flowsSaved: () => false,
+    });
+    expect((await runSetupPhases(INPUT, fx)).ok).toBe(false);
   });
 });
 

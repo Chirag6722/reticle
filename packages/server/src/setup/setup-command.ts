@@ -171,6 +171,11 @@ export async function runSetupCommand(
       }
     },
     listSessions: () => listSessions(input.bridgePort),
+    // Asked before the drive rather than inferred from its result: "nothing to drive with" and
+    // "drove and proved nothing" are different answers and only the second is a failure.
+    driverAvailable: () =>
+      null !==
+      chooseDriver(DRIVERS, (bin) => ({ present: binaryExists(bin), runs: binaryExists(bin) })),
     drive: (url, session) => {
       const driver = chooseDriver(DRIVERS, (bin) => ({
         present: binaryExists(bin),
