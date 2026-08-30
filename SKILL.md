@@ -125,7 +125,17 @@ The command reads the repository. It cannot read the request, and three things l
 
 # If that command could not run it
 
-Older published CLIs stop after writing files. If `init` wrote files and did nothing else, or you are recovering from a failure it reported, the whole manual procedure is one page:
+**Do not choose this path.** It is not the thorough version of the one above; it is what you fall back to when the command physically could not do the work, and taking it by preference is how an install costs 176 turns instead of one. That is a measured figure, not a way of speaking.
+
+Use it only when ONE of these is true, and you can say which:
+
+- `init` exited without ever printing `starting:` or `▸ WATCH`, which means the CLI on this machine predates the runtime phases and stopped after writing files.
+- `init` printed a to-do list, you did those things, re-ran it, and it stopped in the same place twice.
+- There is no Node 18 or newer on this machine, so nothing can run.
+
+Anything else is not a reason: not a `⚠` in the report, not a step you would rather do yourself, not a feeling that you should check its work. Re-run the command. It is idempotent, it reports what is already wired, and it names what is still outstanding.
+
+When one of those three IS true, the whole manual procedure is one page:
 
 ```bash
 curl https://docs.reticle.sh/install-manual.md      # register the MCP, wire the SDK, prove it

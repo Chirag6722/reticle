@@ -96,7 +96,7 @@ A non-zero exit is a to-do list, not a failed install. The command names the cau
 
 ## If that command could not run it
 
-Older published CLIs stop after writing files. The whole manual procedure is one page:
+**Do not choose this path.** It is not the thorough version of the one above; it is what you fall back to when the command physically could not do the work. Use it only when `init` exited without ever printing `starting:` or `▸ WATCH` (an older CLI that stops after writing files), or when it stopped in the same place twice after you did what it asked. A `⚠` in the report is not a reason: re-run the command, which is idempotent and names what is still outstanding.
 
 ```bash
 curl https://docs.reticle.sh/install-manual.md      # register the MCP, wire the SDK, prove it
