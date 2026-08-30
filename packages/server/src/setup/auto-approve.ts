@@ -131,6 +131,8 @@ export const ApprovalOutcome = {
   GRANTED: 'granted',
   ALREADY: 'already',
   ABSENT: 'absent',
+  /** Deliberately left for an explicit run, because doing it unattended costs the user something. */
+  DEFERRED: 'deferred',
   FAILED: 'failed',
 } as const;
 export type ApprovalOutcome = (typeof ApprovalOutcome)[keyof typeof ApprovalOutcome];
@@ -150,6 +152,19 @@ export interface ApprovalWhere {
   readonly platform: keyof PlatformPaths;
 }
 
+export interface ApprovalOptions {
+  /**
+   * Refuse any grant that would CREATE a file superseding an allowlist we cannot read.
+   *
+   * Set on the unattended path. Writing Cursor's permissions.json for the first time takes over
+   * from what the user approved inside the app, which is a fair trade when they just ran a command
+   * and can read the line saying so, and not a fair trade at all when a version bump did it behind
+   * them: their OTHER MCP servers would start prompting again and nothing would connect that to us.
+   * Merging into a file they already own stays safe either way.
+   */
+  readonly onlyIfNoSupersede?: boolean;
+}
+
 /**
  * Pre-approve Reticle's tools everywhere the machine has an agent that would otherwise ask.
  *
@@ -160,6 +175,7 @@ export function grantAutoApproval(
   io: AgentWriterIo,
   where: ApprovalWhere,
   grants: readonly ApprovalGrant[] = APPROVAL_GRANTS,
+  options: ApprovalOptions = {},
 ): ApprovalResult[] {
   return grants.map((grant): ApprovalResult => {
     const file = join(where.home, grant.paths[where.platform]);
@@ -168,6 +184,13 @@ export function grantAutoApproval(
     if (!installed) return { ...base, outcome: ApprovalOutcome.ABSENT };
     try {
       const existed = io.exists(file);
+      if (true === options.onlyIfNoSupersede && true === grant.supersedesInApp && !existed) {
+        return {
+          ...base,
+          outcome: ApprovalOutcome.DEFERRED,
+          warn: `creating ${file} would supersede what you approved inside ${grant.name}, which is not something to do unannounced. Run: npx @reticlehq/server init --files-only`,
+        };
+      }
       // A settings file we cannot parse is left exactly as it is. Reformatting somebody's config to
       // add one line is a worse outcome than one dialog they have to click.
       const current = existed

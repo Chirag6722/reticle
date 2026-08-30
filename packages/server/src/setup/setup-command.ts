@@ -6,13 +6,14 @@
  * run-setup.ts and the pieces it calls.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { planAgentConfigs, type PlatformPaths } from './agent-configs.js';
 import { AppShape, readShape } from './desktop-shape.js';
 import { applyAgentPlan, applyAgentSkills } from './agent-writer.js';
 import { ApprovalOutcome, grantAutoApproval } from './auto-approve.js';
+import { agentIo } from './agent-io.js';
 import { openInBrowser } from '../cli/cli-launch.js';
 import { chooseDriver, DRIVERS, shouldEscalate } from './drive-plan.js';
 import { driveWith } from './drive-agent.js';
@@ -60,16 +61,6 @@ function hasElectronDependency(dir: string): boolean {
     return false;
   }
 }
-
-/** The filesystem, as the agent writer wants it. */
-const agentIo = {
-  exists: (path: string): boolean => existsSync(path),
-  readFile: (path: string): string => readFileSync(path, 'utf8'),
-  writeFile: (path: string, contents: string): void => writeFileSync(path, contents),
-  mkdirp: (dir: string): void => {
-    mkdirSync(dir, { recursive: true });
-  },
-};
 
 /**
  * Register with the agents `init` does not reach, and leave the skill where one loads skills from.

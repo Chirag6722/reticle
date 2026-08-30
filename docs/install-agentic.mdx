@@ -212,9 +212,11 @@ Three of these are answers only the caller has. `init` reads your repository; it
 | `--no-install` | You want to add the dependencies yourself, at your own versions. |
 | `--port N` | Something else already owns the bridge port. Not the dev server's port. |
 
-## Already installed? Re-run init
+## Already installed? Mostly automatic
 
-Nothing reaches back into a machine that installed Reticle on an earlier version. There is no migration step and no background updater. New wiring arrives when you next run `init`, and only then.
+The first time `reticle mcp` starts on a new version it applies the pre-approval rules for the agents it finds, once, and records that it did. You get that by upgrading. There is nothing to type.
+
+One case is deliberately left out. Creating Cursor's `permissions.json` when you do not already have one supersedes whatever you approved inside Cursor itself, so a version bump doing it silently would make your OTHER MCP servers start prompting again, with nothing to connect that to us. Reticle defers it and waits to be asked:
 
 ```bash
 npx @reticlehq/server@latest init --files-only
