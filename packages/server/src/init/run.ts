@@ -294,10 +294,32 @@ export interface InitIo {
   print(line: string): void;
 }
 
+/**
+ * What a run established, for a caller that means to continue where init stopped.
+ *
+ * Everything here was already computed and then thrown away. That was fine while init only wrote
+ * files: nobody downstream existed. A caller that goes on to boot the app needs the same answers,
+ * and re-deriving them is how two parts of one command end up disagreeing about which directory
+ * they are in — which is not hypothetical, because a monorepo redirect re-enters `runInit` with a
+ * different cwd and the outer caller never learns that it happened.
+ */
+export interface InitContext {
+  /** The directory actually wired, AFTER any monorepo redirect. */
+  readonly appDir: string;
+  readonly framework: string;
+  readonly packageManager: string;
+  /** The project's own dev command, when its scripts name one. Never composed. */
+  readonly devCommand?: string | undefined;
+  /** Set when init redirected into a workspace app, naming the one it chose. */
+  readonly redirectedTo?: string | undefined;
+}
+
 export interface InitResult {
   ok: boolean;
   applied: number;
   manual: number;
+  /** What this run established. Absent only where init exits before establishing anything. */
+  context?: InitContext;
   /**
    * The event body this run would report, handed to the caller instead of emitted, when
    * `deferOutcome` is set. Absent on a dry run and on the exits that report for themselves.
@@ -914,7 +936,14 @@ function runInitSteps(options: InitOptions, io: InitIo): InitResult {
     // The step's REAL final status, not the absence of a failure — see mcp-registered.
     mcpRegistered: wasMcpRegistered(resolvedStatus(plan, MCP_TARGET, failed, skipped)),
   };
-  if (true === options.deferOutcome) return { ...result, outcome };
+  const context: InitContext = {
+    appDir: options.cwd,
+    framework: plan.framework,
+    packageManager: planInput.detection.packageManager,
+    ...(undefined === devCommand ? {} : { devCommand }),
+    ...(true === options.redirected ? { redirectedTo: options.cwd } : {}),
+  };
+  if (true === options.deferOutcome) return { ...result, context, outcome };
   reportInitOutcome(outcome);
-  return result;
+  return { ...result, context };
 }

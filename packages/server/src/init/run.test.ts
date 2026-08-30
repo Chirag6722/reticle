@@ -283,6 +283,45 @@ describe('runInit', () => {
     ).toContain('/app/frontend');
   });
 
+  /**
+   * The redirect announces itself in the report, and until now told the CALLER nothing at all: the
+   * inner run returned an InitResult identical to one that never redirected. That was harmless
+   * while init only wrote files, because nothing downstream existed. A caller that goes on to boot
+   * the app has to know which directory was actually wired, and re-deriving it is how two halves of
+   * one command end up disagreeing about where they are.
+   */
+  it('tells the caller which directory it actually wired, after a redirect', () => {
+    const io = memoryIo({
+      'frontend/package.json': JSON.stringify({
+        dependencies: { next: '16', react: '^19' },
+        scripts: { dev: 'next dev' },
+      }),
+      'frontend/app/layout.tsx':
+        'export default function L({ children }) {\n' +
+        '  return (<html><body>{children}</body></html>);\n' +
+        '}\n',
+    });
+    const r = runInit(OPTS, io);
+    const appDir = (r.context?.appDir ?? '').replace(/\\/g, '/');
+    expect(appDir, 'the caller cannot see where the redirect landed').toContain('frontend');
+    expect(r.context?.redirectedTo, 'a redirect is invisible to the caller').toBeDefined();
+  });
+
+  it('reports the dev command it found, so a caller need not guess one', () => {
+    const io = memoryIo({
+      ...VITE_FILES,
+      'package.json': JSON.stringify({
+        dependencies: { vite: '^5', react: '^19' },
+        scripts: { dev: 'vite --port 5199' },
+      }),
+    });
+    const r = runInit(OPTS, io);
+    expect(r.context?.devCommand).toContain('dev');
+    // Never composed: a guessed command produces an error about a missing script, and the reader
+    // concludes their app is broken rather than that we were wrong.
+    expect(r.context?.packageManager).toBeTruthy();
+  });
+
   it('honours --app when the root has no package.json', () => {
     const io = memoryIo({
       'frontend/package.json': JSON.stringify({ dependencies: { next: '16', react: '^19' } }),
