@@ -565,6 +565,16 @@ const SCENARIOS = [
     // does the rest of the work on this scenario.
     expect: 'setup hit a bug of its own',
   },
+  {
+    name: 'a-failed-run-says-how-to-finish-by-hand',
+    why: 'naming a cause is not the same as being recoverable. If setup misbehaves the agent must be able to pick up at the step that failed, not re-read the whole procedure and redo the parts that already worked',
+    build: () =>
+      app({ 'package.json': pkg({ dev: 'echo "  Local: http://127.0.0.1:59979/"; sleep 20' }) }),
+    run: (dir) => run(dir, ['--url', 'http://127.0.0.1:59979/']),
+    // It got past init and never connected, so the remaining steps must start at the session gate
+    // and must NOT tell it to re-run init, which already succeeded.
+    expect: 'reticle_sessions',
+  },
 ];
 
 const selected = SCENARIOS.filter((s) => only === undefined || s.name === only);

@@ -156,11 +156,57 @@ const phase = (name) => {
   result.phases[name] = now - last;
   last = now;
 };
+/**
+ * What is left to do by hand, from wherever this stopped.
+ *
+ * Setup can misbehave — it has, twice today, and both times it named the cause and left the caller
+ * to work out what that meant for the install. Naming a cause is not the same as being recoverable.
+ * An agent that knows init already ran, the dev server is up and only the drive failed should not
+ * re-read the whole procedure and redo the parts that worked; it should pick up at the step that
+ * did not.
+ *
+ * Ordered, phase-aware, and only ever the REMAINING steps. Everything it needs to act — the url,
+ * the dev command, the session id — is already in this same object.
+ */
+function remainingSteps() {
+  const done = result.phases;
+  const steps = [];
+  if (done.init === undefined) {
+    steps.push(
+      'Run `npx @reticlehq/server@latest init` in this directory and fix every ⚠ it reports.',
+    );
+  }
+  if (done.devServer === undefined && opts.url === undefined) {
+    steps.push(
+      `Start the dev server yourself: ${result.app?.devCmd ?? 'the dev script in package.json'} — then open the app in a browser.`,
+    );
+  }
+  if (result.session === undefined) {
+    steps.push(
+      `Confirm a session appears: \`reticle_sessions\`. If the list is empty, read its \`next_action\` — the usual cause is a dev server that was already running when init edited the build config, so restart it and hard-reload${result.app?.url === undefined ? '' : ` ${result.app.url}`}.`,
+    );
+  }
+  if (result.flowSaved !== true) {
+    steps.push(
+      'Drive one flow and produce a verdict: `reticle_snapshot({mode:"interactive"})` once, `reticle_act_sequence` for the setup steps, then ONE `reticle_act_and_wait({ref,action,until})`. Wrap it in `reticle_record` start/stop and `reticle_flow_save`, and check the grade it returns is `asserted`.',
+    );
+  }
+  steps.push('The whole procedure, if you need it: `curl https://docs.reticle.sh/llms.txt`.');
+  return steps;
+}
+
 function finish(code) {
   result.ok = code === 0;
   result.totalMs = Date.now() - t0;
+  // A failed run is only useful if the caller can carry on from it.
+  if (code !== 0) result.fallback = remainingSteps();
   if (opts.json) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   else {
+    if (code !== 0) {
+      say('');
+      say('  To finish by hand from here:');
+      for (const [i, step] of (result.fallback ?? []).entries()) say(`   ${i + 1}. ${step}`);
+    }
     say('');
     for (const [k, v] of Object.entries(result.phases)) say(`  ${k}: ${(v / 1000).toFixed(1)}s`);
     say(`  total: ${(result.totalMs / 1000).toFixed(1)}s`);
