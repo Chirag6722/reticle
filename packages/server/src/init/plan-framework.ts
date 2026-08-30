@@ -70,22 +70,14 @@ const CAPABILITIES_TITLE = 'Capabilities + store';
 const CAPABILITIES_TODO_TITLE = 'AGENT: finish the capabilities file';
 
 function capabilitiesTodo(path: string, stores: readonly string[]): string {
-  const store =
-    stores.length > 0
-      ? `This app depends on a state library init cannot wire on its own (it needs an argument only ` +
-        `reading the code can supply). Uncomment the suggested line in that file and complete it: ` +
-        `${stores.join('; ')}.`
-      : `No state library was detected. If the app holds state somewhere init cannot see, register ` +
-        `it — see node_modules/@reticlehq/server/docs/usage.md.`;
   return (
-    `${path} was written but registers nothing, so \`hasCapabilities\` stays false and reticle_state ` +
-    `has nothing to read.\n` +
+    `This app's state lives in a library nothing in the running app points at, so it is the one ` +
+    `thing Reticle cannot find for itself — reticle_state will not see it until you say where it ` +
+    `is.\n` +
     `Do this now, before driving anything:\n` +
-    `  1. ${store}\n` +
-    `  2. Open the app's main flow and add \`testids\` for the elements it touches (or add ` +
-    `data-testid attributes where there are none).\n` +
-    `  3. Prove it: drive one flow and check reticle_state returns your keys. An empty state read ` +
-    `means this file is still not doing anything, whatever else went green.`
+    `  1. In ${path}, uncomment the suggested line and complete it: ${stores.join('; ')}.\n` +
+    `  2. Prove it: drive one flow and check reticle_state returns your key. An empty state read ` +
+    `means the line is still not doing anything, whatever else went green.`
   );
 }
 
@@ -97,20 +89,26 @@ function capabilitiesTodo(path: string, stores: readonly string[]): string {
  * only when absent, because it is the one generated file a user is expected to EDIT.
  */
 /**
- * Does the generated dev module actually REGISTER anything?
+ * Is there state left that ONLY the app can hand over?
  *
- * Shared by the Vite and Next paths because it is one question about one generated call, and the
- * two answered it differently for as long as only Vite asked: `capabilitiesStep` was called from
- * `viteSteps` and nowhere else, so a Next app whose store can only be SUGGESTED wrote
- * `registerCapabilities({ testids: [], stores: [] })`, registered nothing, and said nothing.
- * Measured on a real Next + mobx app: five steps, every one a checkmark, no capabilities line.
+ * This used to ask a much bigger question — "does the generated file register anything at all?" —
+ * and fired on almost every install, because almost every install generated a file whose testids
+ * and stores were both empty. The answer was homework: go read the source, uncomment a line, add
+ * data-testid attributes, then drive to prove it. Several turns, on every onboarding.
+ *
+ * Two of those three are no longer anyone's homework. Testids are read from the live DOM, and a
+ * store passed through a React context provider (Redux, TanStack Query) is discovered and
+ * registered on the first commit. What is left is the genuinely unreachable case: a module-scope
+ * store, or one needing an argument only the source supplies — Zustand, Jotai atoms, an XState
+ * actor. Nothing in the running app points at those, so the notice still has to fire, and it now
+ * fires ONLY there.
  *
  * `wired` are stores init resolved and wrote a live `registerStore` call for. Hints are not
  * registrations: they land in the file as a commented line, and counting one as a registration
  * silences the notice whose whole purpose is to say "act on the hint".
  */
-function registersNothing(testids: readonly string[], wired: readonly unknown[]): boolean {
-  return 0 === testids.length && 0 === wired.length;
+function needsManualStore(hints: readonly string[], wired: readonly unknown[]): boolean {
+  return hints.length > 0 && 0 === wired.length;
 }
 
 function capabilitiesStep(input: PlanInput): Step[] {
@@ -127,14 +125,15 @@ function capabilitiesStep(input: PlanInput): Step[] {
   const testids = input.testids ?? [];
   const stores = input.storeHints ?? [];
   const wired = input.foundStores ?? [];
-  const found =
-    testids.length > 0
-      ? `${String(testids.length)} data-testid values`
-      : 'no data-testid values yet';
-  // A store we found and WIRED is a registration, so the "registers nothing" notice must not fire.
-  // A store HINT is not: `stores` holds suggestions, written into the file as a commented line of
-  // the form `// import your store, then: registerStore(...)`. Counting a suggestion as a
-  // registration let the hint silence the notice whose entire job is to say "act on the hint".
+  // Testids no longer need counting here. They are read from the live DOM at announce time, so a
+  // number printed at install time would be a stale claim about a codebase that is about to change —
+  // which is exactly what "no data-testid values yet" used to be on an app whose testids arrive with
+  // a lazy route.
+  const found = 'testids read from the live DOM';
+  // A store we found and WIRED is a registration, so the notice must not fire. A store HINT is not:
+  // `stores` holds suggestions, written into the file as a commented line of the form
+  // `// import your store, then: registerStore(...)`. Counting a suggestion as a registration let
+  // the hint silence the notice whose entire job is to say "act on the hint".
   //
   // Measured against a real product UI (rowy — 70+ deps, jotai, a whole src/atoms tree): init
   // detected jotai, offered one commented line, emitted NO notice, and wrote
@@ -142,10 +141,10 @@ function capabilitiesStep(input: PlanInput): Step[] {
   // false, `reticle_state` was empty forever, and the install gate reported "connected: 1,
   // manual ⚠: none". Every check green, state observability zero.
   //
-  // This is the common case rather than an edge one: a library whose registration needs an argument
-  // only reading the source supplies — jotai atoms, an XState actor, a TanStack queryClient — is
-  // exactly what init leaves commented.
-  const nothingToRegister = registersNothing(testids, wired);
+  // jotai is still exactly that case. A Redux or TanStack app is not, any more: its store rides a
+  // context provider and the React adapter registers it on the first commit, so `storeHints` no
+  // longer names either one and this notice no longer fires for them.
+  const nothingToRegister = needsManualStore(stores, wired);
   return [
     {
       title: CAPABILITIES_TITLE,
@@ -355,7 +354,7 @@ export function nextSteps(input: PlanInput): Step[] {
   // the user's, and re-nagging about a file we did not write is noise.
   const nextTodo: Step[] =
     true !== input.nextReticleDevExists &&
-    registersNothing(input.testids ?? [], input.nextFoundStores ?? [])
+    needsManualStore(input.storeHints ?? [], input.nextFoundStores ?? [])
       ? [
           {
             title: CAPABILITIES_TODO_TITLE,

@@ -437,7 +437,7 @@ describe('buildPlan — install', () => {
  * the file. Same shape as the CRA token notice: a NOTICE beside the write, because `SKILL.md` tells
  * the reader to skip `✓` lines.
  */
-describe('buildPlan — capabilities that will register nothing say so', () => {
+describe('buildPlan — state Reticle cannot reach on its own is named', () => {
   const vitePlan = (partial: Partial<PlanInput> = {}) =>
     buildPlan(
       input({
@@ -447,27 +447,26 @@ describe('buildPlan — capabilities that will register nothing say so', () => {
       }),
     );
 
-  it('raises a NOTICE when the scan found no testids and no store', () => {
-    const plan = vitePlan({ testids: [], storeHints: [] });
+  const capsNotice = (plan: ReturnType<typeof buildPlan>) =>
+    plan.steps.find((s) => s.status === StepStatus.NOTICE && /reticle_state/.test(s.detail));
+
+  /** A module-scope store: nothing in the mounted tree points at it, so only the app can say where. */
+  it('raises a NOTICE for a store the running app cannot reveal', () => {
+    const plan = vitePlan({ testids: [], storeHints: ["registerStore('app', useStore)"] });
     const written = maybeStep(plan, 'Capabilities + store');
     expect(StepStatus.APPLY, 'the step must still WRITE the module').toBe(written?.status);
-
-    const notice = plan.steps.find(
-      (s) => s.status === StepStatus.NOTICE && /capabilit/i.test(s.detail),
-    );
-    expect(
-      notice,
-      'nothing tells the reader that hasCapabilities will stay false until they edit this file',
-    ).toBeDefined();
-    expect(notice?.detail).toMatch(/hasCapabilities/);
+    expect(capsNotice(plan), 'nothing names the one store that will stay invisible').toBeDefined();
   });
 
-  it('stays quiet when the scan actually found something to register', () => {
-    const plan = vitePlan({ testids: ['save-btn', 'row-1'], storeHints: [] });
-    const notice = plan.steps.find(
-      (s) => s.status === StepStatus.NOTICE && /hasCapabilities/.test(s.detail),
-    );
-    expect(notice, 'testids were found — there is nothing to warn about').toBeUndefined();
+  /**
+   * Testids come from the DOM and a context-provided store registers itself, so an app with neither
+   * a detected library nor a scanned testid has nothing anyone needs to be told to go and do.
+   */
+  it('stays quiet when there is nothing only the app could supply', () => {
+    expect(capsNotice(vitePlan({ testids: [], storeHints: [] }))).toBeUndefined();
+    expect(
+      capsNotice(vitePlan({ testids: ['save-btn', 'row-1'], storeHints: [] })),
+    ).toBeUndefined();
   });
 });
 

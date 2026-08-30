@@ -20,6 +20,14 @@ const SRC = join(__dirname);
 
 /** Modules with no production importer, each with the reason it is allowed to stay. */
 const DECLARED_UNWIRED: Record<string, string> = {
+  'setup/page-probe.ts':
+    'The one thing the daemon cannot know when nothing connects: what the page actually contains. ' +
+    'diagnoseNoSession already tells the daemon-side cases apart and its sentence leads; this adds ' +
+    'only whether the SDK is in the HTML, which separates a dev server still serving its pre-edit ' +
+    'bundle from a connect that ran and returned early. Lands ahead of its caller.',
+  'setup/remaining-steps.ts':
+    'What is left to do by hand when setup stops, landing ahead of its caller. Naming a cause is ' +
+    'not the same as being recoverable: a run that got past init must not tell anyone to re-run it.',
   'setup/listeners.ts':
     'Port discovery for the setup orchestrator, landing ahead of the code that calls it. Pure ' +
     'parsing of lsof/netstat/wmic, split out so the Windows rows are testable from any machine — ' +
