@@ -20,31 +20,12 @@ const SRC = join(__dirname);
 
 /** Modules with no production importer, each with the reason it is allowed to stay. */
 const DECLARED_UNWIRED: Record<string, string> = {
-  'setup/drive-agent.ts':
-    'Asking a child agent to drive the app, landing ahead of the CLI wiring. The drive needs a ' +
-    'model and the model need not be the caller: a client reads its MCP list once at startup, so an ' +
-    'agent that has just run init does not yet have the tools, which is why the hand-driven ' +
-    'procedure asks for a restart and why three runs in five ended there showing the user nothing.',
-  'setup/node-effects.ts':
-    'The real world bound to the shape run-setup expects, landing ahead of the CLI wiring. Mostly ' +
-    'thin bindings to things that already exist; the exception is the dev server, because nothing ' +
-    'else in the package owns a spawned process. It is left running on success, since an ' +
-    'instrumented app somebody can watch IS the deliverable, and stopped on every other ending.',
-  'setup/run-setup.ts':
-    'The half of setup that happens after the files are written: get the app running, prove a ' +
-    'session connected, drive one flow to a verdict. Lands ahead of the CLI wiring. Every effect is ' +
-    'injected, so the five phases and each way they fail are tested without booting a dev server or ' +
-    'a browser.',
-  'setup/setup-options.ts':
-    'The contract between the agent and the script, landing ahead of its caller. Everything setup ' +
-    'does is deterministic except the few things that need a repository and a request read and ' +
-    'understood — which flow proves what the user cares about, which app in a monorepo, what env ' +
-    'the app needs to get past its own front door. Those arrive as arguments rather than as steps ' +
-    'somebody walks through: the agent decides, the script executes.',
   'setup/agent-configs.ts':
-    'The registry of coding agents init does not itself reach, landing ahead of its caller. Pure ' +
-    'planning over an injected filesystem, which is how the per-platform paths are checked without ' +
-    'those platforms.',
+    'The registry of coding agents init does not itself reach — VS Code user scope, Zed, Warp, ' +
+    'Kiro, Amp, Copilot CLI, Amazon Q, Factory Droid, Cline, Roo. The PLANNER is here and tested ' +
+    'against an injected filesystem for all three platforms; the writer that carries a plan out is ' +
+    'not ported yet, so nothing calls this. Wiring it is a separate change from the runtime phase ' +
+    'and is kept separate deliberately.',
   'dev/stale-issue-guard.ts':
     'decision logic for scripts/check-stale-issues.mjs, which runs in CI and imports it from dist. ' +
     'A repo-hygiene guard has no caller inside the product by definition; the unit tests are here ' +

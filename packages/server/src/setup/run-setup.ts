@@ -56,7 +56,7 @@ export interface SetupEffects {
   readonly openBrowser: (url: string) => Promise<void>;
   readonly listSessions: () => Promise<CandidateSession[]>;
   /** Drive one flow. Returns the agent's report, or null when nobody could. */
-  readonly drive: (url: string, sessionId: string) => Promise<string | null>;
+  readonly drive: (url: string, session: CandidateSession) => Promise<string | null>;
   readonly flowsSaved: () => boolean;
   readonly now: () => number;
   readonly sleep: (ms: number) => Promise<void>;
@@ -178,7 +178,7 @@ export async function runSetupPhases(input: SetupInput, fx: SetupEffects): Promi
       fallback: [],
     };
   }
-  const verdict = await fx.drive(url, session.sessionId);
+  const verdict = await fx.drive(url, session);
   const flowSaved = fx.flowsSaved();
   if (null === verdict) {
     note('No agent CLI could drive the app, so nothing was proved.');

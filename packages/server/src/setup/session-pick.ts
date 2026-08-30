@@ -18,6 +18,8 @@ export interface CandidateSession {
   readonly hidden?: boolean;
   readonly throttled?: boolean;
   readonly lastSeenMs?: number;
+  /** False when the capabilities file init scaffolded was never completed. */
+  readonly hasCapabilities?: boolean;
 }
 
 /** Sorts a hidden tab after a visible one; among equals, the least stale first. */
