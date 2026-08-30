@@ -20,6 +20,12 @@ const SRC = join(__dirname);
 
 /** Modules with no production importer, each with the reason it is allowed to stay. */
 const DECLARED_UNWIRED: Record<string, string> = {
+  'setup/dev-server-wait.ts':
+    'When a dev server setup started is up, hung or gone, landing ahead of its caller. Nothing else ' +
+    'in the package owns a spawned dev server, so this is the one genuinely new decision here: a ' +
+    'url in the output is an announcement rather than readiness, a launcher that exits is not ' +
+    'necessarily a dead server, and silence rather than a fixed budget is what separates a build ' +
+    'from a wedge.',
   'setup/drive-plan.ts':
     'Who drives the app and whether the flow they saved is worth keeping, landing ahead of its ' +
     'caller. Both are decisions that can be tested without spending anything, which matters because ' +
