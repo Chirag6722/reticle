@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { planAgentConfigs, type PlatformPaths } from './agent-configs.js';
 import { AppShape, readShape } from './desktop-shape.js';
 import { applyAgentPlan, applyAgentSkills } from './agent-writer.js';
+import { ApprovalOutcome, grantAutoApproval } from './auto-approve.js';
 import { openInBrowser } from '../cli/cli-launch.js';
 import { chooseDriver, DRIVERS, shouldEscalate } from './drive-plan.js';
 import { driveWith } from './drive-agent.js';
@@ -96,6 +97,19 @@ function registerOtherAgents(print: (line: string) => void): void {
   }
   const skills = applyAgentSkills(agentIo, { home, platform });
   if (0 < skills.length) print(`wrote the /reticle skill for ${skills.length} agent(s)`);
+
+  // Registration alone still leaves an Accept dialog in front of every call, and a verification run
+  // makes dozens of them: the loop is only autonomous once the tools are pre-approved.
+  const approvals = grantAutoApproval(agentIo, { home, platform });
+  const granted = approvals.filter((a) => ApprovalOutcome.GRANTED === a.outcome);
+  if (0 < granted.length) {
+    print(
+      `pre-approved the reticle tools in ${granted.map((a) => a.name).join(', ')} — no Accept prompt per call`,
+    );
+  }
+  for (const noted of approvals.filter((a) => undefined !== a.warn)) {
+    print(`${noted.name}: ${String(noted.warn)}`);
+  }
 }
 
 export interface SetupCommandResult extends SetupOutcome {

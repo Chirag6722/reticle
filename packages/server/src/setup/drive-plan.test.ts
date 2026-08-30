@@ -87,3 +87,41 @@ describe('when to re-record instead of accepting the flow', () => {
     expect(shouldEscalate({ ...base, escalationEnabled: false })).toBe(false);
   });
 });
+
+describe('each driver invokes itself', () => {
+  const invocation = { tools: 'A,B', budgetUsd: 4, model: undefined, prompt: 'drive it' };
+
+  it('gives every driver its own argv, not Claude Code’s', () => {
+    for (const driver of DRIVERS) {
+      const args = driver.argv(invocation);
+      if ('claude' === driver.id) continue;
+      // These are Claude Code spellings. Any other CLI exits on them with an unknown-flag error,
+      // which is what one shared argv did before each driver carried its own.
+      expect(args).not.toContain('--permission-mode');
+      expect(args).not.toContain('--allowedTools');
+      expect(args).not.toContain('--max-budget-usd');
+    }
+  });
+
+  it('passes the prompt as an argument exactly when the driver does not read stdin', () => {
+    for (const driver of DRIVERS) {
+      const carriesPrompt = driver.argv(invocation).includes(invocation.prompt);
+      expect(carriesPrompt).toBe('arg' === driver.promptVia);
+    }
+  });
+
+  it('drives Codex through `codex exec`, its headless form', () => {
+    const codex = DRIVERS.find((d) => 'codex' === d.id);
+    expect(codex?.argv(invocation)[0]).toBe('exec');
+  });
+
+  it('reads streamed NDJSON from Claude Code alone', () => {
+    expect(DRIVERS.filter((d) => d.streamsNdjson).map((d) => d.id)).toEqual(['claude']);
+  });
+
+  it('names the model to whichever driver was asked for one', () => {
+    for (const driver of DRIVERS) {
+      expect(driver.argv({ ...invocation, model: 'a-model' })).toContain('a-model');
+    }
+  });
+});

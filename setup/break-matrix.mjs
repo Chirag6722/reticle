@@ -27,7 +27,15 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const LAUNCHER = join(HERE, 'reticle.sh');
+/**
+ * What ships, not the prototype beside it.
+ *
+ * These scenarios were written against setup/reticle.sh, which has since been ported into the CLI
+ * as `init`'s runtime phase. Pointing them at dist/cli.js is the only way they keep testing the
+ * thing users actually run — a negative control aimed at a superseded entry point proves nothing,
+ * however green it stays.
+ */
+const CLI = join(HERE, '..', 'packages', 'server', 'dist', 'cli.js');
 const args = process.argv.slice(2);
 const only = args.includes('--only') ? args[args.indexOf('--only') + 1] : undefined;
 const keep = args.includes('--keep');

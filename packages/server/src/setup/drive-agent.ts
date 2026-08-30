@@ -159,27 +159,25 @@ function describeUnfinished(events: readonly Record<string, unknown>[]): string 
 export function driveWith(driver: DriverSpec, req: DriveRequest, cwd: string): DriveReport {
   const tools = undefined === req.unfinishedCapabilitiesFile ? RETICLE_TOOLS : CAPABILITY_TOOLS;
   const prompt = buildDrivePrompt(req);
-  const args = [
-    '-p',
-    '--permission-mode',
-    'acceptEdits',
-    '--allowedTools',
+  const args = driver.argv({
     tools,
-    ...(undefined === req.model ? [] : ['--model', req.model]),
-    '--max-budget-usd',
-    String(req.budgetUsd),
-    '--output-format',
-    'stream-json',
-    '--verbose',
-  ];
+    budgetUsd: req.budgetUsd,
+    model: req.model,
+    prompt,
+  });
   const child = spawnSync(driver.bin, args, {
     cwd,
     encoding: 'utf8',
     timeout: DRIVE_TIMEOUT_MS,
     maxBuffer: 64 * 1024 * 1024,
-    input: prompt,
+    // Only for the drivers that read it. Passing stdin to one that takes the prompt as an argument
+    // is harmless, but passing it as an argument to one that reads stdin is not: `--allowedTools`
+    // is variadic and swallowed a positional prompt, and the run exited in two seconds having done
+    // nothing at all.
+    ...('stdin' === driver.promptVia ? { input: prompt } : {}),
   });
-  const report = readDriveOutput(child.stdout ?? '');
+  const stdout = child.stdout ?? '';
+  const report = driver.streamsNdjson ? readDriveOutput(stdout) : readPlainOutput(stdout);
   if ('' !== report.text || undefined !== report.incomplete) return report;
   const stderr = String(child.stderr ?? '')
     .trim()
@@ -190,4 +188,12 @@ export function driveWith(driver: DriverSpec, req: DriveRequest, cwd: string): D
     text: '',
     incomplete: '' === stderr ? 'it produced no output at all' : stderr.slice(0, 300),
   };
+}
+
+/** Everything that is not Claude Code reports prose, so the report IS its output. */
+export function readPlainOutput(out: string): DriveReport {
+  const text = String(out).trim();
+  if ('' === text) return { text: '', incomplete: 'it produced no output at all' };
+  const grade = readAssertionsGrade(text);
+  return { text, ...(undefined === grade ? {} : { grade }) };
 }

@@ -6,24 +6,115 @@
  * they can be tested without spending anything.
  */
 
-/** An agent CLI that can be asked to drive, in preference order. */
-export interface DriverSpec {
-  readonly id: string;
-  readonly bin: string;
-  /** How its prompt is delivered. Gemini takes it as a flag value; the rest read stdin. */
-  readonly promptVia: 'stdin' | 'arg';
+/** What a driver needs to build its own invocation. */
+export interface DriveInvocation {
+  /** The tools the drive may use, comma-separated, in Claude Code's spelling. */
+  readonly tools: string;
+  readonly budgetUsd: number;
+  readonly model: string | undefined;
+  /** Passed as an argument only by drivers whose promptVia is 'arg'. */
+  readonly prompt: string;
 }
 
 /**
- * Preference order. Restricting this to one CLI meant a Cursor or Codex user got a connected app
- * and no verdict at all: the whole point of the install, withheld over which tool they happen to
- * use.
+ * An agent CLI that can be asked to drive, in preference order.
+ *
+ * Each carries its OWN argv, because they share nothing. A table that lists four drivers and builds
+ * one CLI's flags for all of them does not support four drivers: it supports one and fails the
+ * others with an unknown-flag error, which is what this looked like before.
  */
+export interface DriverSpec {
+  readonly id: string;
+  readonly bin: string;
+  /** How its prompt is delivered. Gemini and Codex take it as an argument; the rest read stdin. */
+  readonly promptVia: 'stdin' | 'arg';
+  /** Its own flags, in its own spelling. */
+  readonly argv: (invocation: DriveInvocation) => string[];
+  /** NDJSON, for the one CLI that streams it. Everything else reports prose. */
+  readonly streamsNdjson: boolean;
+  /** True where the invocation is documented but has not been watched driving a real app here. */
+  readonly unverified?: boolean;
+}
+
 export const DRIVERS: readonly DriverSpec[] = [
-  { id: 'claude', bin: 'claude', promptVia: 'stdin' },
-  { id: 'opencode', bin: 'opencode', promptVia: 'stdin' },
-  { id: 'cursor-agent', bin: 'cursor-agent', promptVia: 'stdin' },
-  { id: 'gemini', bin: 'gemini', promptVia: 'arg' },
+  {
+    id: 'claude',
+    bin: 'claude',
+    promptVia: 'stdin',
+    streamsNdjson: true,
+    argv: ({ tools, budgetUsd, model }) => [
+      '-p',
+      '--permission-mode',
+      'acceptEdits',
+      '--allowedTools',
+      tools,
+      ...(undefined === model ? [] : ['--model', model]),
+      '--max-budget-usd',
+      String(budgetUsd),
+      // stream-json, not json: `json` emits nothing until the run completes, so a drive killed at
+      // the timeout left no trace of where it had got to.
+      '--output-format',
+      'stream-json',
+      '--verbose',
+    ],
+  },
+  {
+    id: 'codex',
+    bin: 'codex',
+    // `codex exec` is its headless form and takes the prompt positionally.
+    promptVia: 'arg',
+    streamsNdjson: false,
+    unverified: true,
+    argv: ({ prompt, model }) => [
+      'exec',
+      ...(undefined === model ? [] : ['--model', model]),
+      prompt,
+    ],
+  },
+  {
+    id: 'opencode',
+    bin: 'opencode',
+    // `opencode run [message..]`, verified against its own --help on this machine.
+    promptVia: 'arg',
+    streamsNdjson: false,
+    unverified: true,
+    argv: ({ prompt, model }) => [
+      'run',
+      ...(undefined === model ? [] : ['--model', model]),
+      prompt,
+    ],
+  },
+  {
+    id: 'cursor-agent',
+    bin: 'cursor-agent',
+    promptVia: 'arg',
+    streamsNdjson: false,
+    unverified: true,
+    argv: ({ prompt, model }) => [
+      '-p',
+      ...(undefined === model ? [] : ['--model', model]),
+      '--output-format',
+      'text',
+      prompt,
+    ],
+  },
+  {
+    id: 'gemini',
+    bin: 'gemini',
+    // Gemini takes its prompt as the value of -p, and gates MCP servers by name.
+    promptVia: 'arg',
+    streamsNdjson: false,
+    unverified: true,
+    argv: ({ prompt, model }) => [
+      '-p',
+      prompt,
+      ...(undefined === model ? [] : ['--model', model]),
+      '--allowed-mcp-server-names',
+      'reticle',
+      '--output-format',
+      'text',
+    ],
+  },
 ];
 
 /**

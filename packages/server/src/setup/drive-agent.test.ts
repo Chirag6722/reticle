@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { buildDrivePrompt, readDriveOutput, type DriveRequest } from './drive-agent.js';
+import {
+  buildDrivePrompt,
+  readDriveOutput,
+  readPlainOutput,
+  type DriveRequest,
+} from './drive-agent.js';
+import { ASSERTED } from './drive-plan.js';
 
 const req = (over: Partial<DriveRequest> = {}): DriveRequest => ({
   url: 'http://localhost:5173',
@@ -106,5 +112,21 @@ describe('reading what came back', () => {
 
   it('says plainly when there were no events at all', () => {
     expect(readDriveOutput('').incomplete).toContain('no events at all');
+  });
+});
+
+describe('reading a driver that reports prose', () => {
+  it('takes the output as the report, since there is no envelope to unwrap', () => {
+    expect(readPlainOutput('  the button stayed disabled  ').text).toBe(
+      'the button stayed disabled',
+    );
+  });
+
+  it('reads the assertions grade out of prose, the same as out of a stream', () => {
+    expect(readPlainOutput('ran it. "grade": "asserted" — done').grade).toBe(ASSERTED);
+  });
+
+  it('calls silence incomplete rather than a clean run that proved nothing', () => {
+    expect(readPlainOutput('   ').incomplete).toBeDefined();
   });
 });
