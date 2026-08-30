@@ -26,12 +26,27 @@ export interface InitRuntimeArgs {
   readonly drive?: boolean | undefined;
   readonly open?: boolean | undefined;
   readonly agents?: boolean | undefined;
+  /**
+   * `--no-mcp`. It governs agent registration too, and pre-approval with it.
+   *
+   * The flag's own help says it skips MORE than the server registration, "because all three only
+   * make sense once the tools are reachable" — and a pre-approval rule for a server the machine was
+   * told not to register is the clearest case of that. It went unread when the registration moved
+   * here, so a run that asked us to leave the machine's config alone wrote to four files in the
+   * user's home. The install gate caught it, because the gate runs with --no-mcp.
+   */
+  readonly mcp?: boolean | undefined;
   readonly flow?: string | undefined;
   readonly env?: string[] | undefined;
   readonly url?: string | undefined;
   readonly timeoutSeconds?: number | undefined;
   readonly driveModel?: string | undefined;
   readonly licenseKey?: string | undefined;
+}
+
+/** Registration is global MCP wiring, so both flags that disown it are read here. */
+function wantsAgents(parsed: InitRuntimeArgs): boolean {
+  return false !== parsed.agents && false !== parsed.mcp;
 }
 
 export interface RuntimePrintIo {
@@ -71,7 +86,7 @@ export function continueAfterInit(
     // has: nothing reaches back into a machine that installed Reticle a version ago, so the
     // upgrade path is re-running init, and the light form of init has to be enough to carry it.
     // A dry run writes nothing anywhere, including here.
-    if (true === parsed.filesOnly && false !== parsed.agents) registerOtherAgents(io.print);
+    if (true === parsed.filesOnly && wantsAgents(parsed)) registerOtherAgents(io.print);
     return confirmInstall(result, io, nodeConfirmDeps(port)).then(() => {
       if (!result.ok) process.exit(1);
     });
@@ -91,7 +106,7 @@ export function continueAfterInit(
       env: collectEnv(parsed.env ?? []),
       openBrowser: false !== parsed.open,
       drive: false !== parsed.drive,
-      registerAgents: false !== parsed.agents,
+      registerAgents: wantsAgents(parsed),
       escalateWeakFlow: true,
       driveBudgetUsd: DEFAULT_DRIVE_BUDGET_USD,
       phaseTimeoutMs:

@@ -16,6 +16,10 @@
  *    OTHER MCP servers start prompting again is a regression we caused and they cannot trace.
  * 4. **Never throws, never writes to stdout.** This runs inside a stdio MCP server, where a stray
  *    byte on stdout corrupts the protocol, and where a crash is experienced as "Reticle is down".
+ * 5. **Never runs against a sandboxed state directory.** A gate or a fixture that points Reticle at
+ *    a temp state dir is not asking to have the real user's editor config rewritten, and every
+ *    battery in this repo starts MCP servers. The one write in this repo that reached a developer's
+ *    own home did so from a gate run, which is exactly the shape this rules out.
  */
 
 import { join } from 'node:path';

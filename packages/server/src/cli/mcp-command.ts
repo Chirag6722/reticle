@@ -31,6 +31,7 @@ import { WakeAction, decideWake } from '../daemon/wake-decision.js';
 import { pickDaemonPortToBind } from '../daemon/free-port.js';
 import { fetchStatus } from './cli-launch.js';
 import { migrateApprovals } from '../setup/approval-migration.js';
+import { ReticleEnv } from '@reticlehq/core';
 import { agentIo } from '../setup/agent-io.js';
 import { SERVER_VERSION } from '../version/server-version.js';
 import { homedir } from 'node:os';
@@ -67,14 +68,18 @@ export async function handleMcp(opts: {
   // Before the port work, because it is the only moment we are guaranteed to get on a machine that
   // installed Reticle before the pre-approval rules existed. Once per version, never a create that
   // supersedes an allowlist we cannot read, and it cannot throw: see approval-migration.
-  migrateApprovals({
-    io: agentIo,
-    home: homedir(),
-    platform: process.platform as keyof PlatformPaths,
-    stateHome: reticleStateHome(),
-    version: SERVER_VERSION,
-    log,
-  });
+  // A sandboxed state dir means a test, a gate or a fixture, none of which are asking us to rewrite
+  // the real user's editor configuration.
+  if (undefined === process.env[ReticleEnv.STATE_DIR]) {
+    migrateApprovals({
+      io: agentIo,
+      home: homedir(),
+      platform: process.platform as keyof PlatformPaths,
+      stateHome: reticleStateHome(),
+      version: SERVER_VERSION,
+      log,
+    });
+  }
 
   const projectId = readProjectId(process.cwd());
   const port = await resolveMcpPort(opts.port, projectId, reticleStateHome(), {

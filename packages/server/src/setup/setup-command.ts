@@ -14,6 +14,7 @@ import { AppShape, readShape } from './desktop-shape.js';
 import { applyAgentPlan, applyAgentSkills } from './agent-writer.js';
 import { ApprovalOutcome, grantAutoApproval } from './auto-approve.js';
 import { agentIo } from './agent-io.js';
+import { EnsureDaemon, ensureDaemon, nodeEnsureDaemonDeps } from './ensure-daemon.js';
 import { openInBrowser } from '../cli/cli-launch.js';
 import { chooseDriver, DRIVERS, shouldEscalate } from './drive-plan.js';
 import { driveWith } from './drive-agent.js';
@@ -122,6 +123,15 @@ export async function runSetupCommand(
   print: (line: string) => void,
 ): Promise<SetupCommandResult> {
   if (input.registerAgents) registerOtherAgents(print);
+
+  // Before the app is booted, because the app's whole job from here is to dial this port. Without
+  // it the phases wait out their budget and then report the SDK as the thing that failed.
+  const daemon = await ensureDaemon(input.bridgePort, nodeEnsureDaemonDeps());
+  if (EnsureDaemon.UNAVAILABLE === daemon) {
+    print(
+      `could not start the Reticle daemon on port ${String(input.bridgePort)}, so nothing is listening for the app to connect to. Run \`npx @reticlehq/server serve --port ${String(input.bridgePort)}\` and try again.`,
+    );
+  }
 
   // Which shell this is decides three things the phases would otherwise get wrong: opening a
   // browser (harmful for desktop, where the app's own window is the client), waiting for an HTTP
