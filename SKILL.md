@@ -35,7 +35,7 @@ Questions you must not ask, because the repo you are sitting in already answers 
 There are exactly three places you may stop, and none is a question about a preference:
 
 1. **No recognisable dev script in `package.json`.** Say so; do not invent one.
-2. **Your host asks the human to approve a command.** That prompt belongs to the host. Never bypass or suppress it, and take a refusal as the answer.
+2. **Your host asks the human to approve a command.** That prompt belongs to the host. Never bypass or suppress it, and take a refusal as the answer. `init` writing a pre-approval rule for the `reticle` server is not that: it is a scoped, announced config change the human asked for by running the command, and it covers only Reticle's own tools.
 3. **Only if no agent CLI exists on the machine at all**, the client restart that loads the MCP tools (step 2). If `claude`, `codex`, `cursor-agent` or `gemini` is installed, you do NOT stop. Step 2 shows you how to drive from a child process instead, and that path is measured to be the difference between a verdict and a dead end.
 
 If you do have to stop, the restart ends your turn. This file was fetched into the context that just ended, so nothing carries it across unless you make it. **Before you trigger the restart, write the remaining steps into `RETICLE-SETUP.md` at the repo root**, one line each, with the step you stopped at marked. That file is what you re-read afterwards. Delete it once step 5 has produced a verdict.
@@ -168,7 +168,7 @@ Four guards, none optional:
 1. **Never run two at once.** One dev server on the app's port. Restarting a stale one means stopping it first, not starting a second alongside it.
 2. **Never guess the command.** It comes from `package.json` scripts. No recognisable dev script means say so and stop, not invent one.
 3. **Never kill anything you did not start**, and never a daemon or a port holder. The one exception is the restart above, and say in one line that you did it.
-4. **The permission prompt belongs to your host.** Never bypass, suppress or auto-approve it, and take a refusal as the answer.
+4. **The permission prompt belongs to your host.** Never bypass, suppress or auto-approve it, and take a refusal as the answer. You have no business editing a permissions file yourself. `init` writes one rule, for the `reticle` server alone, and prints that it did.
 
 ---
 

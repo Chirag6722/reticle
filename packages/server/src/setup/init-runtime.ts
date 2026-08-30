@@ -11,7 +11,7 @@ import { RETICLE_DEFAULT_PORT } from '@reticlehq/core';
 import type { InitResult } from '../init/run.js';
 import { confirmInstall, nodeConfirmDeps } from '../init/confirm.js';
 import { writeLicenseKey } from './license-key.js';
-import { runSetupCommand } from './setup-command.js';
+import { registerOtherAgents, runSetupCommand } from './setup-command.js';
 import { collectEnv, DEFAULT_DRIVE_BUDGET_USD, DEFAULT_PHASE_TIMEOUT_MS } from './setup-options.js';
 
 /** How often the runtime phases look again: fast enough not to be the wait, slow enough to be free. */
@@ -67,6 +67,11 @@ export function continueAfterInit(
   }
 
   if (true === parsed.filesOnly || parsed.dryRun) {
+    // Registration and pre-approval still run here, and this is the ONLY route an existing user
+    // has: nothing reaches back into a machine that installed Reticle a version ago, so the
+    // upgrade path is re-running init, and the light form of init has to be enough to carry it.
+    // A dry run writes nothing anywhere, including here.
+    if (true === parsed.filesOnly && false !== parsed.agents) registerOtherAgents(io.print);
     return confirmInstall(result, io, nodeConfirmDeps(port)).then(() => {
       if (!result.ok) process.exit(1);
     });

@@ -40,7 +40,7 @@ reticle init  [--flow "<what to drive>"] [--env KEY=VALUE]... [--app <dir>] [--l
               [--port N] [--no-mcp] [--no-install] [--timeout S] [--drive-model M]
 ```
 
-`--flow`, `--env` and `--app` are the answers the command cannot work out for itself: which journey proves what you care about, what the app needs to reach a usable state, and which app in a monorepo. `--files-only` is what `init` did before it learned to boot the app.
+`--flow`, `--env` and `--app` are the answers the command cannot work out for itself: which journey proves what you care about, what the app needs to reach a usable state, and which app in a monorepo. `--files-only` is what `init` did before it learned to boot the app: it still registers the MCP server and pre-approves Reticle's tools, so it doubles as the upgrade path for an existing install.
 
 <Card title="Full walkthrough with real output" icon="wand-magic-sparkles" href="/install-agentic">
   What it writes, and how to read its four status marks.

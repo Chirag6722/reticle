@@ -78,7 +78,7 @@ const agentIo = {
  * scope unwritten — it exists on machines today, and init only ever writes the project-scope file,
  * so a VS Code user has no tools outside the directory they ran init in.
  */
-function registerOtherAgents(print: (line: string) => void): void {
+export function registerOtherAgents(print: (line: string) => void): void {
   const platform = process.platform as keyof PlatformPaths;
   const home = homedir();
   const results = applyAgentPlan(

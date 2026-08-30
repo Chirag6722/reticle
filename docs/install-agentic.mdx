@@ -204,13 +204,30 @@ Three of these are answers only the caller has. `init` reads your repository; it
 | `--app <dir>` | Monorepos. `init` can find the apps that are servable; only your request says which one you are working in. |
 | `--license <key>` | Writes `RETICLE_LICENSE_KEY` to `.env` and keeps `.env` out of git. Do not do those two by hand. |
 | `--json` | One object on stdout: what was wired, what connected, the verdict, and an `agentTodo` array. For agents. |
-| `--files-only` | Write the files and stop, which is what `init` did before it learned to boot the app. For CI that owns its own runner. |
+| `--files-only` | Write the files, register the MCP server with every agent on the machine, pre-approve Reticle's tools, and stop: no dev server, no drive. What `init` did before it learned to boot the app, and the upgrade path for a machine that installed Reticle on an earlier version. |
 | `--no-open` | Do not open a browser: CI, a container, an SSH session, or a tab you already have. |
 | `--no-drive` | Stop once a session connects and leave the verdict to you. The only honest way to skip it. |
 | `--dry-run` | See the plan before anything is written. |
 | `--no-mcp` | Your MCP config is managed elsewhere (dotfiles, a team template). |
 | `--no-install` | You want to add the dependencies yourself, at your own versions. |
 | `--port N` | Something else already owns the bridge port. Not the dev server's port. |
+
+## Already installed? Re-run init
+
+Nothing reaches back into a machine that installed Reticle on an earlier version. There is no migration step and no background updater. New wiring arrives when you next run `init`, and only then.
+
+```bash
+npx @reticlehq/server@latest init --files-only
+```
+
+That writes the files, registers the MCP server with every agent it finds, pre-approves Reticle's tools so the per-call Accept dialog stops, and stops there: no dev server, no browser, no drive. Every step is idempotent, so a repo that is already wired reports "already" and changes nothing.
+
+Two things to know afterwards:
+
+- **A GUI client reads its config at startup.** Cursor, Antigravity, Claude Desktop and VS Code need a window reload before the new rules take effect. The CLIs pick them up on their next run.
+- **The pre-approval is scoped to `reticle` alone**, never a blanket rule for every MCP server, and never a global auto-run switch. If a client's approval file did not exist before, `init` says so in a line, because in Cursor's case that file supersedes what you had approved inside the app.
+
+Drop `--files-only` to get the full run: boot the app, drive a flow, return a verdict.
 
 ## The two restarts you no longer have to think about
 
