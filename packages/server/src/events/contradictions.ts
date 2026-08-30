@@ -606,6 +606,12 @@ function findWindowContradictions(
   // apps and say nothing about whether a write landed. Structural, not a timing heuristic, and the
   // distinction was already encoded next door in `isMutating`.
   const failedWrites = failed.filter(isMutating);
+  // The same scoping, for the same reason, one branch down. "The UI moved forward" is also a claim
+  // that something CHANGED, and it was still reading ANY failure — so a first-party poll failing
+  // during an action contradicted a verdict the action had genuinely earned. Measured on the
+  // observation benchmark: one of two false positives across 47 cells, and the argument for it is
+  // the paragraph above, which had simply not been carried down here.
+  const unexpectedWrites = unexpected.filter(isMutating);
   if (failedWrites.length > 0 && successSignals.length > 0 && !failureAcknowledged(events)) {
     found.push({
       kind: ContradictionKind.SIGNAL_CONTRADICTED,
@@ -614,7 +620,7 @@ function findWindowContradictions(
       detail: failedWrites.map(describe).join('; '),
     });
   } else if (
-    unexpected.length > 0 &&
+    unexpectedWrites.length > 0 &&
     true === advanced &&
     !misattributed &&
     !failureAcknowledged(events)
@@ -622,8 +628,8 @@ function findWindowContradictions(
     found.push({
       kind: ContradictionKind.UI_ADVANCED_REQUEST_FAILED,
       claim: 'the UI moved forward (DOM/store/route changed)',
-      counter: `${String(unexpected.length)} request(s) in the same window failed`,
-      detail: unexpected.map(describe).join('; '),
+      counter: `${String(unexpectedWrites.length)} request(s) in the same window failed`,
+      detail: unexpectedWrites.map(describe).join('; '),
     });
   }
 
@@ -712,9 +718,26 @@ function findWindowContradictions(
   // compares nothing rather than guess.
   const actionSince = options.actionSince;
   if (actionSince !== undefined) {
+    /**
+     * When the window navigated, and therefore when a write stops belonging to the user's action.
+     *
+     * React StrictMode double-invokes a mount effect in development, so clicking a nav link lands
+     * two identical writes inside the action's own window. Nothing scoped them out and they read as
+     * a double submit — measured on the observation benchmark as one of two false positives.
+     *
+     * The route change is the structural tell, not a heuristic: the claim this rule makes is "one
+     * user action was performed", and writes that follow a navigation belong to the mount of the
+     * view navigated TO. A real double submit fires from the view it is already on, with nothing in
+     * between — and one that navigates AFTER submitting is still counted, because the order is what
+     * distinguishes them.
+     */
+    const navigatedAt = events.find(
+      (e) => EventType.ROUTE_CHANGE === e.type && e.t >= actionSince,
+    )?.t;
     const writeCounts = new Map<string, { label: string; count: number }>();
     for (const event of events) {
       if (event.type !== EventType.NET_REQUEST || event.t < actionSince) continue;
+      if (navigatedAt !== undefined && event.t >= navigatedAt) continue;
       const call = netCall(event);
       if (!isMutating(call)) continue;
       const label = `${call.method} ${call.url}`;

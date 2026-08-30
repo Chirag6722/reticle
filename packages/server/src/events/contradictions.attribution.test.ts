@@ -169,3 +169,83 @@ describe('a success signal is contradicted by a failed WRITE, not by any failure
     ]);
   });
 });
+
+/**
+ * A failed READ is not evidence against a claim that something CHANGED.
+ *
+ * The rule above this one — a success signal contradicted by a failed write — was already scoped to
+ * mutations, with the argument written beside it: background polls, prefetches and telemetry GETs
+ * fail constantly in healthy apps and say nothing about whether a write landed. "The UI moved
+ * forward" is the same kind of claim and was left reading ANY failure, so a first-party poll failing
+ * during an action contradicted a verdict the action had genuinely earned.
+ *
+ * Measured on the observation benchmark: one of two false positives in 47 cells.
+ */
+describe('contradictions — a failed read is not a failed action', () => {
+  const failedRead = (url: string, t?: number): ReticleEvent =>
+    ev(
+      EventType.NET_REQUEST,
+      { id: `r${String(seq)}`, method: 'GET', url, status: 500, ok: false },
+      t,
+    );
+
+  it('does not let a first-party background poll contradict a UI that moved', () => {
+    expect(kinds([domChanged(), failedRead('/api/notifications/poll')])).toEqual([]);
+  });
+
+  it('still contradicts when the failure was a WRITE, which is the product', () => {
+    expect(kinds([domChanged(), failedCall('/api/items')])).toContain('ui-advanced-request-failed');
+  });
+
+  it('reports the write and ignores the read when both failed', () => {
+    const found = findContradictions(
+      [domChanged(), failedRead('/api/poll'), failedCall('/api/items')],
+      { actionSince: 0, appOrigin: APP },
+    );
+    const advanced = found.find((c) => 'ui-advanced-request-failed' === c.kind);
+    expect(advanced?.counter).toContain('1 request');
+    expect(advanced?.detail).toContain('/api/items');
+    expect(advanced?.detail).not.toContain('/api/poll');
+  });
+});
+
+/**
+ * React StrictMode double-invokes a mount effect in development, so a navigation lands two identical
+ * writes inside the action's own window. That is the dev tooling, not a double submit.
+ *
+ * The structural tell is the ROUTE CHANGE between the action and the writes: the claim
+ * `duplicate-request` makes is "one user action was performed", and writes that follow a route
+ * change belong to the mount of the view that was navigated TO, not to a user pressing submit twice.
+ * A real double submit fires from the view it is already on, with no route change in between.
+ *
+ * Measured on the observation benchmark: the other of two false positives in 47 cells.
+ */
+describe('contradictions — a mount effect after navigation is not a double submit', () => {
+  const write = (url: string, t: number): ReticleEvent =>
+    ev(
+      EventType.NET_REQUEST,
+      { id: `w${String(t)}`, method: 'POST', url, status: 200, ok: true },
+      t,
+    );
+  const routeChange = (t: number): ReticleEvent =>
+    ev(EventType.ROUTE_CHANGE, { from: '/a', to: '/saved-items' }, t);
+
+  it('does not call StrictMode’s doubled mount effect a duplicate write', () => {
+    expect(kinds([routeChange(10), write('/api/seen', 20), write('/api/seen', 21)])).not.toContain(
+      'duplicate-request',
+    );
+  });
+
+  it('still catches a double submit on the view it was already on', () => {
+    expect(kinds([write('/api/generate', 20), write('/api/generate', 21)])).toContain(
+      'duplicate-request',
+    );
+  });
+
+  it('still catches a double submit that happens BEFORE a later navigation', () => {
+    // Order is the whole rule: writes then a route change is a submit that navigated on success.
+    expect(
+      kinds([write('/api/generate', 20), write('/api/generate', 21), routeChange(30)]),
+    ).toContain('duplicate-request');
+  });
+});
