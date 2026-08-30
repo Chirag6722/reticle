@@ -20,6 +20,11 @@ const SRC = join(__dirname);
 
 /** Modules with no production importer, each with the reason it is allowed to stay. */
 const DECLARED_UNWIRED: Record<string, string> = {
+  'setup/drive-agent.ts':
+    'Asking a child agent to drive the app, landing ahead of the CLI wiring. The drive needs a ' +
+    'model and the model need not be the caller: a client reads its MCP list once at startup, so an ' +
+    'agent that has just run init does not yet have the tools, which is why the hand-driven ' +
+    'procedure asks for a restart and why three runs in five ended there showing the user nothing.',
   'setup/node-effects.ts':
     'The real world bound to the shape run-setup expects, landing ahead of the CLI wiring. Mostly ' +
     'thin bindings to things that already exist; the exception is the dev server, because nothing ' +
@@ -36,10 +41,6 @@ const DECLARED_UNWIRED: Record<string, string> = {
     'understood — which flow proves what the user cares about, which app in a monorepo, what env ' +
     'the app needs to get past its own front door. Those arrive as arguments rather than as steps ' +
     'somebody walks through: the agent decides, the script executes.',
-  'setup/drive-plan.ts':
-    'Who drives the app and whether the flow they saved is worth keeping, landing ahead of its ' +
-    'caller. Both are decisions that can be tested without spending anything, which matters because ' +
-    'the drive is the only part of setup that can succeed expensively and leave something worthless.',
   'setup/agent-configs.ts':
     'The registry of coding agents init does not itself reach, landing ahead of its caller. Pure ' +
     'planning over an injected filesystem, which is how the per-platform paths are checked without ' +
