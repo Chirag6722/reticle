@@ -118,6 +118,12 @@ export function continueAfterInit(
       io.print(
         `✓ setup complete — ${outcome.url ?? 'the app'} is instrumented and a flow was driven.`,
       );
+      // A passing flow shows the mechanism working. What the run SAW is the part nobody can get for
+      // themselves, and it deserves a line of its own rather than a paragraph that gets skimmed.
+      io.print(
+        '  Read the FINDINGS above before moving on: a flow can pass with a failed request or a ' +
+          'console error behind it, and that is the app, not the check.',
+      );
       return;
     }
     // A run that produced no verdict did not succeed, and the exit code is the one place a caller

@@ -43,6 +43,16 @@ export interface DriveReport {
 }
 
 /**
+ * Findings are the point, not the verdict.
+ *
+ * A green verdict demonstrates the mechanism. What people remember is Reticle telling them
+ * something they did not know — measured on a real app, a drive's own assertion passed and Reticle
+ * overruled it on a 504 fired inside the action window, which the drive then reported rather than
+ * explaining away. That only happens if the drive is asked for it: asked for a verdict alone, it
+ * returns a verdict alone, and everything else the page did goes unmentioned.
+ */
+
+/**
  * The task LEADS.
  *
  * Measured: with the situation first and a capabilities dump in the middle, a model answered "I
@@ -70,8 +80,15 @@ export function buildDrivePrompt(req: DriveRequest): string {
     'flow only ACTS: it will pass even when the feature is broken, and this setup replays that flow ' +
     'on every later run, so an unasserted flow becomes a permanent green. If it is weaker, record ' +
     'again with an `until` that names a consequence the action CHANGES.\n\n' +
-    'Report the flow name, the verdict, and assertions.grade. A verdict of "unknown" or "no-fault" ' +
-    'is NOT a pass — say so plainly rather than weakening the check until it passes.'
+    'Then, whatever the verdict says: call reticle_observe ONCE and report anything the app did that ' +
+    'its owner would want to know. A console error, a failed or slow request, an unhandled ' +
+    'rejection, a state that did not update, a request fired twice. Give the `file:line` wherever ' +
+    'you have it. A flow that passed with a 500 behind it is not a clean app, and this is the part ' +
+    'they cannot see for themselves — it is the most useful thing you will produce, so do not skip ' +
+    'it because the verdict was green.\n\n' +
+    'Report in this order: FINDINGS first (or "nothing else worth reporting" if the page really was ' +
+    'clean), then the flow name, the verdict, and assertions.grade. A verdict of "unknown" or ' +
+    '"no-fault" is NOT a pass — say so plainly rather than weakening the check until it passes.'
   );
 }
 

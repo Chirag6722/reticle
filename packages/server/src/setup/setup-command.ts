@@ -10,6 +10,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { planAgentConfigs, type PlatformPaths } from './agent-configs.js';
+import { AppShape, readShape } from './desktop-shape.js';
 import { applyAgentPlan, applyAgentSkills } from './agent-writer.js';
 import { openInBrowser } from '../cli/cli-launch.js';
 import { chooseDriver, DRIVERS, shouldEscalate } from './drive-plan.js';
@@ -31,7 +32,7 @@ import {
 /** The capabilities file init scaffolds, in the order a project is likely to have it. */
 const CAPABILITY_FILES = ['reticle-dev.tsx', 'reticle-dev.ts', 'reticle-dev.jsx', 'reticle-dev.js'];
 
-export interface SetupCommandInput extends SetupInput {
+export interface SetupCommandInput extends Omit<SetupInput, 'shape'> {
   /** Where setup was invoked, which is not the app directory in a monorepo. */
   readonly invokedAt: string;
   readonly bridgePort: number;
@@ -42,6 +43,21 @@ export interface SetupCommandInput extends SetupInput {
   readonly escalateWeakFlow: boolean;
   /** Register the MCP server with the coding agents init does not itself reach. */
   readonly registerAgents: boolean;
+}
+
+/** `electron` in either dependency list, read the same way init's desktop doctor reads it. */
+function hasElectronDependency(dir: string): boolean {
+  try {
+    const pkg: unknown = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
+    if ('object' !== typeof pkg || null === pkg) return false;
+    const p = pkg as {
+      dependencies?: Record<string, unknown>;
+      devDependencies?: Record<string, unknown>;
+    };
+    return undefined !== { ...p.dependencies, ...p.devDependencies }['electron'];
+  } catch {
+    return false;
+  }
 }
 
 /** The filesystem, as the agent writer wants it. */
@@ -101,6 +117,16 @@ export async function runSetupCommand(
   print: (line: string) => void,
 ): Promise<SetupCommandResult> {
   if (input.registerAgents) registerOtherAgents(print);
+
+  // Which shell this is decides three things the phases would otherwise get wrong: opening a
+  // browser (harmful for desktop, where the app's own window is the client), waiting for an HTTP
+  // port (a Tauri webview has none), and how long the app gets to appear (a cold `tauri dev` builds
+  // Rust first). The same evidence init's desktop doctor reads.
+  const shape = readShape({
+    hasTauriConf: existsSync(join(input.appDir, 'src-tauri', 'tauri.conf.json')),
+    hasElectronDep: hasElectronDependency(input.appDir),
+  });
+  if (AppShape.WEB !== shape) print(`detected a ${shape} app`);
 
   const server = new OwnedDevServer();
   // Both roots, because in a monorepo `.reticle/` sits at the app root rather than where setup ran.
@@ -191,7 +217,7 @@ export async function runSetupCommand(
   };
 
   try {
-    const outcome = await runSetupPhases(input, effects);
+    const outcome = await runSetupPhases({ ...input, shape }, effects);
     // The app stays up only when there is something worth watching.
     if (outcome.ok) server.handOver();
     return {

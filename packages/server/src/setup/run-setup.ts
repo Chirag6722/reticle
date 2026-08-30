@@ -16,6 +16,7 @@ import { judgeWait, urlToWatch, WaitVerdict } from './dev-server-wait.js';
 import { pickSession, type CandidateSession } from './session-pick.js';
 import { readPage, describePage, type PageProbe } from './page-probe.js';
 import { remainingSteps, type Progress } from './remaining-steps.js';
+import { AppShape, isDesktop, policyFor } from './desktop-shape.js';
 
 /** Where a run got to, and why it stopped if it did. */
 export const SetupPhase = {
@@ -70,6 +71,8 @@ export interface SetupInput {
   readonly suppliedUrl?: string | undefined;
   readonly openBrowser: boolean;
   readonly drive: boolean;
+  /** Web, Electron or Tauri. Desktop changes three things; see desktop-shape.ts. */
+  readonly shape: AppShape;
   readonly phaseTimeoutMs: number;
   readonly pollMs: number;
 }
@@ -137,6 +140,13 @@ export async function runSetupPhases(input: SetupInput, fx: SetupEffects): Promi
         url = watching;
         break;
       }
+      // A desktop shell serves its webview from inside the app, so there is no port to answer and
+      // nothing to be READY. Once it has announced a url, or bound one we can see, that is as far
+      // as this phase can get: the session it dials from its own window is the real signal.
+      if (isDesktop(input.shape) && undefined !== watching) {
+        url = watching;
+        break;
+      }
       if (WaitVerdict.DEAD === verdict) {
         note('The dev server exited without serving anything.');
         return stop(input, SetupPhase.DEV_SERVER, {}, notes);
@@ -150,9 +160,14 @@ export async function runSetupPhases(input: SetupInput, fx: SetupEffects): Promi
   }
 
   // ── and something has to connect from inside it ──────────────────────────────────────────────
+  const policy = policyFor(input.shape);
+  // Through `note`, not `fx.note`: a caller reading the result should see it too.
+  if (undefined !== policy.note) note(policy.note);
   const before = new Set((await fx.listSessions()).map((s) => s.sessionId));
-  if (input.openBrowser) await fx.openBrowser(url);
-  const deadline = fx.now() + input.phaseTimeoutMs;
+  // Never for a desktop app: its own window is the client, and a browser tab would be a SECOND
+  // session that is not the app.
+  if (input.openBrowser && policy.openBrowser) await fx.openBrowser(url);
+  const deadline = fx.now() + Math.max(input.phaseTimeoutMs, policy.connectBudgetMs);
   let session: CandidateSession | null = null;
   for (;;) {
     session = pickSession(await fx.listSessions(), url, before);
@@ -161,8 +176,18 @@ export async function runSetupPhases(input: SetupInput, fx: SetupEffects): Promi
     await fx.sleep(input.pollMs);
   }
   if (null === session) {
-    // What the page contains is the one thing the daemon cannot know, so it is worth one fetch.
-    note(describePage(readPage(await fx.probePage(url)), url));
+    if (isDesktop(input.shape)) {
+      // Nothing outside the app can fetch its webview, so there is no page to describe. What is
+      // wrong here is desktop-shaped: the preload, the capture helper, or a CSP that blocks the
+      // bridge — all of which `reticle doctor` checks.
+      note(
+        'The app never dialled in. For a desktop shell that is usually the preload not being required, ' +
+          'the capture helper not installed, or a CSP that blocks the bridge: run `npx @reticlehq/server doctor`.',
+      );
+    } else {
+      // What the page contains is the one thing the daemon cannot know, so it is worth one fetch.
+      note(describePage(readPage(await fx.probePage(url)), url));
+    }
     return stop(input, SetupPhase.CONNECT, { url }, notes);
   }
 

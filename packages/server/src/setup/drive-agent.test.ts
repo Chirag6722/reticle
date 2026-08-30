@@ -46,6 +46,22 @@ describe('the prompt', () => {
     expect(prompt).toContain('permanent green');
   });
 
+  // A green verdict shows the mechanism; a finding shows the value. Asked for a verdict alone, a
+  // drive returns a verdict alone and everything else the page did goes unmentioned.
+  it('asks for what else the app did, whatever the verdict says', () => {
+    const prompt = buildDrivePrompt(req());
+    expect(prompt).toContain('reticle_observe');
+    expect(prompt).toContain('FINDINGS first');
+    expect(prompt).toContain('do not skip');
+  });
+
+  it('names the kinds of thing worth reporting, rather than leaving it to taste', () => {
+    const prompt = buildDrivePrompt(req());
+    for (const kind of ['console error', 'failed or slow request', 'unhandled', 'did not update']) {
+      expect(prompt).toContain(kind);
+    }
+  });
+
   it('refuses to let unknown or no-fault be reported as a pass', () => {
     expect(buildDrivePrompt(req())).toContain('is NOT a pass');
   });

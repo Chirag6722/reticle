@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { runSetupPhases, SetupPhase, type SetupEffects, type SetupInput } from './run-setup.js';
+import { AppShape } from './desktop-shape.js';
 import type { CandidateSession } from './session-pick.js';
 import type { PageProbe } from './page-probe.js';
 
@@ -8,6 +9,7 @@ const INPUT: SetupInput = {
   devCommand: 'npm run dev',
   openBrowser: true,
   drive: true,
+  shape: AppShape.WEB,
   phaseTimeoutMs: 1_000,
   pollMs: 1,
 };
@@ -140,6 +142,40 @@ describe('when it cannot continue, it says what is left', () => {
     const fx = world({ drive: () => Promise.resolve(null), flowsSaved: () => false });
     const r = await runSetupPhases(INPUT, fx);
     expect(r.notes.join(' ')).toContain('nothing was proved');
+  });
+});
+
+describe('a desktop app', () => {
+  // The harmful one: the app's own window is the client, so a browser tab would be a SECOND session
+  // that is not the app — the stale-tab false green, arranged deliberately.
+  it('never opens a browser, even with openBrowser on', async () => {
+    const fx = world();
+    await runSetupPhases({ ...INPUT, shape: AppShape.TAURI, openBrowser: true }, fx);
+    expect(fx.opened).toEqual([]);
+  });
+
+  // Tauri serves its webview from tauri://localhost. Nothing outside can fetch it, so waiting for an
+  // HTTP response would fail an app that is running perfectly.
+  it('does not require the url to answer before looking for a session', async () => {
+    const fx = world({ probePage: () => Promise.resolve({ served: false, sdkInPage: false }) });
+    const r = await runSetupPhases({ ...INPUT, shape: AppShape.TAURI }, fx);
+    expect(r.ok).toBe(true);
+    expect(r.reachedPhase).toBe(SetupPhase.DONE);
+  });
+
+  it('says why there is no browser and why the wait is long', async () => {
+    const fx = world();
+    const r = await runSetupPhases({ ...INPUT, shape: AppShape.ELECTRON }, fx);
+    expect(r.notes.join(' ')).toContain('own window is the client');
+  });
+
+  // There is no page to describe when nothing outside the app can fetch it, so the advice has to be
+  // desktop-shaped rather than "restart your dev server".
+  it('gives desktop advice when nothing connects, not page advice', async () => {
+    const fx = world({ listSessions: () => Promise.resolve([]) });
+    const r = await runSetupPhases({ ...INPUT, shape: AppShape.TAURI, phaseTimeoutMs: 1 }, fx);
+    expect(r.notes.join(' ')).toContain('preload');
+    expect(r.notes.join(' ')).not.toContain('build config was edited');
   });
 });
 
