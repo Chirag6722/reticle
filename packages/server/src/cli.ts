@@ -107,6 +107,9 @@ function handleInit(parsed: {
   dryRun: boolean;
   install: boolean;
   app?: string | undefined;
+  flow?: string | undefined;
+  env?: string[] | undefined;
+  filesOnly?: boolean | undefined;
 }): void {
   const cwd = process.cwd();
   const io = buildNodeIo(cwd);

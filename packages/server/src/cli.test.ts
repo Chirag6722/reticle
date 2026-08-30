@@ -252,6 +252,9 @@ describe('parseCliArgs', () => {
       mcp: true,
       dryRun: false,
       install: true,
+      flow: undefined,
+      env: [],
+      filesOnly: false,
     });
   });
 
@@ -264,6 +267,9 @@ describe('parseCliArgs', () => {
       mcp: false,
       dryRun: true,
       install: false,
+      flow: undefined,
+      env: [],
+      filesOnly: false,
     });
   });
 
@@ -274,7 +280,50 @@ describe('parseCliArgs', () => {
       mcp: true,
       dryRun: false,
       install: true,
+      flow: undefined,
+      env: [],
+      filesOnly: false,
     });
+  });
+
+  /**
+   * What only the caller can know arrives as arguments, not as steps somebody walks through.
+   *
+   * `--env` is repeatable rather than comma-separated because a value can contain commas, spaces
+   * and equals signs — a connection string, a base64 token — and inventing a quoting rule for them
+   * is how a variable arrives truncated and the app fails for a reason nobody can see.
+   */
+  it('takes the answers only an agent has: the flow, the app env, and files-only', () => {
+    expect(
+      parseCliArgs(
+        [
+          'init',
+          '--flow',
+          'add to cart and check the badge',
+          '--env',
+          'API=http://x',
+          '--env',
+          'TOKEN=a=b',
+          '--files-only',
+        ],
+        PORT,
+      ),
+    ).toEqual({
+      kind: 'init',
+      port: undefined,
+      mcp: true,
+      dryRun: false,
+      install: true,
+      app: undefined,
+      flow: 'add to cart and check the badge',
+      env: ['API=http://x', 'TOKEN=a=b'],
+      filesOnly: true,
+    });
+  });
+
+  it('refuses a flag that names no value, rather than swallowing the next one', () => {
+    expect(parseCliArgs(['init', '--flow'], PORT)).toMatchObject({ kind: 'error' });
+    expect(parseCliArgs(['init', '--env'], PORT)).toMatchObject({ kind: 'error' });
   });
 
   /**

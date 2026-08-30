@@ -25,8 +25,17 @@ export {
  */
 export const CLI_USAGE = `usage:  npx @reticlehq/server <command>   (or \`reticle <command>\` once the bin is on your PATH)
 
-  reticle init  [--dry-run] [--port N] [--no-mcp] [--no-install] [--app <dir>]  (wire Reticle into the project in this directory)
+  reticle init  [--dry-run] [--port N] [--no-mcp] [--no-install] [--app <dir>]
+                [--flow "<what to drive>"] [--env KEY=VALUE]... [--files-only]  (wire Reticle into the project in this directory)
                 --app picks WHICH app in a monorepo, when several are found
+                --flow names the journey worth proving, in your own words. Only you know
+                which one matters, and naming it is the difference between a drive that
+                finishes and one that spends its budget looking for something to do
+                --env is what the app needs to reach a usable state: the key from
+                .env.example, the mock backend, the variable that skips an auth wall.
+                Repeatable, and a value may contain spaces and equals signs
+                --files-only writes the files and stops, which is what init did before it
+                learned to boot the app and prove the install works
                 --no-mcp skips MORE than the server registration: also the agent rule files
                 (CLAUDE.md / AGENTS.md / .cursor) and the /reticle command, because all three
                 only make sense once the tools are reachable.
@@ -175,6 +184,18 @@ const DRY_RUN_FLAG = '--dry-run';
 const YES_FLAG = '--yes';
 const NO_MCP_FLAG = '--no-mcp';
 const APP_FLAG = '--app';
+/**
+ * What only the caller can know, and what it may switch off.
+ *
+ * `--flow`, `--env` and `--app` are an AGENT's answers: which journey proves the thing the user
+ * cares about, what the app needs to reach a usable state, and which app in a monorepo. None is
+ * inferable from the repository alone, and a run without them either guesses or stops.
+ *
+ * `--files-only` is the escape hatch for a caller that wants what init used to do and nothing more.
+ */
+const FLOW_FLAG = '--flow';
+const ENV_FLAG = '--env';
+const FILES_ONLY_FLAG = '--files-only';
 const NO_INSTALL_FLAG = '--no-install';
 export const HTTP_FLAG = '--http';
 export const HTTP_PORT_FLAG = '--http-port';
@@ -190,6 +211,9 @@ export type CliResult =
       dryRun: boolean;
       install: boolean;
       app: string | undefined;
+      flow: string | undefined;
+      env: string[];
+      filesOnly: boolean;
     }
   | {
       kind: 'serve';
@@ -469,6 +493,9 @@ type InitFlags =
       dryRun: boolean;
       install: boolean;
       app: string | undefined;
+      flow: string | undefined;
+      env: string[];
+      filesOnly: boolean;
     }
   | { kind: 'error'; message: string };
 
@@ -478,6 +505,10 @@ function parseInitFlags(args: string[]): InitFlags {
   let dryRun = false;
   let install = true;
   let app: string | undefined;
+  let flow: string | undefined;
+  // Repeatable: one variable per flag, so a value containing spaces or `=` needs no quoting rules.
+  const env: string[] = [];
+  let filesOnly = false;
   let i = 0;
   while (i < args.length) {
     const arg = args[i];
@@ -496,6 +527,18 @@ function parseInitFlags(args: string[]): InitFlags {
       const value = args[i];
       if (value === undefined) return missingValue(APP_FLAG);
       app = value;
+    } else if (arg === FLOW_FLAG) {
+      i++;
+      const value = args[i];
+      if (value === undefined) return missingValue(FLOW_FLAG);
+      flow = value;
+    } else if (arg === ENV_FLAG) {
+      i++;
+      const value = args[i];
+      if (value === undefined) return missingValue(ENV_FLAG);
+      env.push(value);
+    } else if (arg === FILES_ONLY_FLAG) {
+      filesOnly = true;
     } else if (arg === NO_MCP_FLAG) {
       mcp = false;
     } else if (arg === NO_INSTALL_FLAG) {
@@ -509,7 +552,7 @@ function parseInitFlags(args: string[]): InitFlags {
     }
     i++;
   }
-  return { kind: 'ok', port, mcp, dryRun, install, app };
+  return { kind: 'ok', port, mcp, dryRun, install, app, flow, env, filesOnly };
 }
 
 /** Pure CLI arg parser — exported for unit tests. argv = process.argv.slice(2). */
@@ -584,6 +627,9 @@ export function parseCliArgs(
         dryRun: r.dryRun,
         install: r.install,
         app: r.app,
+        flow: r.flow,
+        env: r.env,
+        filesOnly: r.filesOnly,
       };
     }
     case SERVE_COMMAND: {
