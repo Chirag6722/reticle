@@ -20,6 +20,12 @@ const SRC = join(__dirname);
 
 /** Modules with no production importer, each with the reason it is allowed to stay. */
 const DECLARED_UNWIRED: Record<string, string> = {
+  'setup/setup-options.ts':
+    'The contract between the agent and the script, landing ahead of its caller. Everything setup ' +
+    'does is deterministic except the few things that need a repository and a request read and ' +
+    'understood — which flow proves what the user cares about, which app in a monorepo, what env ' +
+    'the app needs to get past its own front door. Those arrive as arguments rather than as steps ' +
+    'somebody walks through: the agent decides, the script executes.',
   'setup/dev-server-wait.ts':
     'When a dev server setup started is up, hung or gone, landing ahead of its caller. Nothing else ' +
     'in the package owns a spawned dev server, so this is the one genuinely new decision here: a ' +
