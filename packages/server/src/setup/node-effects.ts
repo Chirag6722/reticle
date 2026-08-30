@@ -13,6 +13,8 @@
  */
 
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
+import { Socket } from 'node:net';
+import type { Readable } from 'node:stream';
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fetchStatus } from '../cli/cli-launch.js';
@@ -28,6 +30,16 @@ import type { PageProbe } from './page-probe.js';
 const WINDOWS = 'win32' === process.platform;
 /** A page fetch that is slow is a page fetch that failed, for our purposes. */
 const PROBE_TIMEOUT_MS = 5_000;
+
+/**
+ * Stop an inherited stdio pipe from holding the event loop open.
+ *
+ * A child's piped stdout is a Socket at runtime and a Readable in the types, which has no `unref`.
+ * Narrowing through Socket keeps that honest rather than asserting it.
+ */
+function releasePipe(stream: Readable | null | undefined): void {
+  if (stream instanceof Socket) stream.unref();
+}
 
 /** The dev server this process started, and the only one it will ever stop. */
 export class OwnedDevServer {
@@ -52,6 +64,11 @@ export class OwnedDevServer {
     child.stdout?.on('data', collect);
     child.stderr?.on('data', collect);
     this.child = child;
+  }
+
+  /** The process group leader, for a caller that has to clean up what it handed over. */
+  pid(): number | undefined {
+    return this.child?.pid;
   }
 
   output(): string {
@@ -98,9 +115,23 @@ export class OwnedDevServer {
   }
 
   /** Hand the running server to the user. After this, `stop()` does nothing. */
+  /**
+   * Leave the server running and stop holding it.
+   *
+   * `unref` on the child is NOT enough: its stdout and stderr are pipes owned by this process, and
+   * an open pipe keeps the event loop alive on its own. So `init` printed "setup complete" and then
+   * hung until something killed it, turning a successful run into a non-zero exit — which is
+   * exactly what the install gate reported, on a run whose every other assertion passed.
+   *
+   * The streams are unref'd rather than destroyed: the server is still writing to them, and
+   * destroying the read end of a live pipe risks an EPIPE in somebody else's dev server.
+   */
   handOver(): void {
     this.handedOver = true;
-    this.child?.unref();
+    const child = this.child;
+    releasePipe(child?.stdout);
+    releasePipe(child?.stderr);
+    child?.unref();
   }
 
   stop(): void {

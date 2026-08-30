@@ -110,3 +110,41 @@ describe('reading the project', () => {
     expect(binaryExists('definitely-not-a-real-binary-xyz')).toBe(false);
   });
 });
+
+describe('handing the dev server over', () => {
+  // The bug this pins produced no error and no failing assertion: `init` printed "setup complete"
+  // and then sat there, because the child's stdout pipe still belonged to this process and an open
+  // pipe holds the event loop by itself. The only visible symptom was a non-zero exit on a run that
+  // had succeeded, which is why it survived every gate except the one that reads exit codes.
+  it('lets the process exit, rather than holding it open on the child’s pipes', () => {
+    const script = `
+      import { OwnedDevServer } from '${join(process.cwd(), 'dist/setup/node-effects.js')}';
+      const server = new OwnedDevServer();
+      // A stand-in dev server: long-lived and chatty, so its pipes are genuinely active.
+      server.start('node -e "setInterval(() => console.log(1), 50)"', process.cwd(), {});
+      setTimeout(() => {
+        console.log(JSON.stringify({ pid: server.pid() }));
+        server.handOver();
+      }, 300);
+    `;
+    const child = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+      encoding: 'utf8',
+      timeout: 10_000,
+    });
+    // A timeout kill is exactly the failure: the process never ran out of work to do.
+    expect(child.signal).toBeNull();
+    expect(child.status).toBe(0);
+    const reported: unknown = JSON.parse(child.stdout.trim().split('\n')[0] ?? '{}');
+    const pid =
+      'object' === typeof reported && null !== reported && 'pid' in reported
+        ? Number((reported as { pid?: unknown }).pid ?? 0)
+        : 0;
+    if (0 < pid) {
+      try {
+        process.kill(-pid, 'SIGTERM');
+      } catch {
+        /* the handed-over server is the point; cleaning it up is best effort */
+      }
+    }
+  });
+});
