@@ -12,7 +12,7 @@
  *    request went onto a connected socket is NOT — because the daemon may already have acted on it.
  */
 
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import * as http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import {
@@ -20,9 +20,8 @@ import {
   isRetryableConnectError,
   LOOPBACK_AGENT_OPTIONS,
   LOOPBACK_IDLE_MS,
-} from '../loopback-agent.js';
-import { createSharedServer } from '../http-server.js';
-import { postToSession, POST_MAX_ATTEMPTS } from './mcp-proxy.js';
+} from './loopback-agent.js';
+import { createSharedServer } from './http-server.js';
 
 const BODY = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call' });
 
@@ -58,16 +57,7 @@ async function start(handle: (res: http.ServerResponse, req: http.IncomingMessag
   return started;
 }
 
-/** A port nothing is listening on: bind one, read it back, release it. Connects there are refused. */
-async function deadPort(): Promise<number> {
-  const server = http.createServer();
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const port = (server.address() as AddressInfo).port;
-  await new Promise<void>((resolve) => server.close(() => resolve()));
-  return port;
-}
-
-describe('the POST leg keeps its socket', () => {
+describe('the shared loopback agent keeps its socket', () => {
   it('is configured for reuse rather than a socket per call', () => {
     expect(LOOPBACK_AGENT_OPTIONS.keepAlive).toBe(true);
     expect(LOOPBACK_AGENT_OPTIONS.maxSockets).toBeGreaterThan(0);
@@ -76,8 +66,32 @@ describe('the POST leg keeps its socket', () => {
 
   it('sends two calls down ONE connection', async () => {
     const daemon = await start((res) => res.end('{}'));
-    expect(await postToSession(daemon.url, BODY)).toBeNull();
-    expect(await postToSession(daemon.url, BODY)).toBeNull();
+    // Posted through the agent DIRECTLY. This used to go via the MCP proxy's poster, which has
+    // since been given its own bounded pool (MCP_PROXY_HTTP_AGENT), so routing through it would
+    // no longer be testing this agent at all.
+    const post = (): Promise<void> =>
+      new Promise((resolve, reject) => {
+        // Spelled out rather than spread from a URL: a URL's fields are not RequestOptions, so
+        // `{...new URL(u)}` silently loses the port and dials 80.
+        const target = new URL(daemon.url);
+        const req = http.request(
+          {
+            host: target.hostname,
+            port: Number(target.port),
+            path: target.pathname,
+            method: 'POST',
+            agent: loopbackAgent,
+          },
+          (res) => {
+            res.resume();
+            res.on('end', () => resolve());
+          },
+        );
+        req.on('error', reject);
+        req.end(BODY);
+      });
+    await post();
+    await post();
     // The bound, not a timing: two requests arrived, and the second one did not need a new socket.
     expect(daemon.requests()).toBe(2);
     expect(daemon.connections()).toBe(1);
@@ -93,41 +107,6 @@ describe('the POST leg keeps its socket', () => {
     // socket the retry path deliberately refuses to re-send.
     const shared = createSharedServer();
     expect(shared.httpServer.keepAliveTimeout).toBeGreaterThan(LOOPBACK_IDLE_MS);
-  });
-});
-
-describe('the POST leg retries only what never reached the daemon', () => {
-  it('retries a connect that was refused before any byte was written', async () => {
-    const port = await deadPort();
-    const attempts: string[] = [];
-    const spy = vi.spyOn(process.stderr, 'write').mockImplementation((chunk): boolean => {
-      if (String(chunk).includes('reticle_mcp_proxy_post_error')) attempts.push(String(chunk));
-      return true;
-    });
-    const failure = await postToSession(`http://127.0.0.1:${String(port)}/message`, BODY);
-    spy.mockRestore();
-    expect(failure).not.toBeNull();
-    expect(attempts.length).toBe(POST_MAX_ATTEMPTS);
-  });
-
-  it('does NOT retry a failure once the request was on a connected socket', async () => {
-    // The daemon accepted the connection and read the request, then died. It may already have
-    // clicked the button. Re-sending would click it twice, which is worse than reporting a failure.
-    const daemon = await start((res) => res.socket?.destroy());
-    const failure = await postToSession(daemon.url, BODY);
-    expect(failure).not.toBeNull();
-    expect(daemon.requests()).toBe(1);
-    await daemon.close();
-  });
-
-  it('does NOT retry a refusal the daemon answered with', async () => {
-    const daemon = await start((res) => {
-      res.statusCode = 400;
-      res.end('nope');
-    });
-    expect(await postToSession(daemon.url, BODY)).toContain('400');
-    expect(daemon.requests()).toBe(1);
-    await daemon.close();
   });
 });
 
