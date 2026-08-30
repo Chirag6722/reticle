@@ -220,7 +220,11 @@ export class Presenter {
     document.head.appendChild(style);
     const root = document.createElement('div');
     root.setAttribute('data-reticle-overlay', '');
-    const actStrip = `<div class="reticle-act-strip" data-liveness="idle"><span class="reticle-act-dot" aria-hidden="true"></span><span class="reticle-act">${ACT_STRIP.READY}</span></div>`;
+    // The mode rides ON the status row, next to the dot and the elapsed time it already reports.
+    // It used to be a sibling BELOW the strip, hidden except while reading or acting — so every
+    // single tool call popped a block into the panel and took it away again, which reads as a
+    // second UI flashing in rather than as the one status line changing what it says.
+    const actStrip = `<div class="reticle-act-strip" data-liveness="idle"><span class="reticle-act-dot" aria-hidden="true"></span><span class="reticle-act">${ACT_STRIP.READY}</span><span class="reticle-chip" data-reticle-chip></span></div>`;
     root.innerHTML = `
       ${blockerHtml()}
       <div data-reticle-glow></div>

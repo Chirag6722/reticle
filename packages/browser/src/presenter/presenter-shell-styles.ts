@@ -318,8 +318,19 @@ export const SHELL_CSS = `
   padding:2px 6px;border-radius:999px;white-space:nowrap;pointer-events:none;z-index:2;
   transition:opacity .12s ease;}
 [${OVERLAY}][${STATE}="paused"] [data-reticle-badge]{display:inline-flex;}
+/**
+ * The mode, ON the status row rather than under it.
+ *
+ * The action text beside it is flex:1, so this claims the right edge of the row and takes its space
+ * from the elided action text. Nothing above or below moves: the panel used to grow and shrink by
+ * the height of this pill on every single tool call, which is what made one status line look like a
+ * second UI appearing and leaving.
+ */
 [${DOCK_ATTR}] .reticle-chip{display:none;flex:none;align-items:center;gap:4px;font-size:8px;font-weight:600;letter-spacing:.06em;
-  padding:3px 7px;border-radius:999px;text-transform:uppercase;background:rgba(255,255,255,.06);}
+  padding:3px 7px;border-radius:999px;text-transform:uppercase;background:rgba(255,255,255,.06);
+  opacity:0;transition:opacity .12s ease;}
+[${DOCK_ATTR}] .reticle-chip[data-mode="reading"],
+[${DOCK_ATTR}] .reticle-chip[data-mode="acting"]{opacity:1;}
 [${DOCK_ATTR}] .reticle-chip[data-mode="reading"],
 [${DOCK_ATTR}] .reticle-chip[data-mode="acting"]{display:inline-flex;color:var(--reticle-fg);}
 [${DOCK_ATTR}] .reticle-tally[hidden]{display:none;}
