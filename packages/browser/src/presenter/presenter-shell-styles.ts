@@ -327,8 +327,8 @@ export const SHELL_CSS = `
  * second UI appearing and leaving.
  */
 [${DOCK_ATTR}] .reticle-chip{display:none;flex:none;align-items:center;gap:4px;font-size:8px;font-weight:600;letter-spacing:.06em;
-  padding:3px 7px;border-radius:999px;text-transform:uppercase;background:rgba(255,255,255,.06);
-  opacity:0;transition:opacity .12s ease;}
+  height:16px;padding:0 7px;line-height:1;border-radius:999px;text-transform:uppercase;
+  background:rgba(255,255,255,.06);opacity:0;transition:opacity .12s ease;}
 [${DOCK_ATTR}] .reticle-chip[data-mode="reading"],
 [${DOCK_ATTR}] .reticle-chip[data-mode="acting"]{opacity:1;}
 [${DOCK_ATTR}] .reticle-chip[data-mode="reading"],
