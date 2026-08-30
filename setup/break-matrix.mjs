@@ -36,6 +36,8 @@ const HERE = dirname(fileURLToPath(import.meta.url));
  * however green it stays.
  */
 const CLI = join(HERE, '..', 'packages', 'server', 'dist', 'cli.js');
+/** The shell entry point, whose OWN guards two scenarios below exist to judge. */
+const LAUNCHER_SH = join(HERE, 'reticle.sh');
 const args = process.argv.slice(2);
 const only = args.includes('--only') ? args[args.indexOf('--only') + 1] : undefined;
 const keep = args.includes('--keep');
@@ -48,6 +50,40 @@ const CRASH =
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /** stdout of a shell one-liner, for the port checks a scenario makes about the machine. */
 const quietSync = (c) => spawnSync('sh', ['-c', c], { encoding: 'utf8' }).stdout ?? '';
+
+/**
+ * The scenarios that test the LAUNCHER, not `init`.
+ *
+ * `node-missing` blanks PATH and expects "needs Node"; `node-too-old` puts a fake v16 in front. Both
+ * judge the shell entry point's own guards, and pointing them at `node dist/cli.js` did not make
+ * them fail — it made them meaningless. `process.execPath` is an absolute path, so it ignores the
+ * PATH the scenario just constructed, and Node is found every time. A check that cannot fail is
+ * worse than no check: it reports green for a guard nobody is running.
+ *
+ * So the launcher scenarios run the launcher. `init` scenarios still run the shipped CLI, which is
+ * what the retarget was for.
+ */
+function runLauncher(dir, extraArgs = [], env = {}, timeoutMs = 90_000) {
+  try {
+    const out = execFileSync(
+      '/bin/sh',
+      [LAUNCHER_SH, '--json', '--timeout', '3', '--no-drive', '--no-open', ...extraArgs],
+      {
+        cwd: dir,
+        encoding: 'utf8',
+        timeout: timeoutMs,
+        env: { ...process.env, ...env },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
+    return { code: 0, out };
+  } catch (error) {
+    return {
+      code: error?.status ?? 1,
+      out: `${error?.stdout ?? ''}${error?.stderr ?? ''}`,
+    };
+  }
+}
 
 function run(dir, extraArgs = [], env = {}, timeoutMs = 90_000) {
   try {
@@ -98,7 +134,7 @@ const SCENARIOS = [
     name: 'node-missing',
     why: 'the launcher runs on a machine with no Node at all — the most basic possible failure',
     build: () => app({ 'package.json': pkg({ dev: 'true' }) }),
-    run: (dir) => run(dir, [], { PATH: '/usr/bin:/bin' }),
+    run: (dir) => runLauncher(dir, [], { PATH: '/usr/bin:/bin' }),
     expect: 'needs Node',
   },
   {
@@ -109,7 +145,7 @@ const SCENARIOS = [
     // way a real old Node would (`process.exit(major >= 18 ? 0 : 1)` exits 1 there). Delegating the
     // probe to the real Node made this scenario green while the guard did nothing.
     run: (dir) =>
-      run(dir, [], {
+      runLauncher(dir, [], {
         PATH: shimmedPath(
           dir,
           '#!/bin/sh\ncase "$1" in\n  -v|--version) echo v16.20.2; exit 0 ;;\n  -e) exit 1 ;;\nesac\nexec /usr/bin/env -i PATH=/usr/bin:/bin:/usr/local/bin node "$@"\n',

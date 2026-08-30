@@ -79,6 +79,11 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
       - run: node setup/reticle.test.mjs
+      # The matrix drives the SHIPPED cli for every scenario that reaches `init`, so dist has to
+      # exist. Without this the whole matrix failed with `Cannot find module dist/cli.js` and
+      # reported it as a missing diagnosis, which is a different bug entirely.
+      - run: corepack enable && pnpm install --frozen-lockfile
+      - run: pnpm --filter @reticlehq/core --filter @reticlehq/server build
       # Scenarios that reach `init` need the registry; the rest are hermetic. A failure here is a
       # regression in a diagnosis, which is the thing this script is judged on.
       - run: node setup/break-matrix.mjs
