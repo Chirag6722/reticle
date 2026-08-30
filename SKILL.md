@@ -6,14 +6,15 @@ This file is the whole critical path and nothing else. Everything it leaves out 
 
 ## Your first action, before you read the rest
 
+Do not spend a turn working out which path you are on. The command knows.
+
 ```bash
-cat .reticle.json 2>/dev/null || echo NOT_FOUND
+RETICLE_INSTALL_SOURCE=skill_file npx @reticlehq/server@latest init --flow "<the journey worth proving>"
 ```
 
-- `NOT_FOUND` → go to **SETUP** and start at step 1.
-- File exists → go to **VERIFY**.
+It is idempotent: on a project that is already wired it reports `·` for what is already there and goes straight to proving the app still works. Run it now, then read **SETUP** below for what to pass it and what to do with what it returns.
 
-Run that now. The sections between here and there are the rules the steps assume; read them as you go, not before you act.
+Everything between here and there is a rule the steps assume. Read it as you go, not before you act.
 
 ## Installed means a verdict was produced
 
@@ -80,18 +81,51 @@ Every page arrives with the rules that matter prepended, so a single fetch orien
 
 ## Which path am I on
 
-```bash
-cat .reticle.json 2>/dev/null || echo NOT_FOUND
-```
+You do not have to decide. `init` is idempotent and reports what is already wired, so running it is the cheapest way to find out, and on an installed project it goes straight to proving the app still works.
 
-- `NOT_FOUND` → **SETUP** below.
-- File exists → **VERIFY** below. If `reticle_sessions` then returns an empty list, fetch `https://docs.reticle.sh/troubleshooting.md`; do not restart setup.
+Read **VERIFY** below when the question is "does this still work?" rather than "is this set up?". If `reticle_sessions` returns an empty list on a project that is already wired, fetch `https://docs.reticle.sh/troubleshooting.md`; do not restart setup.
 
 ---
 
 # SETUP
 
-Five steps, in order. None is optional. Step 3 is the one that gets skipped, and it is the one the whole thing depends on.
+**One command. It does all of it, and it ends with a verdict.**
+
+```bash
+RETICLE_INSTALL_SOURCE=skill_file npx @reticlehq/server@latest init --flow "<the journey worth proving>"
+```
+
+`@latest` is deliberate: `npx` caches, and a stale cached CLI is the most common silent setup failure. Never pin a version here.
+
+That single command detects the framework and package manager, wires the build config, installs the SDK, registers the MCP server, starts the dev server, opens the app, waits for a session to connect from inside it, drives one flow, and saves it so every later check is one call with no model in the loop. It exits non-zero if it did not produce a verdict, and prints exactly what is left to do.
+
+## What YOU decide, and pass in
+
+The command reads the repository. It cannot read the request, and three things live only there. Decide them before you run it; do not walk any of them by hand.
+
+| flag | what only you know |
+| --- | --- |
+| `--flow "<what>"` | which journey proves the thing the user asked for. Code can list the buttons; it cannot know checkout matters and the theme toggle does not. Naming it took one real app from a ten-minute timeout to 138 seconds, because the turns go into FINDING a flow. |
+| `--env KEY=VALUE` | what the app needs to reach a usable state: the key from `.env.example`, the mock backend in the README, the variable that skips an auth wall. Repeatable. Without it a real app sits on a login screen and there is no flow to drive at all. |
+| `--app <dir>` | which app in a monorepo. It can list the ones that are servable; only the request says which one is being worked on. |
+
+**Ask the user nothing.** Not the framework, package manager, port, editor or MCP client: every one is answerable from the repo you are sitting in. Read `.env.example`, the README and `package.json`, decide, and say what you decided in one line.
+
+**Never ask about the port.** There are two, and conflating them is a top setup failure. The dev-server port (3000, 5173) belongs to the project's own dev script. The bridge port (**4400**) is the daemon-to-SDK channel and defaults correctly.
+
+## Then read what it gives you back
+
+`⚠` lines and a non-zero exit are a to-do list, not a failed install. The command names the cause and prints the REMAINING steps from wherever it stopped, and it will not tell you to redo a phase that already worked. Do those, and re-run; re-running is safe.
+
+**It is not finished until a verdict exists.** Writing files is not an install, and neither is a connected session. If it exits non-zero, the app is wired and something is still outstanding; say so plainly rather than reporting success.
+
+**If the user gave you a license key**, see [License key](#license-key) below.
+
+---
+
+# If that command could not run it
+
+Older published CLIs stop after writing files. If `init` wrote files and did nothing else, or you are recovering from a failure it reported, do these by hand, in this order, none optional. Step 3 is the one that gets skipped, and it is the one the whole thing depends on.
 
 ## 1. Run init. Ask the user nothing.
 
