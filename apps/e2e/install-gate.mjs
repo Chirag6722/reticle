@@ -645,11 +645,26 @@ async function driveScaffold(scaffold, index) {
       `${String((report.match(/\[✓\]/g) ?? []).length)} ✓ mark(s)`,
     );
 
-    // ── 4. own the daemon before the app can dial it (harness rule 2) ───────────────────────────
+    // ── 4. stop what init handed over, BEFORE booting our own ──────────────────────────────────
+    //
+    // init leaves the app running on purpose: the user gets an instrumented app they can watch.
+    // The gate then boots its own on a different port, and for Vite two servers are harmless. For
+    // Next they are not — both write the same `.next` directory, and the second one finds it being
+    // rewritten underneath itself and never binds. That reported as "the app boots ❌" with Next's
+    // telemetry banner as the detail, which is not about booting at all.
+    //
+    // Doing it here rather than in the finally also stops one scaffold's leftovers reaching the
+    // next one, which is what degraded a whole run down the list.
+    for (const port of handedOverPorts) {
+      if (port !== appPort) await freePortSafely(port);
+    }
+    handedOverPorts = [];
+
+    // ── 5. own the daemon before the app can dial it (harness rule 2) ───────────────────────────
     daemon = await startOwnedDaemon(bridgePort, { cliPath: CLI, cwd: ROOT });
     const transport = watchTransport(bridgePort);
 
-    // ── 5. boot, and open it in a real browser ──────────────────────────────────────────────────
+    // ── 6. boot, and open it in a real browser ──────────────────────────────────────────────────
     const [devCmd, devArgs] = scaffold.dev(appPort);
     dev = spawn(devCmd, devArgs, {
       cwd: app,
@@ -752,7 +767,9 @@ async function driveScaffold(scaffold, index) {
       if (port !== appPort) await freePortSafely(port);
     }
     if (KEEP) note(`kept: ${workdir}`);
-    else rmSync(workdir, { recursive: true, force: true });
+    // A dev server that has just been signalled is still flushing `.next` into this directory, so
+    // the first rmdir loses a race it does not have to lose.
+    else rmSync(workdir, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 });
   }
 
   console.log(`   ${fail === 0 ? '✓' : '✗'} ${scaffold.id}: ${pass} passed, ${fail} failed`);
