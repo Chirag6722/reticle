@@ -45,6 +45,12 @@ const KEY = 60;
  * the fix was to make the constant carry SKILL.md's corrected wording rather than to loosen the
  * check. A higher number is a tighter guard — every additional sentence is one more rule that can no
  * longer drift silently.
+ *
+ * Briefly 12, when `init` gained the ability to start the dev server itself. It went back to 11
+ * because the every-turn budget refused the extra sentence, and the refusal was right: that `init`
+ * may start a dev server is SETUP-time information, and this constant is the text an agent re-reads
+ * on every turn to decide what to do while working. It lives in SKILL.md instead, which is read
+ * once, at the moment it applies.
  */
 const QUOTED_TODAY = 11;
 

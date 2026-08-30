@@ -19,11 +19,14 @@
  *    keeps today's cost and today's exit behaviour, and blocking never happens where blocking is
  *    wrong. The signal is the standard "am I being piped" one and needs no argument parsing, which
  *    also keeps `init`'s documented flag surface where it is.
- *  - It never starts anything. A dev server started by a long-lived daemon is invisible to the
- *    person whose machine it runs on and orphans when the daemon exits, so the daemon stays out of
- *    it — the AGENT starts one, under the guards in agent-rules.ts, because it is attributable and
- *    stoppable there. So the honest shape here is: confirm the app if it connects, otherwise name
- *    the ONE command that is outstanding and the one that proves it worked.
+ *  - The DAEMON never starts anything. A dev server started by a long-lived daemon is invisible to
+ *    the person whose machine it runs on and orphans when the daemon exits, so the daemon stays out
+ *    of it. Note what that reasoning is actually about: attributability, not abstinence. A
+ *    foreground `init` somebody ran satisfies it — the command is in their transcript, and it stops
+ *    what it started if setup fails or is interrupted — which is why the runtime phase is allowed
+ *    to boot one where the daemon is not. This function keeps its own shape either way: confirm the
+ *    app if it connects, otherwise name the ONE command that is outstanding and the one that proves
+ *    it worked.
  */
 import { InitConfirmation, RETICLE_DEFAULT_PORT } from '@reticlehq/core';
 import type { DevServerEntry, InitOutcome } from '@reticlehq/core';

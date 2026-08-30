@@ -169,7 +169,7 @@ Those four are the frameworks with an app and a CI gate behind them. The SDK is 
 So, in this order:
 
 1. **A dev server was already running?** Restart it, then hard-reload the tab. "Something is listening" does not mean the right bundle is served.
-2. **Nothing was running?** Start it in the BACKGROUND and say so in one line. `reticle_sessions` gives you this project's own dev command in `next_action`; use that, never compose one. Started after `init`, it needs no restart.
+2. **Nothing was running?** Start it in the BACKGROUND and say so in one line. `reticle_sessions` gives you this project's own dev command in `next_action`; use that, never compose one. Started after `init`, it needs no restart. **`reticle init` may start it for you, and stops it again if setup fails**: a command somebody ran is attributable and stoppable where a daemon is not.
 
 Stopping here to ask is how a setup turn ends with nothing verified.
 
