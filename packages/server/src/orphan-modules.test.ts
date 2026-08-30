@@ -20,6 +20,10 @@ const SRC = join(__dirname);
 
 /** Modules with no production importer, each with the reason it is allowed to stay. */
 const DECLARED_UNWIRED: Record<string, string> = {
+  'setup/drive-plan.ts':
+    'Who drives the app and whether the flow they saved is worth keeping, landing ahead of its ' +
+    'caller. Both are decisions that can be tested without spending anything, which matters because ' +
+    'the drive is the only part of setup that can succeed expensively and leave something worthless.',
   'setup/page-probe.ts':
     'The one thing the daemon cannot know when nothing connects: what the page actually contains. ' +
     'diagnoseNoSession already tells the daemon-side cases apart and its sentence leads; this adds ' +
