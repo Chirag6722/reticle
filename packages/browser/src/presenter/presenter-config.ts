@@ -114,6 +114,16 @@ export const GLOW_FADE_MS = 250;
 export const GLOW_ON = '1';
 export const GLOW_OFF = '0';
 export const DATA_ON = 'data-on';
+/** The overlay root's state attribute, which the shell styles resolve colour against. */
+export const STATE_ATTR = 'data-reticle-state';
+/**
+ * Not a SessionState: there is no session. It is the absence of one, said out loud.
+ *
+ * Kept off `SessionState` deliberately — that enum crosses the wire, and this state exists only
+ * because nothing crossed the wire.
+ */
+export const UNREACHABLE_STATE = 'unreachable';
+
 /** Overlay-root attribute toggled when the HUD is collapsed to the FAB. */
 export const MIN_ATTR = 'data-reticle-min';
 /** Overlay-root attribute toggled when the agent chat panel is open. */

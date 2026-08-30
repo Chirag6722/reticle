@@ -367,6 +367,14 @@ export const SHELL_CSS = `
     0 0 8px color-mix(in srgb,var(--reticle-state) 45%,transparent);}
 [${CHAT_PANEL}] .reticle-act-strip[data-liveness="idle"] .reticle-act-dot{
   animation:reticle-idle-pulse 2.4s ease-in-out infinite;}
+/**
+ * Unreachable: present, and plainly not working.
+ *
+ * Muted rather than alarming. Nothing is broken in the user's app — Reticle simply has nobody to
+ * talk to — and a dev overlay that shouts about its own plumbing is one the user turns off.
+ */
+[${OVERLAY}][${STATE}="unreachable"]{--reticle-state:var(--reticle-faint);}
+[${OVERLAY}][${STATE}="unreachable"] [${CHAT_PANEL}] .reticle-act-dot{animation:none;}
 [${OVERLAY}][${STATE}="paused"] [${CHAT_PANEL}] .reticle-act-dot,
 [${OVERLAY}][${STATE}="ended"] [${CHAT_PANEL}] .reticle-act-dot{animation:none;}
 @keyframes reticle-idle-pulse{0%,100%{opacity:.45;transform:scale(.92)}50%{opacity:1;transform:scale(1)}}
