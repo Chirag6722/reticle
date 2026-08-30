@@ -484,6 +484,14 @@ async function driveScaffold(scaffold, index) {
   const initFrom = scaffold.initFrom === undefined ? app : join(workdir, scaffold.initFrom);
   let daemon;
   let dev;
+  /**
+   * Ports init said it was using, captured where `report` is in scope.
+   *
+   * The cleanup that needs them runs in the outer `finally`, which cannot see the try-scoped
+   * `report` — reading it there threw a ReferenceError and took the whole gate down after the
+   * first scaffold had already passed every assertion.
+   */
+  let handedOverPorts = [];
 
   try {
     // ── 1. a surface that has never seen Reticle ──────────────────────────────────────────────
@@ -555,6 +563,7 @@ async function driveScaffold(scaffold, index) {
         .join('\n'),
     );
 
+    handedOverPorts = portsMentionedIn(report);
     chk('init exits 0', initExit === 0, `exit ${String(initExit)}`);
 
     // The load-bearing assertion, and now an absolute one. A ⚠ is a step nothing performed, so the
@@ -739,7 +748,7 @@ async function driveScaffold(scaffold, index) {
     // vite squatting the port the NEXT scaffold's init would ask for, and the run degraded down the
     // list while the first scaffold looked fine. Three "the app boots" failures, none of them about
     // booting.
-    for (const port of portsMentionedIn(report)) {
+    for (const port of handedOverPorts) {
       if (port !== appPort) await freePortSafely(port);
     }
     if (KEEP) note(`kept: ${workdir}`);
