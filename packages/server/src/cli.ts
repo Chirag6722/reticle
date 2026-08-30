@@ -80,15 +80,7 @@ import { handleVerify } from './cli/cli-verify.js';
 import { runKill } from './cli/cli-kill.js';
 import { summarizeHunt, type HuntAnomaly, type HuntRun } from './hunt/hunt-report.js';
 import { runInit } from './init/run.js';
-import { runSetupCommand } from './setup/setup-command.js';
-/** How often the runtime phases look again. Fast enough not to be the wait, slow enough to be free. */
-const SETUP_POLL_MS = 250;
-import {
-  collectEnv,
-  DEFAULT_DRIVE_BUDGET_USD,
-  DEFAULT_PHASE_TIMEOUT_MS,
-} from './setup/setup-options.js';
-import { confirmInstall, nodeConfirmDeps } from './init/confirm.js';
+import { continueAfterInit } from './setup/init-runtime.js';
 import { handleDoctor } from './cli/cli-doctor.js';
 import { buildNodeIo } from './init/node-io.js';
 import { describeLicense } from './license/license.js';
@@ -118,6 +110,14 @@ function handleInit(parsed: {
   flow?: string | undefined;
   env?: string[] | undefined;
   filesOnly?: boolean | undefined;
+  licenseKey?: string | undefined;
+  json?: boolean | undefined;
+  drive?: boolean | undefined;
+  open?: boolean | undefined;
+  agents?: boolean | undefined;
+  url?: string | undefined;
+  timeoutSeconds?: number | undefined;
+  driveModel?: string | undefined;
 }): void {
   const cwd = process.cwd();
   const io = buildNodeIo(cwd);
@@ -136,61 +136,7 @@ function handleInit(parsed: {
     },
     io,
   );
-  // `--files-only` is what init did before it learned to boot the app: write and stop. Everyone
-  // else gets the rest, because writing files was never the same thing as an install working.
-  if (true === parsed.filesOnly || true === parsed.dryRun) {
-    void confirmInstall(result, io, nodeConfirmDeps(parsed.port ?? RETICLE_DEFAULT_PORT)).then(
-      () => {
-        if (!result.ok) process.exit(1);
-      },
-    );
-    return;
-  }
-
-  const context = result.context;
-  if (!result.ok || context === undefined) {
-    // Nothing was established, so there is nothing to run against. init has already said why.
-    process.exit(1);
-  }
-
-  void runSetupCommand(
-    {
-      appDir: context.appDir,
-      invokedAt: cwd,
-      bridgePort: parsed.port ?? RETICLE_DEFAULT_PORT,
-      env: collectEnv(parsed.env ?? []),
-      openBrowser: true,
-      drive: true,
-      escalateWeakFlow: true,
-      registerAgents: true,
-      driveBudgetUsd: DEFAULT_DRIVE_BUDGET_USD,
-      phaseTimeoutMs: DEFAULT_PHASE_TIMEOUT_MS,
-      pollMs: SETUP_POLL_MS,
-      ...(undefined === context.devCommand ? {} : { devCommand: context.devCommand }),
-      ...(undefined === parsed.flow ? {} : { flow: parsed.flow }),
-    },
-    (line) => io.print(line),
-  ).then((outcome) => {
-    io.print('');
-    // The drive's own account, printed whether it ended well or not. Discarding it left a run that
-    // reached the drive, produced something, and told the reader nothing about what it found — the
-    // one part of setup the user actually came for.
-    if (undefined !== outcome.verdict && '' !== outcome.verdict) {
-      io.print(outcome.verdict);
-      io.print('');
-    }
-    if (outcome.ok) {
-      io.print(
-        `✓ setup complete — ${outcome.url ?? 'the app'} is instrumented and a flow was driven.`,
-      );
-      return;
-    }
-    // A run that produced no verdict did not succeed, and the exit code is the one place a caller
-    // reads that without parsing anything.
-    io.print('⚠ setup did not finish. To carry on from here:');
-    for (const [i, step] of outcome.fallback.entries()) io.print(`   ${i + 1}. ${step}`);
-    process.exit(1);
-  });
+  void continueAfterInit(parsed, result, io, cwd);
 }
 
 function handleServe(parsed: {

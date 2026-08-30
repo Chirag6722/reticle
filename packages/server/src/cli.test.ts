@@ -50,6 +50,32 @@ describe('summarizeStatus', () => {
   });
 });
 
+/**
+ * The parsed shape of `init` with nothing passed.
+ *
+ * Spelled out rather than loosened: these assertions exist so a field added to the init arm cannot
+ * appear without somebody noticing, and they have caught exactly that twice.
+ */
+const INIT_DEFAULTS = {
+  kind: 'init' as const,
+  port: undefined,
+  mcp: true,
+  dryRun: false,
+  install: true,
+  app: undefined,
+  flow: undefined,
+  env: [] as string[],
+  filesOnly: false,
+  json: false,
+  drive: true,
+  open: true,
+  agents: true,
+  url: undefined,
+  timeoutSeconds: undefined,
+  driveModel: undefined,
+  licenseKey: undefined,
+};
+
 describe('parseCliArgs', () => {
   it('no args defaults to serve on the default port', () => {
     expect(parseCliArgs([], PORT)).toEqual({
@@ -246,44 +272,17 @@ describe('parseCliArgs', () => {
   });
 
   it('init with no flags defaults to mcp + install on, no dry run, no port', () => {
-    expect(parseCliArgs(['init'], PORT)).toEqual({
-      kind: 'init',
-      port: undefined,
-      mcp: true,
-      dryRun: false,
-      install: true,
-      flow: undefined,
-      env: [],
-      filesOnly: false,
-    });
+    expect(parseCliArgs(['init'], PORT)).toEqual(INIT_DEFAULTS);
   });
 
   it('init --dry-run --no-mcp --no-install --port sets each flag', () => {
     expect(
       parseCliArgs(['init', '--dry-run', '--no-mcp', '--no-install', '--port', '4500'], PORT),
-    ).toEqual({
-      kind: 'init',
-      port: 4500,
-      mcp: false,
-      dryRun: true,
-      install: false,
-      flow: undefined,
-      env: [],
-      filesOnly: false,
-    });
+    ).toEqual({ ...INIT_DEFAULTS, port: 4500, mcp: false, dryRun: true, install: false });
   });
 
   it('init --yes is accepted', () => {
-    expect(parseCliArgs(['init', '--yes'], PORT)).toEqual({
-      kind: 'init',
-      port: undefined,
-      mcp: true,
-      dryRun: false,
-      install: true,
-      flow: undefined,
-      env: [],
-      filesOnly: false,
-    });
+    expect(parseCliArgs(['init', '--yes'], PORT)).toEqual(INIT_DEFAULTS);
   });
 
   /**
@@ -309,12 +308,7 @@ describe('parseCliArgs', () => {
         PORT,
       ),
     ).toEqual({
-      kind: 'init',
-      port: undefined,
-      mcp: true,
-      dryRun: false,
-      install: true,
-      app: undefined,
+      ...INIT_DEFAULTS,
       flow: 'add to cart and check the badge',
       env: ['API=http://x', 'TOKEN=a=b'],
       filesOnly: true,

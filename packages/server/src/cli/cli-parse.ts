@@ -36,6 +36,10 @@ export const CLI_USAGE = `usage:  npx @reticlehq/server <command>   (or \`reticl
                 Repeatable, and a value may contain spaces and equals signs
                 --files-only writes the files and stops, which is what init did before it
                 learned to boot the app and prove the install works
+                --license writes the key to .env and keeps .env out of git
+                --json puts the result on stdout, so an agent reads one object
+                --no-drive / --no-open / --no-agents / --url / --timeout / --drive-model
+                are the runtime dials: CI, a headless box, or an app you already run
                 --no-mcp skips MORE than the server registration: also the agent rule files
                 (CLAUDE.md / AGENTS.md / .cursor) and the /reticle command, because all three
                 only make sense once the tools are reachable.
@@ -196,6 +200,28 @@ const APP_FLAG = '--app';
 const FLOW_FLAG = '--flow';
 const ENV_FLAG = '--env';
 const FILES_ONLY_FLAG = '--files-only';
+/**
+ * The rest of the runtime surface.
+ *
+ * `--json` is not a convenience: SKILL.md tells an agent to read the result and act on `agentTodo`,
+ * and reading one object is one turn where interpreting a report is several. The three opt-outs are
+ * what a machine without a browser, or a caller already running their app, actually needs.
+ */
+const JSON_FLAG = '--json';
+const NO_DRIVE_FLAG = '--no-drive';
+const NO_OPEN_FLAG = '--no-open';
+const NO_AGENTS_FLAG = '--no-agents';
+const URL_FLAG = '--url';
+const TIMEOUT_FLAG_INIT = '--timeout';
+const DRIVE_MODEL_FLAG = '--drive-model';
+/**
+ * The key, written to .env by the command rather than by hand.
+ *
+ * The instructions used to ask an agent for three steps: append to .env, check .gitignore, confirm.
+ * All three are deterministic, and the second is the one that costs something when skipped, because
+ * a key committed to git is leaked and stays leaked after the file is removed.
+ */
+const LICENSE_FLAG = '--license';
 const NO_INSTALL_FLAG = '--no-install';
 export const HTTP_FLAG = '--http';
 export const HTTP_PORT_FLAG = '--http-port';
@@ -214,6 +240,14 @@ export type CliResult =
       flow: string | undefined;
       env: string[];
       filesOnly: boolean;
+      json: boolean;
+      drive: boolean;
+      open: boolean;
+      agents: boolean;
+      url: string | undefined;
+      timeoutSeconds: number | undefined;
+      driveModel: string | undefined;
+      licenseKey: string | undefined;
     }
   | {
       kind: 'serve';
@@ -496,6 +530,14 @@ type InitFlags =
       flow: string | undefined;
       env: string[];
       filesOnly: boolean;
+      json: boolean;
+      drive: boolean;
+      open: boolean;
+      agents: boolean;
+      url: string | undefined;
+      timeoutSeconds: number | undefined;
+      driveModel: string | undefined;
+      licenseKey: string | undefined;
     }
   | { kind: 'error'; message: string };
 
@@ -509,6 +551,14 @@ function parseInitFlags(args: string[]): InitFlags {
   // Repeatable: one variable per flag, so a value containing spaces or `=` needs no quoting rules.
   const env: string[] = [];
   let filesOnly = false;
+  let json = false;
+  let drive = true;
+  let open = true;
+  let agents = true;
+  let url: string | undefined;
+  let timeoutSeconds: number | undefined;
+  let driveModel: string | undefined;
+  let licenseKey: string | undefined;
   let i = 0;
   while (i < args.length) {
     const arg = args[i];
@@ -539,6 +589,36 @@ function parseInitFlags(args: string[]): InitFlags {
       env.push(value);
     } else if (arg === FILES_ONLY_FLAG) {
       filesOnly = true;
+    } else if (arg === JSON_FLAG) {
+      json = true;
+    } else if (arg === NO_DRIVE_FLAG) {
+      drive = false;
+    } else if (arg === NO_OPEN_FLAG) {
+      open = false;
+    } else if (arg === NO_AGENTS_FLAG) {
+      agents = false;
+    } else if (arg === URL_FLAG) {
+      i++;
+      const value = args[i];
+      if (value === undefined) return missingValue(URL_FLAG);
+      url = value;
+    } else if (arg === LICENSE_FLAG) {
+      i++;
+      const value = args[i];
+      if (value === undefined) return missingValue(LICENSE_FLAG);
+      licenseKey = value;
+    } else if (arg === DRIVE_MODEL_FLAG) {
+      i++;
+      const value = args[i];
+      if (value === undefined) return missingValue(DRIVE_MODEL_FLAG);
+      driveModel = value;
+    } else if (arg === TIMEOUT_FLAG_INIT) {
+      i++;
+      const value = args[i];
+      if (value === undefined) return missingValue(TIMEOUT_FLAG_INIT);
+      const seconds = parseInt(value, 10);
+      if (isNaN(seconds)) return notANumber(TIMEOUT_FLAG_INIT, value);
+      timeoutSeconds = seconds;
     } else if (arg === NO_MCP_FLAG) {
       mcp = false;
     } else if (arg === NO_INSTALL_FLAG) {
@@ -552,7 +632,25 @@ function parseInitFlags(args: string[]): InitFlags {
     }
     i++;
   }
-  return { kind: 'ok', port, mcp, dryRun, install, app, flow, env, filesOnly };
+  return {
+    kind: 'ok',
+    port,
+    mcp,
+    dryRun,
+    install,
+    app,
+    flow,
+    env,
+    filesOnly,
+    json,
+    drive,
+    open,
+    agents,
+    url,
+    timeoutSeconds,
+    driveModel,
+    licenseKey,
+  };
 }
 
 /** Pure CLI arg parser — exported for unit tests. argv = process.argv.slice(2). */
@@ -630,6 +728,14 @@ export function parseCliArgs(
         flow: r.flow,
         env: r.env,
         filesOnly: r.filesOnly,
+        json: r.json,
+        drive: r.drive,
+        open: r.open,
+        agents: r.agents,
+        url: r.url,
+        timeoutSeconds: r.timeoutSeconds,
+        driveModel: r.driveModel,
+        licenseKey: r.licenseKey,
       };
     }
     case SERVE_COMMAND: {
