@@ -55,8 +55,8 @@ function run(dir, extraArgs = [], env = {}, timeoutMs = 90_000) {
     // under test in them, and without it every scenario that reaches the connect phase throws a
     // real browser window at whoever is running the matrix.
     const out = execFileSync(
-      '/bin/sh',
-      [LAUNCHER, '--json', '--timeout', '3', '--no-drive', '--no-open', ...extraArgs],
+      process.execPath,
+      [CLI, 'init', '--json', '--timeout', '3', '--no-drive', '--no-open', ...extraArgs],
       {
         cwd: dir,
         encoding: 'utf8',
@@ -282,9 +282,10 @@ const SCENARIOS = [
         return {
           code: 1,
           out: execFileSync(
-            '/bin/sh',
+            process.execPath,
             [
-              LAUNCHER,
+              CLI,
+              'init',
               '--json',
               '--timeout',
               '3',
@@ -408,8 +409,8 @@ const SCENARIOS = [
       }),
     run: async (dir) => {
       const child = spawn(
-        '/bin/sh',
-        [LAUNCHER, '--json', '--timeout', '30', '--no-drive', '--no-open'],
+        process.execPath,
+        [CLI, 'init', '--json', '--timeout', '30', '--no-drive', '--no-open'],
         {
           cwd: dir,
           stdio: ['ignore', 'pipe', 'pipe'],
