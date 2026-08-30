@@ -20,39 +20,26 @@ const SRC = join(__dirname);
 
 /** Modules with no production importer, each with the reason it is allowed to stay. */
 const DECLARED_UNWIRED: Record<string, string> = {
+  'setup/run-setup.ts':
+    'The half of setup that happens after the files are written: get the app running, prove a ' +
+    'session connected, drive one flow to a verdict. Lands ahead of the CLI wiring. Every effect is ' +
+    'injected, so the five phases and each way they fail are tested without booting a dev server or ' +
+    'a browser.',
   'setup/setup-options.ts':
     'The contract between the agent and the script, landing ahead of its caller. Everything setup ' +
     'does is deterministic except the few things that need a repository and a request read and ' +
     'understood — which flow proves what the user cares about, which app in a monorepo, what env ' +
     'the app needs to get past its own front door. Those arrive as arguments rather than as steps ' +
     'somebody walks through: the agent decides, the script executes.',
-  'setup/dev-server-wait.ts':
-    'When a dev server setup started is up, hung or gone, landing ahead of its caller. Nothing else ' +
-    'in the package owns a spawned dev server, so this is the one genuinely new decision here: a ' +
-    'url in the output is an announcement rather than readiness, a launcher that exits is not ' +
-    'necessarily a dead server, and silence rather than a fixed budget is what separates a build ' +
-    'from a wedge.',
   'setup/drive-plan.ts':
     'Who drives the app and whether the flow they saved is worth keeping, landing ahead of its ' +
     'caller. Both are decisions that can be tested without spending anything, which matters because ' +
     'the drive is the only part of setup that can succeed expensively and leave something worthless.',
-  'setup/page-probe.ts':
-    'The one thing the daemon cannot know when nothing connects: what the page actually contains. ' +
-    'diagnoseNoSession already tells the daemon-side cases apart and its sentence leads; this adds ' +
-    'only whether the SDK is in the HTML, which separates a dev server still serving its pre-edit ' +
-    'bundle from a connect that ran and returned early. Lands ahead of its caller.',
-  'setup/remaining-steps.ts':
-    'What is left to do by hand when setup stops, landing ahead of its caller. Naming a cause is ' +
-    'not the same as being recoverable: a run that got past init must not tell anyone to re-run it.',
   'setup/listeners.ts':
     'Port discovery for the setup orchestrator, landing ahead of the code that calls it. Pure ' +
     'parsing of lsof/netstat/wmic, split out so the Windows rows are testable from any machine — ' +
     'they returned nothing there until this existed, which made a dev server that prints no ' +
     'parseable URL undiscoverable on the majority platform.',
-  'setup/session-pick.ts':
-    'Chooses which connected session the setup orchestrator drives, landing ahead of its caller. ' +
-    "A false-green guard: matching any session passes on somebody else's tab, and matching the " +
-    'first on a url drives a tab whose dev server died yesterday.',
   'setup/agent-configs.ts':
     'The registry of coding agents init does not itself reach, landing ahead of its caller. Pure ' +
     'planning over an injected filesystem, which is how the per-platform paths are checked without ' +
