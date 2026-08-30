@@ -424,6 +424,20 @@ function stampInstallProbe(app) {
  * baseline: a threshold answers "is this bad", a baseline answers "is this DIFFERENT", and silent
  * regressions are almost always the second question.
  */
+/**
+ * Every localhost port init said it was using, so the harness can stop what init handed over.
+ *
+ * Read out of init's own output rather than assumed from the framework: a scaffold that relocates
+ * (5173 taken, vite moves to 5174) would otherwise leave the moved one behind.
+ */
+function portsMentionedIn(text) {
+  const found = new Set();
+  for (const m of String(text).matchAll(/https?:\/\/(?:localhost|127\.0\.0\.1):(\d{2,5})/g)) {
+    found.add(Number(m[1]));
+  }
+  return [...found];
+}
+
 function stepsOf(report) {
   return report
     .split('\n')
@@ -718,6 +732,16 @@ async function driveScaffold(scaffold, index) {
     }
     if (daemon !== undefined) await daemon.stop();
     await freePortSafely(appPort);
+    // The dev server INIT started and handed over, which is not the one above.
+    //
+    // Handing it over is the product behaviour: init leaves the user with a running instrumented
+    // app. A harness has to clean up after that, and this one did not — so every scaffold left a
+    // vite squatting the port the NEXT scaffold's init would ask for, and the run degraded down the
+    // list while the first scaffold looked fine. Three "the app boots" failures, none of them about
+    // booting.
+    for (const port of portsMentionedIn(report)) {
+      if (port !== appPort) await freePortSafely(port);
+    }
     if (KEEP) note(`kept: ${workdir}`);
     else rmSync(workdir, { recursive: true, force: true });
   }
