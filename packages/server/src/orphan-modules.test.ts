@@ -20,6 +20,11 @@ const SRC = join(__dirname);
 
 /** Modules with no production importer, each with the reason it is allowed to stay. */
 const DECLARED_UNWIRED: Record<string, string> = {
+  'setup/node-effects.ts':
+    'The real world bound to the shape run-setup expects, landing ahead of the CLI wiring. Mostly ' +
+    'thin bindings to things that already exist; the exception is the dev server, because nothing ' +
+    'else in the package owns a spawned process. It is left running on success, since an ' +
+    'instrumented app somebody can watch IS the deliverable, and stopped on every other ending.',
   'setup/run-setup.ts':
     'The half of setup that happens after the files are written: get the app running, prove a ' +
     'session connected, drive one flow to a verdict. Lands ahead of the CLI wiring. Every effect is ' +
@@ -35,11 +40,6 @@ const DECLARED_UNWIRED: Record<string, string> = {
     'Who drives the app and whether the flow they saved is worth keeping, landing ahead of its ' +
     'caller. Both are decisions that can be tested without spending anything, which matters because ' +
     'the drive is the only part of setup that can succeed expensively and leave something worthless.',
-  'setup/listeners.ts':
-    'Port discovery for the setup orchestrator, landing ahead of the code that calls it. Pure ' +
-    'parsing of lsof/netstat/wmic, split out so the Windows rows are testable from any machine — ' +
-    'they returned nothing there until this existed, which made a dev server that prints no ' +
-    'parseable URL undiscoverable on the majority platform.',
   'setup/agent-configs.ts':
     'The registry of coding agents init does not itself reach, landing ahead of its caller. Pure ' +
     'planning over an injected filesystem, which is how the per-platform paths are checked without ' +
