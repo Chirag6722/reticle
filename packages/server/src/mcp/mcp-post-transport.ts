@@ -9,6 +9,7 @@
 
 import * as http from 'node:http';
 import { log } from '../log.js';
+import { getSessionMetrics } from '../telemetry/session-metrics.js';
 import { reconnectDelayMs } from './proxy-backoff.js';
 
 /** One bounded pool for the short-lived POST side of each MCP SSE session. */
@@ -86,6 +87,8 @@ export function postToSession(
           // A non-2xx from the daemon MCP endpoint used to be swallowed, hanging the JSON-RPC call
           // client-side with no diagnostic. It is a refusal: no response is coming over the stream.
           log('reticle_mcp_proxy_post_non2xx', { status, path: options.path });
+        } else if (retryCount > 0) {
+          getSessionMetrics().recordPostRetrySaved();
         }
         res.resume(); // drain so the socket is reused
         resolve(
@@ -105,6 +108,8 @@ export function postToSession(
       req.on('error', (err) => {
         if (settled) return;
         settled = true;
+        // Invisible to mcp_connection_lost (SSE is up) and to tool_refused (handler never ran).
+        getSessionMetrics().recordPostSocketFailure();
         const bytesWritten =
           socket === undefined ? 0 : Math.max(0, socket.bytesWritten - socketBytesBeforeRequest);
         if (shouldRetryUnsentPost(err, bytesWritten, retryCount)) {

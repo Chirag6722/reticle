@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DevToolingChannel, isDevToolingUrl, isThirdPartyUrl } from './net.js';
+import { DevToolingChannel, isDevToolingUrl, isThirdPartyUrl, urlForMatch } from './net.js';
 
 describe('isDevToolingUrl — traffic the framework makes about ITSELF', () => {
   it.each(Object.values(DevToolingChannel))('recognises %s', (pattern) => {
@@ -87,5 +87,17 @@ describe('isThirdPartyUrl — whose site is this call to?', () => {
   it('declines to judge at all when the app’s own page is unknown', () => {
     expect(false).toBe(isThirdPartyUrl('https://www.google-analytics.com/g/collect', undefined));
     expect(false).toBe(isThirdPartyUrl(undefined, APP));
+  });
+});
+
+describe('urlForMatch — grader haystack, not the transcript', () => {
+  it('prefers the raw URL when the observer kept one', () => {
+    expect(
+      urlForMatch({ url: '/auth/token/[REDACTED]', urlRaw: '/auth/token/refresh-context' }),
+    ).toBe('/auth/token/refresh-context');
+  });
+
+  it('falls back to the displayed URL when nothing was redacted', () => {
+    expect(urlForMatch({ url: '/api/users' })).toBe('/api/users');
   });
 });

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { join } from 'node:path';
 import { DevServerEntrySchema, devServerRegistryFileName } from '@reticlehq/core';
 import { announceDevServer, type AnnounceIo } from './announce.js';
 
@@ -30,7 +31,11 @@ describe('announceDevServer', () => {
   it('writes an entry the shared schema accepts', () => {
     const io = fakeIo();
     announceDevServer(entry, HOME, io);
-    const raw = io.files.get(`${HOME}/${devServerRegistryFileName(5173)}`);
+    // `join`, not a literal slash: announceDevServer joins the path, so on Windows the key it wrote
+    // is `\`-separated and a hand-built `/` key missed it. The assertion then read "expected
+    // undefined to be defined" — a portability bug in the test that only a Windows runner could see,
+    // and this branch is the first to have had one.
+    const raw = io.files.get(join(HOME, devServerRegistryFileName(5173)));
     expect(raw).toBeDefined();
     expect(DevServerEntrySchema.safeParse(JSON.parse(raw ?? '')).success).toBe(true);
   });

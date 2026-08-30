@@ -36,6 +36,7 @@ import {
   reconcileNet,
   projectNetCall,
   projectConsoleLog,
+  withoutUrlRaw,
 } from '../events/event-filters.js';
 import {
   applyEventBudget,
@@ -263,7 +264,7 @@ export const OBSERVE_TOOLS: ToolDef[] = [
       // carry session health — a throttled tab means the observed timeline may be incomplete.
       return withControl(session, {
         ...report,
-        events: report.events.map(withoutConstantSessionId),
+        events: report.events.map((e) => withoutUrlRaw(withoutConstantSessionId(e))),
         ...(contradictions.length > 0 ? { contradictions } : {}),
         cost: costHint(report, budgeted.length, droppedOldest),
         ...healthEnvelope(session),

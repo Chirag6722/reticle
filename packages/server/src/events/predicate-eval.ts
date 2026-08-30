@@ -3,9 +3,12 @@ import {
   PredicateKind,
   StreamDirection,
   isDevToolingUrl,
+  urlForMatch,
+  REDACTED_VALUE,
   type ReticleEvent,
 } from '@reticlehq/core';
 import { describeObserved } from './observed-in-window.js';
+import { withoutUrlRaw } from './event-filters.js';
 import type { Predicate } from './predicate-schema.js';
 
 // The predicate SHAPE — the discriminated union, its aliases and its zod schema — lives in
@@ -198,6 +201,32 @@ function describeCall(e: ReticleEvent): string {
   const head = `${str(e.data['method']) ?? 'GET'} ${str(e.data['url']) ?? ''}`;
   const status = num(e.data['status']);
   return status === undefined ? head : `${head} → ${String(status)}`;
+}
+
+/**
+ * What a miss should say when the displayed URL was redacted. Matching uses `urlRaw` when present;
+ * an older SDK has no copy, and this is the sentence both reporters asked for.
+ */
+const REDACTED_PATH_HINT =
+  'this path segment was redacted — the literal you matched may be here, try bodyContains';
+
+function observedNetCalls(
+  events: readonly ReticleEvent[],
+  urlContains: string | undefined,
+): string {
+  const calls = events.filter((e) => e.type === EventType.NET_REQUEST);
+  const base = describeObserved('calls', calls.map(describeCall));
+  if (urlContains === undefined) return base;
+  const encoded = encodeURIComponent(REDACTED_VALUE);
+  const redacted = calls.some((e) => {
+    const url = str(e.data['url']) ?? '';
+    return url.includes(REDACTED_VALUE) || url.includes(encoded);
+  });
+  return redacted ? `${base}; ${REDACTED_PATH_HINT}` : base;
+}
+
+function netEvidence(data: Record<string, unknown>): unknown {
+  return (withoutUrlRaw({ data }) as { data: unknown }).data;
 }
 
 /**
@@ -410,7 +439,7 @@ export function evalNet(
     if (p.method !== undefined && str(d['method'])?.toUpperCase() !== p.method.toUpperCase()) {
       return false;
     }
-    if (p.urlContains !== undefined && !(str(d['url']) ?? '').includes(p.urlContains)) {
+    if (p.urlContains !== undefined && !urlForMatch(d).includes(p.urlContains)) {
       return false;
     }
     if (p.status !== undefined) {
@@ -528,25 +557,19 @@ export function evalNet(
       pass: false,
       failureReason: reason,
       inconclusive: reason,
-      observed: describeObserved(
-        'calls',
-        events.filter((e) => e.type === EventType.NET_REQUEST).map(describeCall),
-      ),
+      observed: observedNetCalls(events, p.urlContains),
       expected: `at least one call matching ${describeNetFilter(p)}`,
       assertion: 'net.unobserved-channel',
     };
   }
   return hit !== undefined
-    ? { pass: true, evidence: hit.data }
+    ? { pass: true, evidence: netEvidence(hit.data) }
     : {
         pass: false,
         failureReason: `no network call matched ${JSON.stringify(p)}`,
         // Same reasoning as the signal miss: "no matching call" cannot be told apart from "the app
         // made no calls at all", and those need different fixes.
-        observed: describeObserved(
-          'calls',
-          events.filter((e) => e.type === EventType.NET_REQUEST).map(describeCall),
-        ),
+        observed: observedNetCalls(events, p.urlContains),
         expected: `at least one call matching ${JSON.stringify(p)}`,
         assertion: 'net.present',
       };

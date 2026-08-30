@@ -218,6 +218,22 @@ export const SessionSummarySchema = z.object({
    */
   noSessionErrors: z.number().int().nonnegative().optional(),
   /**
+   * Connection-level POST failures on the MCP proxy (`ENOBUFS`, `EMFILE`, `EADDRNOTAVAIL`,
+   * `ECONNREFUSED` before any bytes were sent).
+   *
+   * These never produce `tool_refused` (the call never reached a handler) and never produce
+   * `mcp_connection_lost` (the SSE stream is fine). Without this count, a keep-alive retry that
+   * saves the call is indistinguishable from one that never fired. Absent when none happened.
+   */
+  postSocketFailures: z.number().int().nonnegative().optional(),
+  /**
+   * Of those POST failures, how many a bounded retry then delivered.
+   *
+   * The numerator against `postSocketFailures`: a retry that quietly saves a call is a different
+   * fact from a retry that never runs. Absent when none were saved.
+   */
+  postRetriesSaved: z.number().int().nonnegative().optional(),
+  /**
    * Longest back-to-back run per tool name — the shape of a retry loop.
    *
    * `toolCounts` reports five useful calls and five retries of one failing call identically, and

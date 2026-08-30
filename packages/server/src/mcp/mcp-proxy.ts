@@ -35,6 +35,7 @@ import {
   OnRequest,
 } from './proxy-lifecycle.js';
 import { describePresence, probePresence } from '../daemon/port-presence.js';
+import { flushProxySessionMetrics } from '../telemetry/proxy-telemetry.js';
 /**
  * The same `/status` probe `doctor`, `status` and `kill` ask with. Reused rather than re-written:
  * the whole defect this import closes was the proxy answering a DIFFERENT question from every other
@@ -879,7 +880,8 @@ export function startMcpProxy(
     process.stdin.on('end', () => {
       const quit = (code: number): void => {
         stopped = true;
-        process.exit(code);
+        // Await: fire-and-forget here is how daemon_stopped never arrived.
+        void flushProxySessionMetrics().finally(() => process.exit(code));
       };
       if (0 === pending.unanswered.length) {
         quit(0);

@@ -154,3 +154,25 @@ export function isThirdPartyUrl(url: string | undefined, appUrl: string | undefi
   if (target === undefined || app === undefined) return false;
   return registrableDomain(target) !== registrableDomain(app);
 }
+
+/**
+ * The unredacted URL, kept so a grader can match `urlContains` against the path the app actually
+ * requested. `url` is what is rendered to the agent and stored as the displayed value; this field
+ * is the match haystack and must not be projected back into a transcript.
+ *
+ * Redaction runs at emit time and there is otherwise no raw copy. Public REST segments that happen
+ * to follow a sensitive name (`/auth/token/refresh-context`, `/verify/CERT_INFY_10`) are rewritten
+ * to `[REDACTED]`, so matching only `url` reports "the request did not happen".
+ */
+export const URL_RAW = 'urlRaw';
+
+/**
+ * The URL a filter or predicate should match against: the raw request when the observer kept one,
+ * otherwise the displayed (possibly redacted) `url`.
+ */
+export function urlForMatch(data: Record<string, unknown>): string {
+  const raw = data[URL_RAW];
+  if ('string' === typeof raw && 0 < raw.length) return raw;
+  const url = data['url'];
+  return 'string' === typeof url ? url : '';
+}

@@ -4,7 +4,13 @@ All notable changes to the **`@reticlehq/*`** packages are documented here (each
 
 ## [Unreleased]
 
+### Added
+
+- **`@reticlehq/core` + `@reticlehq/server` — socket-level MCP POST failures are now a session count.** `ENOBUFS`, `EMFILE`, `EADDRNOTAVAIL` and `ECONNREFUSED` before any bytes were sent never produced `tool_refused` (the handler never ran) and never produced `mcp_connection_lost` (the SSE stream was fine), so a keep-alive retry that saved the call was indistinguishable from one that never fired. `postSocketFailures` and `postRetriesSaved` ride the existing session summary, omitted when zero, and the proxy awaits the flush before exit.
+
 ### Fixed
+
+- **`@reticlehq/browser` + `@reticlehq/server` — `urlContains` matches the request the app made, not the redacted display URL.** Path redaction rewrites the segment after `token`/`verify`/… when it is ≥ 12 characters, including ordinary public REST paths (`/auth/token/refresh-context`, `/verify/CERT_INFY_10`). The predicate then ran against the rewritten string and reported "the request did not happen". The observer now keeps the raw URL for the grader only; `url` stays redacted in every agent-facing projection. An older SDK with no raw copy gets the miss named as redaction rather than absence. Closes [#613](https://github.com/reticlehq/reticle/issues/613).
 
 - **`@reticlehq/server` — a scheme-less `RETICLE_ALLOWED_ORIGINS` entry is no longer discarded silently.** `RETICLE_ALLOWED_ORIGINS=myapp.test` appeared to work and had no effect: an entry without a scheme fails origin normalization and was filtered out without a trace, so the allow-list looked configured while every dial from that origin was refused at the gate — and the refusal read as a problem with the page, not with the config. The bridge now logs an `allowed_origin_ignored` warning at startup for each dropped entry, naming the entry and the accepted form (`scheme://host[:port]`), with the corrected value spelled out so the fix is copy-pasteable. The drop itself is unchanged — an invalid entry still allows nothing.
 

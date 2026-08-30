@@ -27,7 +27,7 @@ Tool usage, timing, errors, verifications and bugs are all recorded in **one pla
 
 Do **not** add telemetry inside a tool handler. If you find yourself wanting to, the metric probably belongs at the chokepoint, read off the result.
 
-> The one exception is a path that genuinely does not go through `runTool`. Today that is only the verification runner (`reticle verify`, the HTTP verify surface), which has its own reporter in `telemetry/run-telemetry.ts`. **If you add a second dispatch path, it needs the same treatment**, and until it has one it is invisible. That gap existed for real: CI-found bugs were uncounted.
+> The exceptions are paths that genuinely do not go through `runTool`. One is the verification runner (`reticle verify`, the HTTP verify surface), which has its own reporter in `telemetry/run-telemetry.ts`. The other is the MCP proxy's POST leg (`postToSession`): a socket failure there never reaches a tool handler, so the counts live on the proxy's session summary and flush as `session_progress`. **If you add another dispatch path, it needs the same treatment**, and until it has one it is invisible. That gap existed for real: CI-found bugs were uncounted.
 
 ### 2. Names say what happened
 
@@ -181,6 +181,8 @@ Four counters and one flag were added because the data could not answer question
 | Field | On | Means |
 | --- | --- | --- |
 | `noSessionErrors` | session summary | tool calls that failed because there was no app to reach: no session, no session by that id, or several with none named. The largest drop-off in the funnel; it was previously reachable only by unpacking `errors[]`. |
+| `postSocketFailures` | session summary | connection-level POST failures on the MCP proxy (`ENOBUFS`, `EMFILE`, `EADDRNOTAVAIL`, `ECONNREFUSED` before any bytes were sent). These never produce `tool_refused` (the call never reached a handler) and never produce `mcp_connection_lost` (the SSE stream is fine). Counted in the proxy process and flushed as `session_progress` on stdin end. The send is awaited, because fire-and-forget before `process.exit` is how `daemon_stopped` never arrived. Absent when none happened. |
+| `postRetriesSaved` | session summary | of those POST failures, how many a bounded retry then delivered. The numerator against `postSocketFailures`: a retry that quietly saves a call is a different fact from a retry that never runs. Absent when none were saved. |
 | `consecutiveRepeats` | session summary | longest back-to-back run per tool name. `toolCounts` reports five useful calls and five retries of one failing call identically, and those are opposite facts. |
 | `abandonedActions` | session summary | actions driven with no verdict AFTER them (the trailing unsettled run, not `actions - verifications`). That difference ignores order, so a verdict that drove nothing (a `flow_verify` over saved flows) silently paid for an abandoned action elsewhere. |
 | `endedWithVerdict` | session summary (final only) | did this session ever produce a verdict. The headline metric, and previously the only thing in the payload that had to be COMPUTED, from lifetime counters sitting next to windowed ones, which is a subtraction that gets read wrong. Sent as `false` rather than omitted: a session that drove an app and never asked whether it worked is the finding. |

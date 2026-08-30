@@ -114,13 +114,14 @@ export function declaresBodyIndependentChannel(predicate: Predicate | undefined)
  * the check rather than inform it. Fields the caller left out are not constraints.
  */
 export function matchesDeclaredFailure(
-  call: { method: string; url: string; status: number | undefined },
+  call: { method: string; url: string; matchUrl?: string; status: number | undefined },
   declared: readonly DeclaredNetFailure[],
 ): boolean {
   return declared.some((d) => {
     if (d.method !== undefined && d.method.toUpperCase() !== call.method.toUpperCase())
       return false;
-    if (d.urlContains !== undefined && !call.url.includes(d.urlContains)) return false;
+    const haystack = call.matchUrl ?? call.url;
+    if (d.urlContains !== undefined && !haystack.includes(d.urlContains)) return false;
     if (d.status !== undefined && d.status !== call.status) return false;
     return true;
   });
