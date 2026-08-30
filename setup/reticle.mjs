@@ -1211,7 +1211,7 @@ if (opts.drive && savedFlows.length > 0) {
   const needsCapabilities = session.hasCapabilities === false;
   const capsTask =
     needsCapabilities && capsFile !== undefined
-      ? `\n\nFIRST, before you drive: this session reports hasCapabilities:false, so ${capsFile} was scaffolded and never finished. Open it, register the app's store if it has one, and list the testids the flow you are about to drive actually touches. A few lines. Do not skip this and do not ask — an unfinished capabilities file means reticle_state returns nothing and the verdict rests on the DOM alone.`
+      ? `\n\nFIRST, before you drive: this session reports hasCapabilities:false, so ${capsFile} was scaffolded and never finished. Open it, register the app's store if it has one, and list the testids the flow you are about to drive actually touches. A few lines.\n\nEDIT ONLY ${capsFile}. You have write access for that one file and nothing else: this is somebody's repository, not a scratch copy, and setup silently changing their application source is not a trade they agreed to. If the app is broken in a way that blocks the drive — a build error, a missing asset, an auth wall — SAY SO and stop. That is a finding worth having, and it is theirs to fix.`
       : '';
   const throttleWarning = result.session.visible
     ? ''
