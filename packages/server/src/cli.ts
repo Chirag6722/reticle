@@ -132,6 +132,7 @@ function handleInit(parsed: {
       // The outcome is reported by confirmInstall instead, once it knows whether an app connected —
       // `init` writing files was never the same thing as `init` working (#269).
       deferOutcome: true,
+      continuesToRuntime: true !== parsed.filesOnly && true !== parsed.dryRun,
     },
     io,
   );
@@ -161,6 +162,7 @@ function handleInit(parsed: {
       openBrowser: true,
       drive: true,
       escalateWeakFlow: true,
+      registerAgents: true,
       driveBudgetUsd: DEFAULT_DRIVE_BUDGET_USD,
       phaseTimeoutMs: DEFAULT_PHASE_TIMEOUT_MS,
       pollMs: SETUP_POLL_MS,
@@ -170,6 +172,13 @@ function handleInit(parsed: {
     (line) => io.print(line),
   ).then((outcome) => {
     io.print('');
+    // The drive's own account, printed whether it ended well or not. Discarding it left a run that
+    // reached the drive, produced something, and told the reader nothing about what it found — the
+    // one part of setup the user actually came for.
+    if (undefined !== outcome.verdict && '' !== outcome.verdict) {
+      io.print(outcome.verdict);
+      io.print('');
+    }
     if (outcome.ok) {
       io.print(
         `✓ setup complete — ${outcome.url ?? 'the app'} is instrumented and a flow was driven.`,

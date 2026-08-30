@@ -267,6 +267,13 @@ export interface InitOptions {
    * today's fire-and-forget behaviour, so no path loses its event by forgetting to report.
    */
   deferOutcome?: boolean;
+  /**
+   * Whether the caller carries on into booting the app and driving it.
+   *
+   * Only affects the closing hint, which otherwise tells the reader to restart their dev server and
+   * drive a flow by hand — three lines before this command does both.
+   */
+  continuesToRuntime?: boolean;
 }
 
 export interface InitIo {
@@ -601,6 +608,14 @@ function report(
   agentRoot: string | undefined,
   /** The project's own dev command, so the closing line names what a human would type. */
   devCommand: string | undefined,
+  /**
+   * Whether this run continues into the phases that boot the app and drive it.
+   *
+   * The closing hint tells the reader to restart their dev server and then drive a flow. When those
+   * are the very next things this command does, printing them is worse than noise: it is an
+   * instruction to do by hand what is about to happen automatically, three lines before it happens.
+   */
+  continuesToRuntime = false,
 ): InitResult {
   io.print(dryRun ? 'reticle init (dry run, no files written)' : 'reticle init');
   // Every path below is printed RELATIVE, and until now nothing said what to. Reported from the
@@ -658,9 +673,11 @@ function report(
     );
     io.print('');
   }
-  io.print(
-    restartHint(plan.framework, resolvedStatus(plan, MCP_TARGET, failed, skipped), devCommand),
-  );
+  if (!continuesToRuntime) {
+    io.print(
+      restartHint(plan.framework, resolvedStatus(plan, MCP_TARGET, failed, skipped), devCommand),
+    );
+  }
   return { ok: !connectPending, applied, manual };
 }
 
@@ -926,6 +943,7 @@ function runInitSteps(options: InitOptions, io: InitIo): InitResult {
     options.cwd,
     agentRootOf(options),
     devCommand,
+    true === options.continuesToRuntime,
   );
   // A dry run is a preview, not an outcome — reporting it would inflate both success and failure.
   if (options.dryRun) return result;

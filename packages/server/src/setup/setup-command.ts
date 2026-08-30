@@ -6,8 +6,11 @@
  * run-setup.ts and the pieces it calls.
  */
 
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { planAgentConfigs, type PlatformPaths } from './agent-configs.js';
+import { applyAgentPlan, applyAgentSkills } from './agent-writer.js';
 import { openInBrowser } from '../cli/cli-launch.js';
 import { chooseDriver, DRIVERS, shouldEscalate } from './drive-plan.js';
 import { driveWith } from './drive-agent.js';
@@ -37,6 +40,46 @@ export interface SetupCommandInput extends SetupInput {
   readonly driveBudgetUsd: number;
   readonly driveModel?: string | undefined;
   readonly escalateWeakFlow: boolean;
+  /** Register the MCP server with the coding agents init does not itself reach. */
+  readonly registerAgents: boolean;
+}
+
+/** The filesystem, as the agent writer wants it. */
+const agentIo = {
+  exists: (path: string): boolean => existsSync(path),
+  readFile: (path: string): string => readFileSync(path, 'utf8'),
+  writeFile: (path: string, contents: string): void => writeFileSync(path, contents),
+  mkdirp: (dir: string): void => {
+    mkdirSync(dir, { recursive: true });
+  },
+};
+
+/**
+ * Register with the agents `init` does not reach, and leave the skill where one loads skills from.
+ *
+ * init covers eight clients and only where it finds them installed, which leaves VS Code's USER
+ * scope unwritten — it exists on machines today, and init only ever writes the project-scope file,
+ * so a VS Code user has no tools outside the directory they ran init in.
+ */
+function registerOtherAgents(print: (line: string) => void): void {
+  const platform = process.platform as keyof PlatformPaths;
+  const home = homedir();
+  const results = applyAgentPlan(
+    planAgentConfigs({ home, platform, exists: agentIo.exists, readFile: agentIo.readFile }),
+    agentIo,
+  );
+  const wrote = results.filter((r) => 'created' === r.action || 'merged' === r.action);
+  if (0 < wrote.length) {
+    print(
+      `registered the MCP server with ${wrote.length} more agent(s): ${wrote.map((r) => r.name).join(', ')}`,
+    );
+  }
+  // A format we will not rewrite is somebody's to edit, so it has to be said rather than skipped.
+  for (const manual of results.filter((r) => 'manual' === r.action)) {
+    print(`${manual.name}: ${manual.why} — add the reticle entry to ${manual.file} by hand.`);
+  }
+  const skills = applyAgentSkills(agentIo, { home, platform });
+  if (0 < skills.length) print(`wrote the /reticle skill for ${skills.length} agent(s)`);
 }
 
 export interface SetupCommandResult extends SetupOutcome {
@@ -57,6 +100,8 @@ export async function runSetupCommand(
   input: SetupCommandInput,
   print: (line: string) => void,
 ): Promise<SetupCommandResult> {
+  if (input.registerAgents) registerOtherAgents(print);
+
   const server = new OwnedDevServer();
   // Both roots, because in a monorepo `.reticle/` sits at the app root rather than where setup ran.
   const flowRoots = [input.invokedAt, input.appDir];

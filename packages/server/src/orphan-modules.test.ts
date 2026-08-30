@@ -20,12 +20,6 @@ const SRC = join(__dirname);
 
 /** Modules with no production importer, each with the reason it is allowed to stay. */
 const DECLARED_UNWIRED: Record<string, string> = {
-  'setup/agent-configs.ts':
-    'The registry of coding agents init does not itself reach — VS Code user scope, Zed, Warp, ' +
-    'Kiro, Amp, Copilot CLI, Amazon Q, Factory Droid, Cline, Roo. The PLANNER is here and tested ' +
-    'against an injected filesystem for all three platforms; the writer that carries a plan out is ' +
-    'not ported yet, so nothing calls this. Wiring it is a separate change from the runtime phase ' +
-    'and is kept separate deliberately.',
   'dev/stale-issue-guard.ts':
     'decision logic for scripts/check-stale-issues.mjs, which runs in CI and imports it from dist. ' +
     'A repo-hygiene guard has no caller inside the product by definition; the unit tests are here ' +
