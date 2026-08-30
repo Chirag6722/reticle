@@ -20,6 +20,19 @@ const SRC = join(__dirname);
 
 /** Modules with no production importer, each with the reason it is allowed to stay. */
 const DECLARED_UNWIRED: Record<string, string> = {
+  'setup/listeners.ts':
+    'Port discovery for the setup orchestrator, landing ahead of the code that calls it. Pure ' +
+    'parsing of lsof/netstat/wmic, split out so the Windows rows are testable from any machine — ' +
+    'they returned nothing there until this existed, which made a dev server that prints no ' +
+    'parseable URL undiscoverable on the majority platform.',
+  'setup/session-pick.ts':
+    'Chooses which connected session the setup orchestrator drives, landing ahead of its caller. ' +
+    "A false-green guard: matching any session passes on somebody else's tab, and matching the " +
+    'first on a url drives a tab whose dev server died yesterday.',
+  'setup/agent-configs.ts':
+    'The registry of coding agents init does not itself reach, landing ahead of its caller. Pure ' +
+    'planning over an injected filesystem, which is how the per-platform paths are checked without ' +
+    'those platforms.',
   'dev/stale-issue-guard.ts':
     'decision logic for scripts/check-stale-issues.mjs, which runs in CI and imports it from dist. ' +
     'A repo-hygiene guard has no caller inside the product by definition; the unit tests are here ' +
