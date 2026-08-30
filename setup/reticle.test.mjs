@@ -6,7 +6,7 @@
 // one action that cannot help. So these assert the diagnosis, not just the exit code.
 
 import { execFileSync, spawn } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,6 +20,8 @@ const no = (n, got) => {
   console.log(`  FAIL ${n}\n       ${String(got).slice(0, 400)}`);
   fails += 1;
 };
+const is = (n, got, want) =>
+  got === want ? ok(n) : no(n, `got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`);
 const check = (n, got, want) => (String(got).includes(want) ? ok(n) : no(n, got));
 
 /** setup exits non-zero on every gate below, so the failure text IS the output under test. */
@@ -99,5 +101,36 @@ if (process.platform !== 'win32') {
 }
 
 rmSync(tmp, { recursive: true, force: true });
+
+// Where saved flows live. In a monorepo `.reticle/` sits at the APP root, not where setup was
+// invoked, and looking only in the cwd reported "no verdict" for a run whose drive HAD saved a flow
+// and said so — a false negative, which tells the user a successful install failed.
+{
+  const root = mkdtempSync(join(tmpdir(), 'reticle-flows-'));
+  const appDir = join(root, 'apps', 'web');
+  mkdirSync(join(appDir, '.reticle', 'flows'), { recursive: true });
+  writeFileSync(join(appDir, '.reticle', 'flows', 'projects.json'), '{}');
+
+  // The same rule the script uses: look in BOTH the invocation directory and the app directory.
+  const lookIn = (...roots) => {
+    const seen = new Set();
+    for (const r of roots) {
+      try {
+        for (const f of readdirSync(join(r, '.reticle', 'flows'))) seen.add(f);
+      } catch {
+        /* none */
+      }
+    }
+    return [...seen];
+  };
+
+  is('a flow saved under the app dir is found', lookIn(root, appDir).length, 1);
+  is('looking only where setup was invoked misses it', lookIn(root).length, 0);
+  mkdirSync(join(root, '.reticle', 'flows'), { recursive: true });
+  writeFileSync(join(root, '.reticle', 'flows', 'projects.json'), '{}');
+  is('the same flow in both places is counted once', lookIn(root, appDir).length, 1);
+  rmSync(root, { recursive: true, force: true });
+}
+
 console.log(fails === 0 ? 'PASS' : `${fails} FAILED`);
 process.exit(fails === 0 ? 0 : 1);

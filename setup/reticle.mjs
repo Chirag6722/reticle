@@ -1123,6 +1123,27 @@ const DRIVERS = [
   },
 ];
 
+/**
+ * Saved flows, wherever this project keeps them.
+ *
+ * `.reticle/` lives at the PROJECT root, and in a monorepo that is the app directory rather than
+ * where setup was invoked. Looking only in the cwd reported "no verdict" for a run whose drive had
+ * saved a flow and said so — a false NEGATIVE, which is the mirror of the failure this script
+ * exists to prevent and just as misleading: it exits non-zero and tells the user a successful
+ * install failed.
+ */
+function savedFlowsIn() {
+  const seen = new Set();
+  for (const root of [cwd, appDir]) {
+    try {
+      for (const f of readdirSync(join(root, '.reticle', 'flows'))) seen.add(f);
+    } catch {
+      /* no flows kept there */
+    }
+  }
+  return [...seen];
+}
+
 /** The grade `reticle_flow_save` reported, read out of the child's own prose. */
 function readGrade(text) {
   return (
@@ -1156,7 +1177,7 @@ function usableDriver() {
  */
 const savedFlows = (() => {
   try {
-    return readdirSync(join(cwd, '.reticle', 'flows'));
+    return savedFlowsIn();
   } catch {
     return [];
   }
@@ -1280,8 +1301,7 @@ if (opts.drive && savedFlows.length > 0) {
     );
   }
   say(result.verdict);
-  const flows = join(cwd, '.reticle', 'flows');
-  result.flowSaved = existsSync(flows) && readdirSync(flows).length > 0;
+  result.flowSaved = savedFlowsIn().length > 0;
 
   /**
    * A saved flow is only worth replaying if it ASSERTS something.

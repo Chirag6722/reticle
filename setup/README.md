@@ -127,30 +127,25 @@ Two things it must get right or it measures itself instead of the product:
 
 `pick-session.mjs` and `reticle.mjs`'s `pickSession` are two copies of the rule that stops a stray tab passing for your install. That rule is a false-green guard and should be one module with one test.
 
-## Finishing the validation
+## Where it stands
 
-Three things are not yet proven, and two of them are blocked on machine state rather than on work. They are written out here so that finishing them is a command, not an investigation.
+Against nine real third-party applications — somebody else's code, at their scale, with their package managers — **seven reach the AHA moment** and eight connect. It was four when this started.
 
-### 1. The full fixture suite, on a machine with free memory
+| fixture |  |
+| --- | --- |
+| vite-react, next-pages-router, sveltekit, astro-nanostores | ✓ |
+| astro | ✓ — was 100% broken: `astro dev` daemonizes, and a launcher exiting was read as the server dying |
+| cra-redux-saga | ✓ — was 100% broken: react-scripts prints no parseable URL outside a tty |
+| next-app-router | ✓ — its earlier failures were fd exhaustion, proven by an uninstrumented control failing identically |
+| next14-mobx-monorepo | connects (was dead at 24s); its drive does not finish |
+| vite-preact | connects; the app sits on its own login wall, so there is no flow to drive |
 
-```bash
-cd ../reticle-fixtures && node scripts/setup-run.mjs          # all 9 apps
-```
+Every defect above was found by RUNNING against somebody else's application. None of them would have been caught by the break matrix, and the matrix caught things no fixture ever would. That is the argument for keeping both.
 
-Six of nine reached the AHA moment on the last complete pass. The other three failed for causes that were each identified and are not the script: two were environmental (an uninstrumented control failed identically), one was a defect since fixed and confirmed on its app.
+The sharpest example is not a failure at all. Granted write access to finish the capabilities file, a drive used it to repair an unrelated build blocker and reported doing so. Harmless on a fixture; on a user's repository it is setup silently editing their source. No hostile environment would have surfaced that, because nothing failed — the script succeeded in a way nobody had sanctioned.
 
-**Check swap before trusting a run.** `sysctl vm.swapusage` — this suite was measured on a machine down to 1.2 GB free, and macOS jetsam SIGKILLed setup mid-run at the moment it launched a browser. The runs that die produce zero-byte result files and look exactly like a broken script; three runs were discarded that way. Turbopack falls over first, with `EMFILE: too many open files` surfacing as the alarming and entirely misleading `The directory at .next/dev was deleted`.
+## Still open
 
-### 2. The drive model, and the artifact it leaves
-
-```bash
-node scripts/setup-run.mjs --only astro-nanostores --drive-model sonnet
-```
-
-Measured on a pristine `npm create vite` app: the default model takes ~183-200s and saves a flow graded `asserted`; a faster model takes 70-87s (3x) and saved `assertion-free` or `presence-only` flows in three runs out of four. Both produce a live verdict of `yes` — the difference is entirely in what gets left behind, and since setup REPLAYS saved flows on every later run, a weak one becomes a permanent green that proves nothing.
-
-Setup now reads the grade and says so, so the trade is visible rather than silent. What is not yet known is whether the weak grade is the model being lazy or the recording path not capturing an `until` that demonstrably fired live — one run's own report described asserting the text changed, and the saved flow still graded `presence-only`. That is worth a `reticle_feedback` if it reproduces.
-
-### 3. Windows
-
-`.github/workflows/setup-gates.yml` runs the pure parsing and the early refusals on `windows-latest`, which is what actually EXECUTES `where`, `netstat` and the Node-version guard. Still unexecuted anywhere: `taskkill` teardown and `npx.cmd` spawning, because both need a dev server running on Windows. The break matrix is POSIX-only by construction — its scenarios build fake `node`/`npx`/`claude` shims as `/bin/sh` scripts — so its count says nothing about Windows, and the workflow is explicit about that rather than quietly running fewer tests.
+- **Windows execution.** `.github/workflows/setup-gates.yml` runs the parsing and the early refusals on `windows-latest` — that is what actually executes `where`, `netstat` and the Node guard. Still unexecuted anywhere: `taskkill` teardown and `npx.cmd` spawning, which need a dev server running on Windows. The break matrix is POSIX-only by construction (its scenarios build `/bin/sh` shims), so its count says nothing about Windows and the workflow says so rather than quietly running less.
+- **The heaviest apps.** One connects and cannot finish a drive inside ten minutes. `--flow` is the lever — naming a journey removes the search the turns go into — and it is not yet proven at scale.
+- **A machine with free memory.** Three runs were discarded to swap exhaustion and fd limits, with `EMFILE` surfacing as the entirely misleading `The directory at .next/dev was deleted`. Check `sysctl vm.swapusage` before trusting any timing here.
