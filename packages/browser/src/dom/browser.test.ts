@@ -256,6 +256,45 @@ describe('query empty hint', () => {
     expect(r.hint?.presentTestids).toHaveLength(12);
   });
 
+  /**
+   * The field report this came from: a label rendered with `v-html` spans several child nodes, so
+   * `by: text` — which reads an element's OWN text nodes — matched nothing while the string was
+   * plainly on screen. The verdict was identical to "never rendered", and the drive ended in a bug
+   * report against an app that had worked.
+   */
+  it('names the container when the wanted text is split across children', () => {
+    render(
+      '<div id="row"><span>Move to </span><span>Reticle </span><span>Repro Folder</span></div>',
+    );
+    const r = runQuery({ text: 'Move to Reticle Repro Folder' });
+    expect(r.elements).toHaveLength(0);
+    expect(r.hint?.splitText).toBeDefined();
+    expect(r.hint?.splitText?.ref).toBeDefined();
+  });
+
+  it('picks the DEEPEST container, not the first one that contains the string', () => {
+    // Every ancestor up to <body> contains the string; naming <body> is not a locator.
+    render('<main><section><p id="tight"><b>Half</b><i> and half</i></p></section></main>');
+    const r = runQuery({ text: 'Half and half' });
+    const ref = r.hint?.splitText?.ref;
+    expect(ref).toBeDefined();
+    const resolved = runQuery({ scope: ref, self: true });
+    expect(resolved.elements[0]?.text).toContain('Half and half');
+  });
+
+  it('omits splitText on an ordinary text miss', () => {
+    // The string is genuinely absent — the clause must not fire, or it stops meaning anything.
+    render('<div><span>something else entirely</span></div>');
+    const r = runQuery({ text: 'not on this page at all' });
+    expect(r.hint?.splitText).toBeUndefined();
+  });
+
+  it('omits splitText when the miss was not a text search', () => {
+    render('<div><span>Save</span><span> changes</span></div>');
+    const r = runQuery({ role: 'button', name: 'Save changes' });
+    expect(r.hint?.splitText).toBeUndefined();
+  });
+
   it('reflects location in route', () => {
     history.pushState({}, '', '/cart?x=1');
     const r = runQuery({ role: 'button', name: 'nope' });
