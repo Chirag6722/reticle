@@ -3,13 +3,16 @@
  *
  * `sdkFix` with no project must never name `@reticlehq/react` — that is the Vue/Nuxt failure.
  * When a project IS in hand, name the packages actually in package.json and the manager the
- * lockfile implies, using the same detectors `init` and `reticle update` already have.
+ * lockfile implies.
  */
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { Framework, PackageManager, UiLibrary } from '../init/detect.js';
-import { frameworkPackages } from '../init/plan.js';
-import { resolveSdkFix, sdkFixContextOf, sdkFixForDirectory } from './sdk-fix.js';
+import {
+  PackageManagerName,
+  resolveSdkFix,
+  sdkFixContextOf,
+  sdkFixForDirectory,
+} from './sdk-fix.js';
 import { sdkFix } from './version-skew.js';
 
 const DAEMON = '2.4.1';
@@ -25,7 +28,7 @@ describe('resolveSdkFix — names what this project actually has', () => {
   it('names the Vue/Nuxt sensor and pnpm when that is what the project has', () => {
     const fix = resolveSdkFix(DAEMON, {
       packages: ['@reticlehq/browser'],
-      packageManager: PackageManager.PNPM,
+      packageManager: PackageManagerName.PNPM,
     });
     expect(fix).not.toContain('@reticlehq/react');
     expect(fix).toContain(`pnpm add -D @reticlehq/browser@${DAEMON}`);
@@ -34,7 +37,7 @@ describe('resolveSdkFix — names what this project actually has', () => {
   it('names the React kit and the Vite plugin when those are what package.json declares', () => {
     const fix = resolveSdkFix(DAEMON, {
       packages: ['@reticlehq/react', '@reticlehq/vite-plugin'],
-      packageManager: PackageManager.NPM,
+      packageManager: PackageManagerName.NPM,
     });
     expect(fix).toContain(`@reticlehq/react@${DAEMON}`);
     expect(fix).toContain(`@reticlehq/vite-plugin@${DAEMON}`);
@@ -45,20 +48,16 @@ describe('resolveSdkFix — names what this project actually has', () => {
     expect(
       resolveSdkFix(DAEMON, {
         packages: ['@reticlehq/browser'],
-        packageManager: PackageManager.YARN,
+        packageManager: PackageManagerName.YARN,
       }),
     ).toContain(`yarn add -D @reticlehq/browser@${DAEMON}`);
   });
 
-  it('falls back to the frameworkPackages list when package.json has none of ours yet', () => {
-    // The reported Nuxt case: they were told to install React into a Vue app. The init plan
-    // already knows better; the skew remedy now asks it rather than inventing a third list.
-    const packages = frameworkPackages(Framework.NUXT, UiLibrary.VUE);
-    expect(packages).toEqual(['@reticlehq/browser']);
+  it('names the framework-neutral sensor when package.json has none of ours yet', () => {
+    // The reported Nuxt case: they were told to install React into a Vue app. An empty SDK
+    // list is absence, not React — name the sensor the Vue/Nuxt install already uses.
     const fix = resolveSdkFix(DAEMON, {
-      packageManager: PackageManager.PNPM,
-      framework: Framework.NUXT,
-      uiLibrary: UiLibrary.VUE,
+      packageManager: PackageManagerName.PNPM,
     });
     expect(fix).not.toContain('@reticlehq/react');
     expect(fix).toContain(`pnpm add -D @reticlehq/browser@${DAEMON}`);
@@ -70,7 +69,7 @@ describe('resolveSdkFix — names what this project actually has', () => {
   });
 });
 
-describe('sdkFixContextOf — the detectors init already has, not a third copy', () => {
+describe('sdkFixContextOf — lockfile + declared packages, not a third detector', () => {
   it('reads the declared SDK packages and the lockfile manager', () => {
     const ctx = sdkFixContextOf(
       {
@@ -81,9 +80,7 @@ describe('sdkFixContextOf — the detectors init already has, not a third copy',
     );
     expect(ctx).toEqual({
       packages: ['@reticlehq/browser'],
-      packageManager: PackageManager.PNPM,
-      framework: Framework.HTML,
-      uiLibrary: UiLibrary.VUE,
+      packageManager: PackageManagerName.PNPM,
     });
   });
 
@@ -100,15 +97,23 @@ describe('sdkFixContextOf — the detectors init already has, not a third copy',
     );
   });
 
-  it('detects Nuxt from the dependency, so an empty SDK list still will not name React', () => {
+  it('uses the node_modules marker when there is no lockfile', () => {
+    const ctx = sdkFixContextOf(
+      { devDependencies: { '@reticlehq/browser': '2.2.1' } },
+      new Set(),
+      new Set(['.modules.yaml']),
+    );
+    expect(ctx?.packageManager).toBe(PackageManagerName.PNPM);
+  });
+
+  it('an empty SDK list still will not name React — that is the Vue/Nuxt failure', () => {
     const ctx = sdkFixContextOf({ dependencies: { nuxt: '^3.0.0', vue: '^3.0.0' } }, new Set());
     expect(ctx).toEqual({
       packages: [],
-      packageManager: PackageManager.NPM,
-      framework: Framework.NUXT,
-      uiLibrary: UiLibrary.VUE,
+      packageManager: PackageManagerName.NPM,
     });
     expect(resolveSdkFix(DAEMON, ctx)).not.toContain('@reticlehq/react');
+    expect(resolveSdkFix(DAEMON, ctx)).toContain(`@reticlehq/browser@${DAEMON}`);
   });
 
   it('treats a missing or malformed manifest as no context', () => {
@@ -119,7 +124,7 @@ describe('sdkFixContextOf — the detectors init already has, not a third copy',
 
   it('does not name the React kit for an empty manifest — that is absence, not React', () => {
     const ctx = sdkFixContextOf({}, new Set());
-    expect(ctx?.uiLibrary).toBe(UiLibrary.UNKNOWN);
+    expect(ctx?.packages).toEqual([]);
     expect(resolveSdkFix(DAEMON, ctx)).not.toContain('@reticlehq/react');
   });
 });

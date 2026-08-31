@@ -2,57 +2,75 @@
  * The project-aware SDK remedy for version skew (#618).
  *
  * `sdkFix` in version-skew.ts is the no-project fallback: it names `@reticlehq/browser` and npm,
- * because those answers are never actively wrong. This module is what that fallback's comment used
- * to point at as if it existed — when a project directory IS in hand, name the packages actually
- * in package.json and the manager the lockfile implies.
+ * because those answers are never actively wrong. When a project directory IS in hand, name the
+ * packages actually in package.json and the manager the lockfile implies.
  *
- * Detectors are reused, not copied: `reticleDepsOf` is what `reticle update` already reads,
- * `detect` / `detectPackageManager` / `installCommand` are what `init` already uses, and
- * `frameworkPackages` is the per-framework list whose own comment says installing the React kit
- * into a Vue codebase is the single thing most likely to make someone abandon the setup.
+ * Does not import `init/`. The library path must never reach the installer
+ * (`library-path-boundary.test.ts`); `reticleDepsOf` lives in `update/` for that reason, and the
+ * lockfile → manager map is the same evidence `detectPackageManager` reads, kept here so a HELLO
+ * does not load the install plan.
  */
 
 import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
-import {
-  detect,
-  detectPackageManager,
-  Framework,
-  installCommand,
-  PackageManager,
-  UiLibrary,
-  type DetectInput,
-} from '../init/detect.js';
-import { frameworkPackages } from '../init/plan.js';
-import { reticleDepsOf } from '../update/sdk-sync.js';
+import { reticleDepsOf } from '../update/reticle-deps.js';
 
 /** What a project contributes to the remedy, when we were able to read one. */
 export interface SdkFixContext {
   /** `@reticlehq/*` packages declared in package.json. Empty / omitted means none yet. */
   packages?: readonly string[];
-  packageManager: PackageManager;
-  framework?: Framework;
-  uiLibrary?: UiLibrary;
+  packageManager: PackageManagerName;
 }
 
-/** Same package `frameworkPackages` picks for Nuxt — never the React kit. */
+/** Lockfile / marker → manager, same evidence `init/detect.ts` uses. */
+export const PackageManagerName = {
+  PNPM: 'pnpm',
+  YARN: 'yarn',
+  BUN: 'bun',
+  NPM: 'npm',
+} as const;
+export type PackageManagerName = (typeof PackageManagerName)[keyof typeof PackageManagerName];
+
+/** Same package a Vue/Nuxt install gets — never the React kit. */
 const FRAMEWORK_NEUTRAL_SDK = '@reticlehq/browser';
 const PACKAGE_JSON = 'package.json';
 const NODE_MODULES = 'node_modules';
 const LOCKFILE_NAMES = ['pnpm-lock.yaml', 'yarn.lock', 'bun.lockb', 'bun.lock'] as const;
-const NODE_MODULES_MARKERS = ['.modules.yaml', '.yarn-state.yml', '.package-lock.json'] as const;
+
+/** Markers each manager leaves inside `node_modules` — stronger than an uncommitted lockfile. */
+const NODE_MODULES_MARKERS: readonly (readonly [string, PackageManagerName])[] = [
+  ['.modules.yaml', PackageManagerName.PNPM],
+  ['.yarn-state.yml', PackageManagerName.YARN],
+  ['.package-lock.json', PackageManagerName.NPM],
+];
+
+const INSTALL_FLAGS: Record<PackageManagerName, readonly string[]> = {
+  [PackageManagerName.PNPM]: ['add', '-D'],
+  [PackageManagerName.YARN]: ['add', '-D'],
+  [PackageManagerName.BUN]: ['add', '-d'],
+  [PackageManagerName.NPM]: ['i', '-D'],
+};
 
 function packagesFor(ctx: Partial<SdkFixContext> | undefined): readonly string[] {
   if (ctx?.packages !== undefined && 0 !== ctx.packages.length) return ctx.packages;
-  if (ctx === undefined) return [FRAMEWORK_NEUTRAL_SDK];
-  if (
-    ctx.framework === undefined ||
-    (ctx.framework === Framework.HTML &&
-      (ctx.uiLibrary === undefined || ctx.uiLibrary === UiLibrary.UNKNOWN))
-  ) {
-    return [FRAMEWORK_NEUTRAL_SDK];
+  return [FRAMEWORK_NEUTRAL_SDK];
+}
+
+function managerOf(
+  lockfiles: ReadonlySet<string>,
+  nodeModulesMarkers: ReadonlySet<string>,
+): PackageManagerName {
+  if (lockfiles.has('pnpm-lock.yaml')) return PackageManagerName.PNPM;
+  if (lockfiles.has('yarn.lock')) return PackageManagerName.YARN;
+  if (lockfiles.has('bun.lockb') || lockfiles.has('bun.lock')) return PackageManagerName.BUN;
+  for (const [name, pm] of NODE_MODULES_MARKERS) {
+    if (nodeModulesMarkers.has(name)) return pm;
   }
-  return frameworkPackages(ctx.framework, ctx.uiLibrary ?? UiLibrary.UNKNOWN);
+  return PackageManagerName.NPM;
+}
+
+function installLine(pm: PackageManagerName, pkgs: readonly string[]): string {
+  return `${pm} ${[...INSTALL_FLAGS[pm], ...pkgs].join(' ')}`;
 }
 
 function restartClause(): string {
@@ -67,13 +85,13 @@ function restartClause(): string {
  * The one sentence telling the human how to bring the page's SDK in line with this daemon.
  *
  * No context → the framework-neutral sensor and npm, never the React kit. Packages from
- * package.json win when present. When the project has none of ours yet, `frameworkPackages`
- * supplies the same list `init` would install, so a Nuxt app is never told to add `@reticlehq/react`.
+ * package.json win when present. When the project has none of ours yet, the sensor is named
+ * rather than `@reticlehq/react` — that is the Vue/Nuxt failure.
  */
 export function resolveSdkFix(daemonVersion: string, ctx?: Partial<SdkFixContext>): string {
-  const pm = ctx?.packageManager ?? PackageManager.NPM;
+  const pm = ctx?.packageManager ?? PackageManagerName.NPM;
   const pinned = packagesFor(ctx).map((name) => `${name}@${daemonVersion}`);
-  return `Tell the human to install the matching SDK (\`${installCommand(pm, pinned)}\`) ${restartClause()}`;
+  return `Tell the human to install the matching SDK (\`${installLine(pm, pinned)}\`) ${restartClause()}`;
 }
 
 /**
@@ -85,22 +103,12 @@ export function resolveSdkFix(daemonVersion: string, ctx?: Partial<SdkFixContext
 export function sdkFixContextOf(
   pkgJson: unknown,
   lockfiles: ReadonlySet<string>,
-  configFiles: ReadonlySet<string> = new Set(),
   nodeModulesMarkers: ReadonlySet<string> = new Set(),
 ): SdkFixContext | undefined {
   if ('object' !== typeof pkgJson || null === pkgJson) return undefined;
-  const pkg = pkgJson as DetectInput['pkg'];
-  const detection = detect({
-    pkg,
-    configFiles,
-    lockfiles,
-    nodeModulesMarkers,
-  });
   return {
     packages: reticleDepsOf(pkgJson),
-    packageManager: detectPackageManager(lockfiles, nodeModulesMarkers),
-    framework: detection.framework,
-    uiLibrary: detection.uiLibrary,
+    packageManager: managerOf(lockfiles, nodeModulesMarkers),
   };
 }
 
@@ -148,8 +156,12 @@ export function sdkFixForDirectory(
   const ctx = sdkFixContextOf(
     parseJson(read(join(directory, PACKAGE_JSON))),
     present(directory, LOCKFILE_NAMES, read),
-    new Set(),
-    present(directory, NODE_MODULES_MARKERS, read, NODE_MODULES),
+    present(
+      directory,
+      NODE_MODULES_MARKERS.map(([name]) => name),
+      read,
+      NODE_MODULES,
+    ),
   );
   return resolveSdkFix(daemonVersion, ctx);
 }
