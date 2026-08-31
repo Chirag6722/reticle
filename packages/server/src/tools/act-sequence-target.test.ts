@@ -10,6 +10,7 @@ import { LastAct } from '../session/last-act.js';
 import { SessionState } from '@reticlehq/core';
 import type { CommandResult, ReticleEvent } from '@reticlehq/core';
 import { TOOLS, type ToolDeps } from './tools.js';
+import { asString } from './tools-helpers.js';
 import { ReticleTool } from './tool-names.js';
 import { BaselineStore } from '../project/baselines.js';
 import { createNodeFileSystem } from '../project/fs-port.js';
@@ -32,7 +33,7 @@ function sessionThatResolvesTargets(matches: Record<string, { ref: string }[]>):
   const command = (name: string, args: Record<string, unknown>): Promise<CommandResult> => {
     calls.push({ name, args });
     if ('query' === name) {
-      const key = String(args['value'] ?? '');
+      const key = asString(args['value']) ?? '';
       return Promise.resolve({
         kind: 'command_result',
         id: 'c',
@@ -137,7 +138,7 @@ describe('act_sequence steps that name a target', () => {
     });
 
     const act = calls.find((c) => 'act' === c.name);
-    expect(String(act?.args['ref'] ?? '')).not.toBe('');
+    expect(asString(act?.args['ref'])).toBe('e12');
   });
 
   it('refuses a missed target as a locator miss, not a stale empty ref', async () => {
