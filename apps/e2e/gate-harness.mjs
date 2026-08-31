@@ -12,6 +12,7 @@
 // Self-check: `node apps/e2e/gate-harness.mjs --self-check`
 import { spawn, execFileSync } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { pidOnPort } from './port-pid.mjs';
 
 /** Reticle's default bridge port — the one every doc, error message and config example names. */
 export const DEFAULT_BRIDGE_PORT = 4400;
@@ -74,6 +75,15 @@ export function killTree(pid) {
 }
 
 export function portHolders(port) {
+  // Windows has no lsof, and `lsof()` below answers "nothing matched" for a tool that is absent —
+  // an honest answer to the wrong question. Every caller then believed the port was free, so a
+  // registry or daemon left behind by a failed run was never cleared and the NEXT run inherited it.
+  // That is how one broken prepack became "no token from verdaccio" a run later. `pidOnPort` is the
+  // netstat equivalent this repo already had, in a module written for exactly this gap.
+  if ('win32' === process.platform) {
+    const pid = pidOnPort(port);
+    return pid === null ? [] : [{ pid, listener: true, command: commandOf(pid) }];
+  }
   const listeners = new Set(lsof(['-nP', `-iTCP:${String(port)}`, '-sTCP:LISTEN', '-t']));
   const all = lsof(['-nP', `-iTCP:${String(port)}`, '-t']);
   return all.map((pid) => ({

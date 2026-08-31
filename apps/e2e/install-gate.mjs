@@ -237,8 +237,27 @@ async function startLocalRegistry() {
     }
     await sleep(500);
   }
-  if (!up) throw new Error(`verdaccio did not start on ${REGISTRY}: ${log.join('').slice(-400)}`);
+  if (!up) {
+    killTree(proc.pid);
+    throw new Error(`verdaccio did not start on ${REGISTRY}: ${log.join('').slice(-400)}`);
+  }
 
+  // From here on the registry is RUNNING, and every remaining step can throw. Left unguarded, one
+  // of them did: a prepack that failed on Windows aborted the publish, this function threw, and the
+  // verdaccio it had started outlived the process. The next run then found port 4873 already held
+  // by a registry carrying the previous run's htpasswd, so the user create returned nothing and the
+  // gate reported "no token from verdaccio" — a second, unrelated-looking failure that hid the
+  // first. A registry this function started is this function's to stop on the way out.
+  try {
+    return await publishInto(proc);
+  } catch (err) {
+    killTree(proc.pid);
+    throw err;
+  }
+}
+
+/** Everything that needs the registry to be up. Split out only so the caller above can guard it. */
+async function publishInto(proc) {
   const res = await fetch(`${REGISTRY}/-/user/org.couchdb.user:reticle`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
