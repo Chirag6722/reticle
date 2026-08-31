@@ -89,9 +89,14 @@ export function describeSkew(peer: PeerIdentity, self: SelfIdentity): string | u
  * The fix line for a page whose SDK disagrees with this daemon, with no project to read.
  *
  * Names the framework-neutral sensor and plain npm, because those are the answers that are never
- * actively wrong. When a project directory IS available, use `resolveSdkFix` in sdk-fix.ts, which
- * reads the real UI library and package manager — this used to hardcode `@reticlehq/react` and
- * told Vue projects to install a React package (#618).
+ * actively wrong: `@reticlehq/browser` works in a React app, and the reverse does not hold. This
+ * used to hardcode `@reticlehq/react`, so a Vue or Nuxt project was told to install a React package
+ * it must not have (#618).
+ *
+ * It has no project to read, and nothing here resolves one. Reading the real UI library and package
+ * manager would give a better line, and would belong beside the detection `init` already does —
+ * but it does not exist, and a comment pointing at a helper nobody wrote sends the next reader
+ * looking for a file that is not there.
  */
 export function sdkFix(daemonVersion: string): string {
   return (
