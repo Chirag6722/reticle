@@ -271,6 +271,43 @@ describe('parseCliArgs', () => {
     });
   });
 
+  // The ambiguity error `sessions.resolve` throws when several tabs are connected reads "pass
+  // sessionId to target one" — and the verify parser used to reject every flag that could carry
+  // one, so the only action the message prescribed was one the CLI could not perform. The
+  // workaround was closing tabs until the ambiguity went away.
+  it('verify <url> --session-id targets one of several connected tabs', () => {
+    expect(parseCliArgs(['verify', URL, '--session-id', 's-42'], PORT)).toEqual({
+      kind: 'verify',
+      url: URL,
+      headless: true,
+      sessionId: 's-42',
+      port: PORT,
+    });
+  });
+
+  it('verify --session-id with no id names the flag', () => {
+    expect(parseCliArgs(['verify', URL, '--session-id'], PORT)).toEqual({
+      kind: 'error',
+      message: '--session-id needs a value',
+    });
+  });
+
+  it('verify carries --session-id alongside the other flags', () => {
+    expect(
+      parseCliArgs(
+        ['verify', URL, '--session-id', 's-42', '--headed', '--port', '4411', '--timeout', '9000'],
+        PORT,
+      ),
+    ).toEqual({
+      kind: 'verify',
+      url: URL,
+      headless: false,
+      sessionId: 's-42',
+      timeoutMs: 9000,
+      port: 4411,
+    });
+  });
+
   it('init with no flags defaults to mcp + install on, no dry run, no port', () => {
     expect(parseCliArgs(['init'], PORT)).toEqual(INIT_DEFAULTS);
   });
