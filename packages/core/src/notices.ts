@@ -42,9 +42,19 @@ export const BUFFER_EVICTION_WARNING =
  * Thrown when a tool needs a live browser session and none is connected. Names the #1 real cause in a
  * multi-repo / multi-agent setup — a PORT MISMATCH between the app's SDK and the daemon — so the agent
  * checks the wiring instead of only the "is the SDK enabled?" dead end.
+ *
+ * It used to end by naming `reticle_wait_ready`, which is retired (see RETIRED_FROM_SURFACE) and
+ * answers `unknown tool`. This is the most-thrown error in the product — `resolve` raises it on
+ * every tool call while nothing is connected — so the one sentence carrying the ACTION sent the
+ * reader to a tool that does not exist, at the moment they had least idea what to do next.
+ *
+ * `reticle_sessions` is the live answer and a strictly better one: it returns the ranked diagnosis
+ * (which of the causes above this actually is, plus the port scan and a next action) rather than
+ * blocking and telling you nothing. It is the same tool `#unknownSessionError` already points at,
+ * so the two no-session paths now agree.
  */
 export const NO_SESSION_CONNECTED_ERROR =
-  "no browser session connected. Two things to check: (1) your app is running with @reticlehq/browser enabled, and (2) it points at THIS daemon's port — a mismatch between the app's reticle({ port }) / VITE_RETICLE_WS_URL and the daemon's RETICLE_PORT is the usual cause. reticle_wait_ready blocks briefly for a session to appear.";
+  "no browser session connected. Two things to check: (1) your app is running with @reticlehq/browser enabled, and (2) it points at THIS daemon's port — a mismatch between the app's reticle({ port }) / VITE_RETICLE_WS_URL and the daemon's RETICLE_PORT is the usual cause. Call reticle_sessions for the diagnosis — it names which of these it is, and what to do next — rather than retrying this call.";
 
 /** Surfaced on act/assert results when the target tab is throttled. */
 export const THROTTLED_WARNING =
