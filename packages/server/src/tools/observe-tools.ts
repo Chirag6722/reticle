@@ -282,7 +282,9 @@ export const OBSERVE_TOOLS: ToolDef[] = [
       until: PredicateSchema.optional().describe("Alias for `predicate` (act_and_wait's name)."),
       timeout_ms: timeoutMsSchema
         .optional()
-        .describe('Maximum wait in milliseconds. Default: 4000.'),
+        .describe(
+          'Maximum wait in milliseconds. Default: 4000. Capped at 55000: your MCP client aborts the request before a longer wait can return, so a bound above this would be advertised and not deliverable. To outlast it, poll — several short waits, each of which returns a verdict.',
+        ),
       since: cursorSchema
         .optional()
         .describe('Cursor from a prior reticle_act — scopes the wait to events after that act.'),
@@ -380,7 +382,7 @@ export const OBSERVE_TOOLS: ToolDef[] = [
       timeout_ms: timeoutMsSchema
         .optional()
         .describe(
-          'If > 0, wait up to this many milliseconds before failing. Default: 0 (evaluate once).',
+          'If > 0, wait up to this many milliseconds before failing. Default: 0 (evaluate once). Capped at 55000: your MCP client aborts the request before a longer wait can return, so a bound above this would be advertised and not deliverable. To outlast it, poll — several short waits, each of which returns a verdict.',
         ),
       since: cursorSchema
         .optional()
