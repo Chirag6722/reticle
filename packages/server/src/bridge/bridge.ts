@@ -161,6 +161,11 @@ interface BridgeOptions {
    * `port` and `host` are ignored for binding when this is provided.
    */
   server?: http.Server;
+  /**
+   * The SDK-upgrade sentence to attach when a HELLO is skewed. Injected so the daemon can name
+   * this project's packages and package manager; tests that omit it get the no-project fallback.
+   */
+  sdkFix?: () => string;
 }
 
 /**
@@ -235,6 +240,7 @@ export class Bridge {
   readonly #maxSessions: number;
   readonly #maxPendingConnections: number;
   readonly #helloTimeoutMs: number;
+  readonly #sdkFix: () => string;
   #pendingConnections = 0;
   #onReplay: ReplayRequestHandler | undefined;
   /**
@@ -313,6 +319,7 @@ export class Bridge {
     this.#maxPendingConnections =
       options.maxPendingConnections ?? TRANSPORT_LIMITS.MAX_PENDING_CONNECTIONS;
     this.#helloTimeoutMs = options.helloTimeoutMs ?? TRANSPORT_LIMITS.HELLO_TIMEOUT_MS;
+    this.#sdkFix = options.sdkFix ?? (() => sdkFix(SERVER_VERSION));
 
     if (options.server !== undefined) {
       const srv = options.server;
@@ -575,7 +582,7 @@ export class Bridge {
               what: 'the page',
               version: parsed.sdkVersion,
               contract: parsed.contract,
-              fix: sdkFix(SERVER_VERSION),
+              fix: this.#sdkFix(),
             },
             { version: SERVER_VERSION, contract: CONTRACT_FINGERPRINT },
           );
