@@ -228,8 +228,8 @@ importers:
         specifier: ^10.1.0
         version: 10.1.0
       electron:
-        specifier: ^43.4.1
-        version: 43.4.1
+        specifier: ^44.0.0
+        version: 44.0.0
       vite:
         specifier: ^8.2.1
         version: 8.2.1(@types/node@26.2.0)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0)
@@ -241,10 +241,10 @@ importers:
     dependencies:
       '@electron-toolkit/preload':
         specifier: ^3.0.2
-        version: 3.0.2(electron@43.4.1)
+        version: 3.0.2(electron@44.0.0)
       '@electron-toolkit/utils':
         specifier: ^4.0.0
-        version: 4.0.0(electron@43.4.1)
+        version: 4.0.0(electron@44.0.0)
       pinia:
         specifier: ^2.3.0
         version: 2.3.1(typescript@5.9.3)(vue@3.5.41(typescript@5.9.3))
@@ -274,8 +274,8 @@ importers:
         specifier: ^6.0.2
         version: 6.0.8(vite@7.3.6(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.33.0)(yaml@2.9.0))(vue@3.5.41(typescript@5.9.3))
       electron:
-        specifier: ^43.4.1
-        version: 43.4.1
+        specifier: ^44.0.0
+        version: 44.0.0
       electron-builder:
         specifier: ^26.0.12
         version: 26.15.3(electron-builder-squirrel-windows@26.15.3)
@@ -3633,8 +3633,8 @@ packages:
     engines: {node: '>= 22.12.0'}
     hasBin: true
 
-  electron@43.4.1:
-    resolution: {integrity: sha512-5b+EuiwkgG5iRcsEL34rimgRpkYp15SsfZOa0pC5kXs0Tb82TH4n95rpQzTZa7yRCbA7tm0WoEbuBL6NaAhAcA==}
+  electron@44.0.0:
+    resolution: {integrity: sha512-FkTqPrFPZYljdPI5b7KORGsJTd6FgUQDefl5MrU3Xz9R87pAj9JLreIjDqcRN8hJIkFHIou0o8kKzvcpT9qiRQ==}
     engines: {node: '>= 22.12.0'}
     hasBin: true
 
@@ -6647,17 +6647,17 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@electron-toolkit/preload@3.0.2(electron@43.4.1)':
+  '@electron-toolkit/preload@3.0.2(electron@44.0.0)':
     dependencies:
-      electron: 43.4.1
+      electron: 44.0.0
 
   '@electron-toolkit/tsconfig@2.0.0(@types/node@22.20.1)':
     dependencies:
       '@types/node': 22.20.1
 
-  '@electron-toolkit/utils@4.0.0(electron@43.4.1)':
+  '@electron-toolkit/utils@4.0.0(electron@44.0.0)':
     dependencies:
-      electron: 43.4.1
+      electron: 44.0.0
 
   '@electron/asar@3.4.1':
     dependencies:
@@ -9013,7 +9013,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  electron@43.4.1:
+  electron@44.0.0:
     dependencies:
       '@electron-internal/extract-zip': 1.0.5
       '@electron/get': 5.1.0
