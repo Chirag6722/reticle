@@ -19,7 +19,7 @@
  *    not ours to do.
  */
 
-import { join } from 'node:path';
+import { posix, win32 } from 'node:path';
 
 export const AgentConfidence = {
   /** Documented by the vendor. Safe to create before the agent exists. */
@@ -271,12 +271,30 @@ export interface AgentPlanInput {
 const forPlatform = (p: PlatformPaths, os: keyof PlatformPaths): string => p[os];
 
 /**
+ * Join for the platform the CALLER named, never the one this process happens to run on.
+ *
+ * Every planner here takes `platform` as an argument and claims to be pure over it — the doc below
+ * says the Windows rows are "testable from any machine". `node:path`'s bare `join` broke that claim
+ * silently in both directions: a mac planning win32 rows emitted `/` separators into paths Windows
+ * cannot use, and a Windows host planning linux rows emitted `\`. The second half is what turned
+ * the whole Windows CI job red — the pure planners returned `\home\u\.claude\settings.json`,
+ * every injected filesystem is keyed by the POSIX path the caller asked for, so every lookup missed
+ * and every row came back `absent`/`skip`. Twenty-eight tests failed for a reason that had nothing
+ * to do with what they were testing, which left the platform with the most users unwatched.
+ *
+ * A separator is part of the answer, so it belongs to the platform being planned for.
+ */
+export const joinFor = (os: keyof PlatformPaths): ((...parts: string[]) => string) =>
+  'win32' === os ? win32.join : posix.join;
+
+/**
  * Decide what to do for every client. Pure: the filesystem arrives as two functions, which is what
  * makes the Windows rows testable from any machine.
  */
 export function planAgentConfigs(input: AgentPlanInput): AgentPlanStep[] {
   const { home, platform, exists, readFile } = input;
   return AGENT_CLIENTS.map((c): AgentPlanStep => {
+    const join = joinFor(platform);
     const file = join(home, forPlatform(c.paths, platform));
     const detected = exists(join(home, forPlatform(c.marker, platform)));
 

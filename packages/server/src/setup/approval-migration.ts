@@ -22,10 +22,9 @@
  *    own home did so from a gate run, which is exactly the shape this rules out.
  */
 
-import { join } from 'node:path';
 import { grantAutoApproval, ApprovalOutcome, type ApprovalResult } from './auto-approve.js';
 import type { AgentWriterIo } from './agent-writer.js';
-import type { PlatformPaths } from './agent-configs.js';
+import { joinFor, type PlatformPaths } from './agent-configs.js';
 
 export const APPROVAL_STAMP_FILE = 'approvals.json';
 
@@ -59,7 +58,7 @@ const NOTHING: MigrationResult = { ran: false, granted: [], deferred: [] };
  */
 export function migrateApprovals(deps: MigrationDeps): MigrationResult {
   const { io, home, platform, stateHome, version, log } = deps;
-  const stamp = join(stateHome, APPROVAL_STAMP_FILE);
+  const stamp = joinFor(platform)(stateHome, APPROVAL_STAMP_FILE);
   try {
     if (io.exists(stamp)) {
       const seen = JSON.parse(io.readFile(stamp)) as Stamp;

@@ -8,6 +8,8 @@ import {
 } from './agent-configs.js';
 
 const HOME = '/home/u';
+/** A win32 plan is asked for with a win32 home; a `/home/u` on Windows is not a thing. */
+const WIN_HOME = 'C:\\Users\\u';
 
 /** A pretend filesystem, so every platform's rows are checked from any machine. */
 const fs = (files: Record<string, string>) => ({
@@ -16,7 +18,7 @@ const fs = (files: Record<string, string>) => ({
 });
 
 const plan = (files: Record<string, string>, platform: 'darwin' | 'linux' | 'win32' = 'darwin') =>
-  planAgentConfigs({ home: HOME, platform, ...fs(files) });
+  planAgentConfigs({ home: 'win32' === platform ? WIN_HOME : HOME, platform, ...fs(files) });
 const by = (rows: AgentPlanStep[], id: string) => rows.find((r) => r.id === id);
 
 describe('registering with the agents init does not reach', () => {
@@ -44,8 +46,10 @@ describe('registering with the agents init does not reach', () => {
     expect(by(bare, 'vscode-user')?.file).toBe(
       `${HOME}/Library/Application Support/Code/User/mcp.json`,
     );
+    // Backslashes, and asserted literally: the separator IS the thing this checks. A win32 row
+    // built with `/` is a path Windows cannot open, and that is what shipped until joinFor.
     expect(by(plan({}, 'win32'), 'vscode-user')?.file).toBe(
-      `${HOME}/AppData/Roaming/Code/User/mcp.json`,
+      `${WIN_HOME}\\AppData\\Roaming\\Code\\User\\mcp.json`,
     );
   });
 
@@ -109,6 +113,23 @@ describe('yaml', () => {
     expect(by(plan({ [`${HOME}/.continue/config.yaml`]: 'x' }), 'continue')?.action).toBe(
       AgentAction.MANUAL,
     );
+  });
+});
+
+// The guard for the class of bug joinFor removed. It is host-independent by construction: the
+// separator asserted comes from the platform ARGUMENT, so this reddens on a mac the moment a
+// planner reaches for `node:path`'s bare `join` again, instead of waiting for a Windows runner.
+describe('a plan belongs to the platform it was asked for, not the host', () => {
+  it('uses that platform\u2019s separator in every path it produces', () => {
+    for (const [platform, home, wrong] of [
+      ['darwin', HOME, '\\\\'],
+      ['linux', HOME, '\\\\'],
+      ['win32', WIN_HOME, '/'],
+    ] as const) {
+      const rows = planAgentConfigs({ home, platform, ...fs({}) });
+      expect(rows.length).toBeGreaterThan(0);
+      for (const row of rows) expect(row.file).not.toContain(wrong);
+    }
   });
 });
 

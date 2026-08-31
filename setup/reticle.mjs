@@ -28,7 +28,7 @@
  *   --no-agents        do not register the MCP with other coding agents on this machine
  *   --no-drive         stop after a session connects; leave the verdict to the caller
  *   --json             machine-readable result on stdout, human progress on stderr
- *   --relaunch         restart the calling client so IT gets the MCP tools too
+ *   --relaunch         restart the calling client (Claude Code or codex) so IT gets the tools
  *   --timeout <s>      per-phase budget (default 120)
  *   --drive-budget <n> dollars the drive may spend before it is stopped (default 3)
  *   --no-escalate      accept a weak saved flow instead of re-recording it with a stronger model
@@ -60,6 +60,7 @@ import {
   appendFileSync,
   mkdirSync,
   readdirSync,
+  statSync,
   accessSync,
   constants,
 } from 'node:fs';
@@ -67,6 +68,7 @@ import { join, resolve } from 'node:path';
 import { homedir, platform } from 'node:os';
 
 import { pickSession } from './pick-session.mjs';
+import { codexSession } from './codex-session.mjs';
 import { planAgents, applyAgents, applySkills } from './agents.mjs';
 import {
   parseLsofListeners,
@@ -1499,7 +1501,27 @@ if (opts.relaunch) {
   const claudePid = process.env.CLAUDE_PID;
   const resumeCmd = `cd ${JSON.stringify(cwd)} && claude --resume ${sessionId} ${JSON.stringify(RESUME_PROMPT)}`;
 
-  if (sessionId === undefined) {
+  // Codex, when the caller is not Claude Code. Kept as a separate branch rather than folded into a
+  // table of two, because the two clients are identified by opposite means and only one of them can
+  // hand back to a supervisor: Claude Code names its own session in the environment, codex does not
+  // and has to be recognised from the transcript it is writing. See codexSession.
+  //
+  // UNVERIFIED END-TO-END, and said plainly for the same reason the driver table says it: the codex
+  // on this machine has no vendor binary, so `codex resume` has never been watched reopening a real
+  // conversation from here. The identification half IS verified — it reads real rollout files.
+  const codexId = sessionId === undefined ? codexSession(cwd) : undefined;
+  if (sessionId === undefined && codexId !== undefined) {
+    const cmd = `cd ${JSON.stringify(cwd)} && codex resume ${codexId} ${JSON.stringify(RESUME_PROMPT)}`;
+    if (openTerminalRunning(cmd)) {
+      result.relaunch = 'new-window';
+      say(
+        'reopened this codex conversation in a new terminal window with the tools loaded — this one can be closed.',
+      );
+    } else {
+      result.relaunch = 'manual';
+      todo(`could not open a terminal here, so the restart is yours: ${cmd}`);
+    }
+  } else if (sessionId === undefined) {
     // Gemini exports GEMINI_CLI=1 and nothing else; most clients tell a child nothing at all.
     todo(
       'this client does not tell a child process which conversation it is, so nothing here can resume it. Restart it once and the reticle_* tools will be there.',

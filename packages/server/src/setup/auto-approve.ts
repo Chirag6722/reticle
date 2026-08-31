@@ -22,8 +22,7 @@
  * headless form, `codex exec`, does not prompt at all — which is the form the drive uses.
  */
 
-import { join } from 'node:path';
-import type { PlatformPaths } from './agent-configs.js';
+import { joinFor, type PlatformPaths } from './agent-configs.js';
 import type { AgentWriterIo } from './agent-writer.js';
 
 const RETICLE_KEY = 'reticle';
@@ -177,6 +176,7 @@ export function grantAutoApproval(
   grants: readonly ApprovalGrant[] = APPROVAL_GRANTS,
   options: ApprovalOptions = {},
 ): ApprovalResult[] {
+  const join = joinFor(where.platform);
   return grants.map((grant): ApprovalResult => {
     const file = join(where.home, grant.paths[where.platform]);
     const base = { id: grant.id, name: grant.name, file, rule: grant.rule };

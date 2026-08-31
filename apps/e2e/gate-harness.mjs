@@ -49,6 +49,30 @@ const FREE_PORT_SETTLE_MS = 400;
  * hung unanswered, with nothing in ~/.reticle/proxy-4400.log because the process that writes it was
  * the one that died. An agent in that state is not degraded, it is gone, and no log says so.
  */
+/**
+ * Stop a spawned process AND whatever it started, on either kind of machine.
+ *
+ * A dev server is a wrapper: `npm run dev` starts vite, `create-next-app` starts next. Killing the
+ * pid we hold leaves the real server listening, and the next scaffold in the gate then fails to
+ * bind — a cascade whose first visible symptom is an unrelated port conflict three scaffolds later.
+ *
+ * POSIX gets the process GROUP (the negative pid, which is why these are spawned detached).
+ * Windows has no process groups and `process.kill(-pid)` throws there, so it gets `taskkill /T`,
+ * which walks the child tree instead. Same guarantee, two mechanisms, one call site for callers.
+ */
+export function killTree(pid) {
+  if (pid === undefined) return;
+  try {
+    if ('win32' === process.platform) {
+      execFileSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore' });
+    } else {
+      process.kill(-pid, 'SIGTERM');
+    }
+  } catch {
+    /* already gone, or never had children — either way there is nothing left to stop */
+  }
+}
+
 export function portHolders(port) {
   const listeners = new Set(lsof(['-nP', `-iTCP:${String(port)}`, '-sTCP:LISTEN', '-t']));
   const all = lsof(['-nP', `-iTCP:${String(port)}`, '-t']);

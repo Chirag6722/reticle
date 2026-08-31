@@ -15,8 +15,8 @@ import {
   AGENT_CLIENTS,
   type AgentPlanStep,
   type PlatformPaths,
+  joinFor,
 } from './agent-configs.js';
-import { join } from 'node:path';
 
 /** The filesystem, injected so the writer is testable without one. */
 export interface AgentWriterIo {
@@ -139,6 +139,7 @@ export function applyAgentSkills(
   where: { readonly home: string; readonly platform: keyof PlatformPaths },
 ): SkillWriteResult[] {
   const written: SkillWriteResult[] = [];
+  const join = joinFor(where.platform);
   for (const client of AGENT_CLIENTS) {
     const dir = client.skillDir;
     if (undefined === dir) continue;

@@ -72,12 +72,31 @@ import { fileURLToPath } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
 import {
   freePortSafely,
+  killTree,
   startOwnedDaemon,
   watchTransport,
   attributeOutcome,
   Attribution,
   sweepBatteryOrphans,
 } from './gate-harness.mjs';
+
+const WIN = 'win32' === process.platform;
+
+/**
+ * `npm`, `npx` and `pnpm` are `.cmd` shims on Windows, not executables.
+ *
+ * `execFileSync('npm', …)` and `spawn('npm', …)` therefore fail with ENOENT there — CreateProcess
+ * does not consult PATHEXT, which is the extension-resolution every Windows shell does for you and
+ * nothing does for a direct spawn. This is the whole reason the gate could not run on the platform
+ * with the most users, and it fails in the least useful way: "npm is not recognised", on a machine
+ * where npm plainly works, in a gate whose entire subject is whether an install works.
+ *
+ * Resolved here rather than in SCAFFOLDS so a new scaffold cannot forget it. `shell: true` would
+ * also work and is not used: it re-parses every argument through cmd.exe, and these argument lists
+ * contain `@`, `*` and `--` that a shell is entitled to reinterpret.
+ */
+const PACKAGE_MANAGERS = new Set(['npm', 'npx', 'pnpm', 'yarn']);
+const bin = (cmd) => (WIN && PACKAGE_MANAGERS.has(cmd) ? `${cmd}.cmd` : cmd);
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const CLI = join(ROOT, 'packages/server/dist/cli.js');
@@ -157,13 +176,25 @@ async function startLocalRegistry() {
   // The paths scripts/verdaccio.yaml actually uses. Resetting BOTH matters: leave the htpasswd file
   // behind and the second run's user-create returns no token (the user already exists), which
   // presents as "no token from verdaccio" and looks like a registry fault rather than stale state.
-  rmSync('/tmp/reticle-verdaccio-storage', { recursive: true, force: true });
-  rmSync('/tmp/reticle-verdaccio-htpasswd', { recursive: true, force: true });
-  const proc = spawn(
-    'npx',
-    ['--yes', 'verdaccio@latest', '--config', join(ROOT, 'scripts/verdaccio.yaml')],
-    { cwd: ROOT, detached: true, stdio: ['ignore', 'pipe', 'pipe'] },
+  const storage = join(tmpdir(), 'reticle-verdaccio-storage');
+  const htpasswd = join(tmpdir(), 'reticle-verdaccio-htpasswd');
+  rmSync(storage, { recursive: true, force: true });
+  rmSync(htpasswd, { recursive: true, force: true });
+  // The checked-in config names POSIX paths, and `/tmp` on Windows resolves to whatever the current
+  // drive happens to be. Rather than keep a second Windows copy that drifts from the first, the one
+  // config is read and its two paths repointed at this machine's real temp directory.
+  const config = join(mkdtempSync(join(tmpdir(), 'reticle-gate-verdaccio-')), 'verdaccio.yaml');
+  writeFileSync(
+    config,
+    readFileSync(join(ROOT, 'scripts/verdaccio.yaml'), 'utf8')
+      .replace('/tmp/reticle-verdaccio-storage', storage.split('\\').join('/'))
+      .replace('/tmp/reticle-verdaccio-htpasswd', htpasswd.split('\\').join('/')),
   );
+  const proc = spawn(bin('npx'), ['--yes', 'verdaccio@latest', '--config', config], {
+    cwd: ROOT,
+    detached: !WIN,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
   const log = [];
   proc.stdout.on('data', (d) => log.push(String(d)));
   proc.stderr.on('data', (d) => log.push(String(d)));
@@ -208,13 +239,7 @@ async function startLocalRegistry() {
   );
   const auth = { npm_config_userconfig: npmrc, NPM_CONFIG_USERCONFIG: npmrc };
   run('pnpm', ['-r', 'publish', '--registry', REGISTRY, '--no-git-checks'], ROOT, auth);
-  return { proc, auth, stop: () => {
-    try {
-      process.kill(-proc.pid, 'SIGTERM');
-    } catch {
-      /* already gone */
-    }
-  } };
+  return { proc, auth, stop: () => killTree(proc.pid) };
 }
 
 /** Where a scaffold's create command puts the app, relative to the workdir. */
@@ -361,13 +386,19 @@ const SCAFFOLDS = [
 function pathWithoutPnpm(workdir) {
   const binDir = join(workdir, '.gate-no-pnpm');
   mkdirSync(binDir, { recursive: true });
-  const stub = join(binDir, 'pnpm');
-  writeFileSync(stub, '#!/bin/sh\necho "pnpm: command not found" >&2\nexit 127\n', { mode: 0o755 });
+  // A shebang script is not executable on Windows; the shim a Windows shell would find is `pnpm.cmd`
+  // earlier on PATH. Both exit 127, which is what `init` reads as "pnpm is not on this machine".
+  if (WIN) writeFileSync(join(binDir, 'pnpm.cmd'), '@echo pnpm: command not found 1>&2\r\n@exit /b 127\r\n');
+  else
+    writeFileSync(join(binDir, 'pnpm'), '#!/bin/sh\necho "pnpm: command not found" >&2\nexit 127\n', {
+      mode: 0o755,
+    });
   return `${binDir}${delimiter}${process.env.PATH ?? ''}`;
 }
 
+
 const run = (cmd, args, cwd, extraEnv = {}) =>
-  execFileSync(cmd, args, {
+  execFileSync(bin(cmd), args, {
     cwd,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -666,9 +697,9 @@ async function driveScaffold(scaffold, index) {
 
     // ── 6. boot, and open it in a real browser ──────────────────────────────────────────────────
     const [devCmd, devArgs] = scaffold.dev(appPort);
-    dev = spawn(devCmd, devArgs, {
+    dev = spawn(bin(devCmd), devArgs, {
       cwd: app,
-      detached: true,
+      detached: !WIN,
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env, BROWSER: 'none' },
     });
@@ -747,13 +778,7 @@ async function driveScaffold(scaffold, index) {
   } catch (err) {
     chk('the scaffold ran to completion', false, String(err).slice(0, 300));
   } finally {
-    if (dev !== undefined) {
-      try {
-        process.kill(-dev.pid, 'SIGTERM');
-      } catch {
-        /* already gone */
-      }
-    }
+    if (dev !== undefined) killTree(dev.pid);
     if (daemon !== undefined) await daemon.stop();
     await freePortSafely(appPort);
     // The dev server INIT started and handed over, which is not the one above.

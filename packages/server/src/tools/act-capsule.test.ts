@@ -10,11 +10,15 @@
  * the moment it goes green, so the wrong repo inherits a test for somebody else's bug.
  */
 import { describe, expect, it, vi } from 'vitest';
+import { join, sep } from 'node:path';
 import { saveFailedAssertCapsule } from './act-capsule.js';
 import type { ToolDeps } from './tool-kit.js';
 
-const DAEMON_ROOT = '/daemon/.reticle';
-const HER_ROOT = '/her-app/.reticle';
+// Host-native, because the assertions below are `startsWith` over paths the callee builds with
+// `path.join`. A literal '/daemon/.reticle' makes every one of them fail on Windows for a reason
+// that has nothing to do with which root won — which is the only thing this file is about.
+const DAEMON_ROOT = join(sep, 'daemon', '.reticle');
+const HER_ROOT = join(sep, 'her-app', '.reticle');
 
 /**
  * Deps whose session resolves to HER project, with an fs that records where writes landed.
