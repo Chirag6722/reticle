@@ -33,7 +33,7 @@
     "@reticlehq/browser": "workspace:*",
     "@reticlehq/electron": "workspace:*",
     "@reticlehq/vite-plugin": "workspace:*",
-    "@types/node": "^22.19.1",
+    "@types/node": "^26.4.0",
     "@vitejs/plugin-vue": "^6.0.2",
     "electron": "^43.4.1",
     "electron-builder": "^26.0.12",
