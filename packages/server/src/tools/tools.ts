@@ -413,6 +413,17 @@ export const RAW_TOOLS: ToolDef[] = [
             .describe('Structural clusters on the page — what IS here, to diagnose the miss.'),
           presentTestids: z.array(z.string()).optional(),
           knownEmptyState: z.boolean(),
+          splitText: z
+            .object({
+              ref: z.string().optional(),
+              role: z.string().optional(),
+              name: z.string().optional(),
+            })
+            .passthrough()
+            .optional()
+            .describe(
+              "Present when a TEXT search missed but the string IS on the page, split across this container's children. Retry as { scope: <ref>, self: true } — no text query can match a string no single element owns.",
+            ),
         })
         .optional()
         .describe(
