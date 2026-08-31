@@ -377,6 +377,41 @@ export const ProjectSize = {
 export type ProjectSize = (typeof ProjectSize)[keyof typeof ProjectSize];
 
 /**
+ * Why a profile carries no `stack`, when it carries none.
+ *
+ * `stack` unknown is one of the largest buckets on the profile, and an empty field is not a cause:
+ * it collapses "the daemon was started somewhere that is not a project" with "we read this app's
+ * manifest and did not recognise what it uses", which need opposite fixes — the first is a
+ * discovery problem, the second is a one-line addition to the dependency table.
+ *
+ * Derived from the branches of `detectStack` rather than computed beside them. A reason assembled
+ * separately from the code that failed drifts from it, and then the dimension is worse than absent
+ * because it is confidently wrong.
+ */
+export const StackUnknownReason = {
+  /** No manifest here, and discovery found no app anywhere below. Usually a daemon started outside the project. */
+  NO_APP_FOUND: 'no_app_found',
+  /** A `package.json` HERE, read fine, naming no dependency in the table. The app is a stack we do not know. */
+  MANIFEST_UNRECOGNISED: 'manifest_unrecognised',
+  /** Discovery found workspace apps and every one of their manifests was unrecognised. */
+  WORKSPACE_APPS_UNRECOGNISED: 'workspace_apps_unrecognised',
+  /**
+   * The cwd manifest DECLARES workspaces and discovery surfaced no app in any of them.
+   *
+   * Separated from `NO_APP_FOUND` because it is a different failure with a different fix, and
+   * likely the dominant one: `findWorkspaceApps` admits a directory only when it holds a Vite or
+   * Next config file, or names `next`/`vite` outright. A workspace app on Angular, Nuxt, SvelteKit
+   * or Remix is therefore never surfaced, so its manifest is never read and no addition to the
+   * stack table could ever reach it. Folded into `NO_APP_FOUND` this reads as "no project here",
+   * which points at discovery scope when the gap is in what discovery will admit.
+   */
+  WORKSPACE_ROOT_NO_APPS: 'workspace_root_no_apps',
+  /** Workspace discovery threw — a permission error, most likely. Distinguished so it cannot masquerade as absence. */
+  DISCOVERY_FAILED: 'discovery_failed',
+} as const;
+export type StackUnknownReason = (typeof StackUnknownReason)[keyof typeof StackUnknownReason];
+
+/**
  * The shape of the project and how much of Reticle it actually uses.
  *
  * `featureDepth` is the one to watch: someone running 40 saved flows with visual baselines and a
@@ -399,6 +434,14 @@ export const ProjectProfileSchema = z.object({
    * that reads one directory reports nothing precisely where the real repos are.
    */
   stackSource: z.enum(['cwd', 'workspace']).optional(),
+  /**
+   * Why there is no `stack`, when there is none. Present ONLY when `stack` is absent.
+   *
+   * Omitted rather than sent as a "resolved" member, so the field's presence is itself the signal —
+   * the same rule the session counters follow. A member meaning "nothing went wrong" would be sent
+   * on every successful profile and would have to be filtered out of every query that uses this.
+   */
+  stackUnknownReason: z.nativeEnum(StackUnknownReason).optional(),
   /** Its MAJOR version only — "breaks on React 19" is a work item, a full semver is a fingerprint. */
   stackMajor: z.number().int().nonnegative().optional(),
   size: z.nativeEnum(ProjectSize).optional(),

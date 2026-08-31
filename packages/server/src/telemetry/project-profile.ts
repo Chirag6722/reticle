@@ -187,7 +187,7 @@ export function profileProject(cwd: string, now: number): ProjectProfile {
   if (capsuleCount > 0) featuresUsed.push(FeatureFamily.BUG_CAPSULES);
   if (hasHistory) featuresUsed.push(FeatureFamily.CROSS_RUN_HISTORY);
 
-  const { stack, stackMajor, stackSource } = detectStack(cwd);
+  const { stack, stackMajor, stackSource, stackUnknownReason } = detectStack(cwd);
   const ageWeeks = projectAgeWeeks(cwd, now);
   const git = gitFacts(cwd);
   return {
@@ -196,6 +196,8 @@ export function profileProject(cwd: string, now: number): ProjectProfile {
     ...(stack !== undefined ? { stack } : {}),
     ...(stackSource !== undefined ? { stackSource } : {}),
     ...(stackMajor !== undefined ? { stackMajor } : {}),
+    // Present only when `stack` is absent, so the field's presence marks the unknown bucket.
+    ...(stackUnknownReason !== undefined ? { stackUnknownReason } : {}),
     size: sizeBucket(countSourceFiles(cwd)),
     monorepo: isMonorepo(cwd),
     ...(ageWeeks !== undefined ? { ageWeeks } : {}),
