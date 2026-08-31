@@ -57,6 +57,16 @@ process.env.RETICLE_TELEMETRY = '0';
 // The telemetry line above already silences the events; this is belt and braces for anything that
 // re-enables them (a debug run recording to a local sink) and for the CLI's own CI-shaped defaults.
 process.env.CI = process.env.CI ?? 'true';
+// Corepack, silenced before it can ask a question nobody is there to answer.
+//
+// If any scaffold's manifest carries a `packageManager` field — `create-next-app` has shipped one
+// in the past and may again — corepack intercepts every `npm`/`pnpm` call and, for a version it
+// does not have cached, prints a y/N download prompt and WAITS. Nothing is attached to that stdin,
+// so the gate does not fail: it hangs until the job's timeout, and a timeout says "the install
+// takes too long on Windows" rather than "a prompt is waiting". Two variables turn a hang into
+// either a normal install or a named error.
+process.env.COREPACK_ENABLE_DOWNLOAD_PROMPT = '0';
+process.env.COREPACK_ENABLE_STRICT = process.env.COREPACK_ENABLE_STRICT ?? '0';
 import {
   existsSync,
   mkdirSync,
@@ -83,20 +93,33 @@ import {
 const WIN = 'win32' === process.platform;
 
 /**
- * `npm`, `npx` and `pnpm` are `.cmd` shims on Windows, not executables.
+ * `npm`, `npx` and `pnpm` are `.cmd` shims on Windows, and Node will not run one for you.
  *
- * `execFileSync('npm', …)` and `spawn('npm', …)` therefore fail with ENOENT there — CreateProcess
- * does not consult PATHEXT, which is the extension-resolution every Windows shell does for you and
- * nothing does for a direct spawn. This is the whole reason the gate could not run on the platform
- * with the most users, and it fails in the least useful way: "npm is not recognised", on a machine
- * where npm plainly works, in a gate whose entire subject is whether an install works.
+ * Two separate obstacles, and clearing only the first is what made the first Windows run of this
+ * gate die on `spawn EINVAL` at the very first command:
  *
- * Resolved here rather than in SCAFFOLDS so a new scaffold cannot forget it. `shell: true` would
- * also work and is not used: it re-parses every argument through cmd.exe, and these argument lists
- * contain `@`, `*` and `--` that a shell is entitled to reinterpret.
+ *  1. CreateProcess does not consult PATHEXT, so `spawn('npm', …)` is ENOENT even though npm plainly
+ *     works in that shell. The file wanted is `npm.cmd`.
+ *  2. Node then REFUSES to spawn a `.cmd` or `.bat` without `shell: true` — the fix for
+ *     CVE-2024-27980, where batch files re-parse their own arguments. That refusal is `EINVAL`,
+ *     which names neither the file nor the reason.
+ *
+ * So the shell is not optional here, and the argument-reinterpretation worry that argued against it
+ * does not apply to the shell we actually get: `cmd.exe` does not glob, so the `*` in an import
+ * alias survives, and `@` and `--` are ordinary characters to it. What cmd.exe DOES need is quoting
+ * around whitespace, because Node joins the arguments into one string before handing them over —
+ * and a temp directory with a space in it is the normal case on a real user's machine, as opposed
+ * to the 8.3 short path a CI runner happens to hand out.
  */
 const PACKAGE_MANAGERS = new Set(['npm', 'npx', 'pnpm', 'yarn']);
-const bin = (cmd) => (WIN && PACKAGE_MANAGERS.has(cmd) ? `${cmd}.cmd` : cmd);
+const quoteForCmd = (arg) =>
+  /[\s"]/.test(arg) ? `"${String(arg).split('"').join('\\"')}"` : String(arg);
+
+/** A command and the options it must be spawned with, on either kind of machine. */
+function pm(cmd, args = []) {
+  if (!WIN || !PACKAGE_MANAGERS.has(cmd)) return { cmd, args, shellOpts: {} };
+  return { cmd: `${cmd}.cmd`, args: args.map(quoteForCmd), shellOpts: { shell: true } };
+}
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const CLI = join(ROOT, 'packages/server/dist/cli.js');
@@ -178,8 +201,12 @@ async function startLocalRegistry() {
   // presents as "no token from verdaccio" and looks like a registry fault rather than stale state.
   const storage = join(tmpdir(), 'reticle-verdaccio-storage');
   const htpasswd = join(tmpdir(), 'reticle-verdaccio-htpasswd');
-  rmSync(storage, { recursive: true, force: true });
-  rmSync(htpasswd, { recursive: true, force: true });
+  // `force` swallows ENOENT and nothing else. Windows raises EPERM/EBUSY while any handle on the
+  // tree is still open — a verdaccio from a previous run being torn down is exactly that — and an
+  // unretried delete there fails the gate before it has started, with an errno instead of a reason.
+  const winSafe = { recursive: true, force: true, maxRetries: 8, retryDelay: 250 };
+  rmSync(storage, winSafe);
+  rmSync(htpasswd, winSafe);
   // The checked-in config names POSIX paths, and `/tmp` on Windows resolves to whatever the current
   // drive happens to be. Rather than keep a second Windows copy that drifts from the first, the one
   // config is read and its two paths repointed at this machine's real temp directory.
@@ -190,10 +217,12 @@ async function startLocalRegistry() {
       .replace('/tmp/reticle-verdaccio-storage', storage.split('\\').join('/'))
       .replace('/tmp/reticle-verdaccio-htpasswd', htpasswd.split('\\').join('/')),
   );
-  const proc = spawn(bin('npx'), ['--yes', 'verdaccio@latest', '--config', config], {
+  const verdaccio = pm('npx', ['--yes', 'verdaccio@latest', '--config', config]);
+  const proc = spawn(verdaccio.cmd, verdaccio.args, {
     cwd: ROOT,
     detached: !WIN,
     stdio: ['ignore', 'pipe', 'pipe'],
+    ...verdaccio.shellOpts,
   });
   const log = [];
   proc.stdout.on('data', (d) => log.push(String(d)));
@@ -397,14 +426,17 @@ function pathWithoutPnpm(workdir) {
 }
 
 
-const run = (cmd, args, cwd, extraEnv = {}) =>
-  execFileSync(bin(cmd), args, {
+const run = (cmd, args, cwd, extraEnv = {}) => {
+  const it = pm(cmd, args);
+  return execFileSync(it.cmd, it.args, {
     cwd,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
     env: { ...process.env, ...extraEnv },
     timeout: 600_000,
+    ...it.shellOpts,
   });
+};
 
 async function reachable(url) {
   try {
@@ -697,11 +729,13 @@ async function driveScaffold(scaffold, index) {
 
     // ── 6. boot, and open it in a real browser ──────────────────────────────────────────────────
     const [devCmd, devArgs] = scaffold.dev(appPort);
-    dev = spawn(bin(devCmd), devArgs, {
+    const devSpawn = pm(devCmd, devArgs);
+    dev = spawn(devSpawn.cmd, devSpawn.args, {
       cwd: app,
       detached: !WIN,
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env, BROWSER: 'none' },
+      ...devSpawn.shellOpts,
     });
     const devLog = [];
     dev.stdout.on('data', (d) => devLog.push(String(d)));
