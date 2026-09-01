@@ -664,11 +664,21 @@ export async function startDaemon(options: StartOptions = {}): Promise<RunningSe
   // The daemon owns listen (below), so the real bind error is reported there; absorb bridge.ready's
   // mirror rejection so a port collision can't surface as an unhandled promise rejection.
   void bridge.ready.catch(() => undefined);
+  // Declared before attachStatus so the closure below can report it; assigned further down, before
+  // listen — the first status request cannot arrive until after the bind.
+  let verifyHttp: { server: Server; port: number } | undefined;
   // `reticle status` GETs this for a live, at-a-glance view of connected tabs + their health.
   // The same diagnosis agents get on an empty `reticle_sessions`, so `reticle status` — the
   // most-run command in the field — stops answering "sessionCount: 0" and nothing else.
+  // `verifyPort` rides along so a later `serve --http` can tell whether this daemon already honours
+  // the requested `--http-port` instead of silently ignoring the flag (#687).
   shared.attachStatus(() =>
-    statusPayload(bridge.sessions.count(), bridge.sessions.list(), bridge.sessions.noSessionHint()),
+    statusPayload(
+      bridge.sessions.count(),
+      bridge.sessions.list(),
+      bridge.sessions.noSessionHint(),
+      verifyHttp?.port,
+    ),
   );
   // Agent-independent presence: the daemon outlives any single agent, so when the LAST agent's MCP
   // connection drops (it stopped, or is waiting on the human), end every session and push a clear
@@ -776,7 +786,7 @@ export async function startDaemon(options: StartOptions = {}): Promise<RunningSe
   // Optional OEM/CI verify endpoint: a host platform POSTs to /verify and gets an ReticleVerificationRun,
   // driving the same flow-replay machinery the agent uses — no MCP stdio, no human. Each verdict is
   // persisted via RunStore. Localhost-bound + token-guarded. Off unless `reticle serve --http`.
-  let verifyHttp: { server: Server; port: number } | undefined;
+  // (`verifyHttp` itself is declared above attachStatus, which reports its port.)
   if (true === options.httpVerify) {
     // Wakes cloud sync when the HTTP verify server persists a run — that path does not push
     // inline the way the MCP one does, so without this its runs waited for the timer.

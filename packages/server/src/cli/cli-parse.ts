@@ -356,6 +356,10 @@ const missingOperand = (command: string, what: string): ParseError => ({
   kind: 'error',
   message: `${command} needs ${what}`,
 });
+const requiresHttp = (flag: string): ParseError => ({
+  kind: 'error',
+  message: `${flag} requires ${HTTP_FLAG} — it configures the verify endpoint ${HTTP_FLAG} starts`,
+});
 const unknownCommand = (command: string): ParseError => ({
   kind: 'error',
   message: `unknown command '${command}'`,
@@ -411,6 +415,11 @@ function parseServeFlags(
     }
     i++;
   }
+  // Without `--http` these flags configure an endpoint nothing starts, and they were accepted and
+  // silently ignored — worse than being rejected, because the whole reason to pass them is to be
+  // honoured (#687).
+  if (!http && httpPort !== undefined) return requiresHttp(HTTP_PORT_FLAG);
+  if (!http && httpToken !== undefined) return requiresHttp(HTTP_TOKEN_FLAG);
   return {
     kind: 'ok',
     port,

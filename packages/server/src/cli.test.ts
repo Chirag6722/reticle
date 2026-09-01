@@ -561,6 +561,24 @@ describe('parseCliArgs', () => {
     });
   });
 
+  it('serve --http-port without --http is rejected, not silently ignored', () => {
+    expect(parseCliArgs(['serve', '--http-port', '4401'], PORT)).toEqual({
+      kind: 'error',
+      message: '--http-port requires --http — it configures the verify endpoint --http starts',
+    });
+  });
+
+  it('serve --http-token without --http is rejected the same way', () => {
+    expect(parseCliArgs(['serve', '--http-token', 'sek'], PORT)).toEqual({
+      kind: 'error',
+      message: '--http-token requires --http — it configures the verify endpoint --http starts',
+    });
+  });
+
+  it('mcp --http-port without --http is rejected too — same parser, same contract', () => {
+    expect(parseCliArgs(['mcp', '--http-port', '9100'], PORT).kind).toBe('error');
+  });
+
   it('mcp --http forwards the HTTP-verify flags (previously dropped)', () => {
     expect(
       parseCliArgs(['mcp', '--http', '--http-port', '9100', '--http-token', 't'], PORT),
