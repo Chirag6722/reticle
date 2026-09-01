@@ -4,6 +4,7 @@ import { BUFFER_EVICTION_WARNING, SessionState, Verified, VerifiedReason } from 
 import { TOOLS, type ToolDef, type ToolDeps } from './tools.js';
 import { ReticleTool } from './tool-names.js';
 import type { Session, SessionManager } from '../session/session.js';
+import { EventType, type ReticleEvent } from '@reticlehq/core';
 
 /**
  * The worst answer a verification layer can give is a confident green that rests on evidence it no
@@ -17,7 +18,12 @@ import type { Session, SessionManager } from '../session/session.js';
  * The block stays OMITTED when nothing was dropped: silence has to keep meaning "the buffer was
  * intact", or it becomes noise on every healthy call and gets ignored.
  */
-function depsWithBuffer(dropped: number, lastActSource?: string, lost = false): ToolDeps {
+function depsWithBuffer(
+  dropped: number,
+  lastActSource?: string,
+  lost = false,
+  events: ReticleEvent[] = [],
+): ToolDeps {
   const session: Partial<Session> = {
     id: 'demo',
     recordAction: () => 'a1',
@@ -29,8 +35,8 @@ function depsWithBuffer(dropped: number, lastActSource?: string, lost = false): 
     bufferHealth: () => ({ total: 12, dropped }),
     lostSince: () => lost,
     blindSpots: () => ({}),
-    eventsSince: () => [],
-    queryEvents: () => Promise.resolve([]),
+    eventsSince: () => events,
+    queryEvents: () => Promise.resolve(events),
     elapsed: () => 1000,
     throttled: () => false,
     health: () => ({ lastSeenMs: 5, throttled: false, focused: true, hidden: false }),
@@ -166,5 +172,55 @@ describe('assert does not grade a window the buffer lost evidence from', () => {
       absentConsole,
     )) as { verified?: string };
     expect(result.verified).not.toBe(Verified.UNKNOWN);
+  });
+});
+
+/**
+ * ...but only for an ABSENCE claim, and this is the correction to the rule above.
+ *
+ * `#noteScarceLoss` fires for AGE eviction too — every non-churn event past the 60s cutoff — so
+ * `lostSince(0)` is true on essentially any session older than a minute. The act path is unharmed
+ * because its cursor is the action's own; `reticle_assert` takes a caller-chosen `since`, often 0.
+ * Impeaching every verdict over a wide window turns "unknown" into the answer to everything, which
+ * is the failure this repo has already paid for once.
+ *
+ * The distinction is the one absenceBlindSpotNote already draws. A POSITIVE assertion that passed
+ * FOUND its evidence; events aged out elsewhere do not unmake it. An ABSENCE assertion concluded
+ * "nothing is there" from a window that provably lost things, and the lost thing is exactly the
+ * disproof.
+ */
+describe('buffer loss impeaches an absence claim, not every claim', () => {
+  const netPresent = {
+    predicate: { kind: 'net', urlContains: '/api' },
+    timeout_ms: 0,
+  };
+
+  it('still grades a POSITIVE assertion over a window that aged out', async () => {
+    const result = (await tool(ReticleTool.ASSERT).handler(
+      depsWithBuffer(0, undefined, true),
+      absentConsole,
+    )) as { verified?: string };
+    // the absence case stays unknown
+    expect(result.verified).toBe(Verified.UNKNOWN);
+  });
+
+  // The predicate must actually HOLD here, or the test passes for the wrong reason: with no events a
+  // positive assertion simply fails, and `no` is trivially "not unknown".
+  const apiCall: ReticleEvent[] = [
+    {
+      t: 1,
+      type: EventType.NET_REQUEST,
+      sessionId: 'demo',
+      data: { method: 'GET', url: 'http://localhost/api/items', status: 200, ok: true },
+    },
+  ];
+
+  it('keeps a PASSING positive verdict green when the buffer merely aged', async () => {
+    const result = (await tool(ReticleTool.ASSERT).handler(
+      depsWithBuffer(0, undefined, true, apiCall),
+      netPresent,
+    )) as { verified?: string; pass?: boolean };
+    expect(result.pass).toBe(true);
+    expect(result.verified).toBe(Verified.YES);
   });
 });

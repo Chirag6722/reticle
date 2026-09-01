@@ -12,6 +12,7 @@ import {
   absenceBlindSpotNote,
   blindSpotsFromState,
   buildCoverageStatement,
+  restsOnCompleteWindow,
   Coverage,
   impeachesCapture,
   transportGapNote,
@@ -140,21 +141,27 @@ export async function assertVerdict(
     honesty: buildHonestyBlock({
       grade: gradeOfPredicate(predicate),
       attribution: 'window',
-      // Did the buffer evict SCARCE evidence belonging to this window — the same window-scoped
-      // question the act path asks, asked here because it has the same answer. The old reasoning was
-      // that assert "observes an already-open window" and so cannot have lost anything; but eviction
-      // happens on push, regardless of who opened the window, and assert reads the same buffer over
-      // an arbitrary `since`. The result was that one loss in one window graded `unknown` through
-      // act_and_wait and `yes` through assert. NOT the raw drop counter, which moves on every push —
-      // see RingBuffer.lostSince, and the field episode where conflating the two made
-      // `unclean_capture` the dominant cause of `unknown`.
-      truncated: session.lostSince(since),
+      // Did the buffer evict SCARCE evidence belonging to this window, AND does a green here rest on
+      // the window being complete. assert never consulted the buffer at all, on the reasoning that it
+      // "observes an already-open window" — but eviction happens on push regardless of who opened the
+      // window, so `{ console, absent: true }` returned `yes` over a window whose evidence was gone,
+      // which is absence of evidence read as evidence of absence.
+      //
+      // The second half of the condition is not a refinement, it is what keeps this usable. Scarce
+      // loss is recorded for AGE eviction too, so `lostSince(0)` is true on any session past the 60s
+      // cutoff, and assert takes a caller-chosen `since` that is often 0. Impeaching every verdict
+      // over a wide window would make `unknown` the answer to everything — the failure this repo has
+      // already paid for once, when `unclean_capture` became the dominant cause of `unknown` in the
+      // field. The act path needs no such guard: its cursor is the action's own.
+      truncated: session.lostSince(since) && restsOnCompleteWindow(predicate),
       coveragePartial: Coverage.PARTIAL === statement.coverage,
       ...(statement.note === undefined ? {} : { coverageNote: statement.note }),
       ...(0 === impeachingNotes.length ? {} : { blindSpots: impeachingNotes }),
       // Which loss, as an enum, beside the prose.
       losses: [
-        ...(session.lostSince(since) ? [CaptureLoss.BUFFER_LOSS] : []),
+        ...(session.lostSince(since) && restsOnCompleteWindow(predicate)
+          ? [CaptureLoss.BUFFER_LOSS]
+          : []),
         ...(gap === undefined ? [] : [CaptureLoss.TRANSPORT_GAP]),
         ...(impeaching.note === undefined ? [] : [CaptureLoss.BLIND_SPOT]),
       ],

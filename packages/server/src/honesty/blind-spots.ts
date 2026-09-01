@@ -12,6 +12,7 @@ import {
   AppRuntime,
   BlindSpotKind,
   EventType,
+  PredicateKind,
   ReticleEnv,
   TRANSPORT_LIMITS,
   isDesktopBlindSpot,
@@ -268,4 +269,25 @@ export function transportGapNote(events: readonly ReticleEvent[]): string | unde
  */
 export function isStateUnwatched(spots: readonly BlindSpot[]): boolean {
   return spots.some((spot) => spot.kind === BlindSpotKind.UNWATCHED_STATE && spot.count > 0);
+}
+
+/**
+ * Does a passing verdict on this predicate REST on the window being complete?
+ *
+ * Only an absence claim does. A positive assertion that passed found its evidence, and events aged
+ * out elsewhere in the buffer do not unmake it. An absence claim concluded "nothing is there" — and
+ * the thing the buffer dropped is precisely the disproof, so "absent" degrades to "absent in what I
+ * still hold".
+ *
+ * The distinction is not optional. Scarce-loss is recorded for AGE eviction too, so `lostSince(0)`
+ * is true on any session older than the 60s cutoff; impeaching every verdict over a caller-chosen
+ * window would make `unknown` the answer to everything, which this repo has already paid for once.
+ */
+export function restsOnCompleteWindow(predicate: {
+  kind: string;
+  absent?: boolean;
+  predicate?: unknown;
+}): boolean {
+  if (PredicateKind.NOT === predicate.kind) return true;
+  return true === predicate.absent;
 }
