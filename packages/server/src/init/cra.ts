@@ -16,9 +16,21 @@
 import { bridgeWsUrl } from '@reticlehq/core';
 import { CLI } from './agent-rules.js';
 
-/** The line added to `src/index.tsx`. Side-effect import: the module guards itself on NODE_ENV. */
+/** The line added to `src/index.tsx` / `src/index.js`. Side-effect import: the module guards itself on NODE_ENV. */
 export const CRA_DEV_MODULE_IMPORT = "import './reticle-dev';";
-export const CRA_DEV_MODULE_PATH = 'src/reticle-dev.ts';
+
+/**
+ * Where the connect module lands — `.ts` only when the app already speaks TypeScript.
+ *
+ * A JavaScript CRA project has no tsconfig and cannot resolve `.ts` (#675). Emitting `.ts` there
+ * makes the first compile after init fail while the plan still reports `[✓]`.
+ */
+export function craDevModulePath(typescript: boolean): string {
+  return typescript ? 'src/reticle-dev.ts' : 'src/reticle-dev.js';
+}
+
+/** TypeScript default path — prefer `craDevModulePath` when the project's language is known. */
+export const CRA_DEV_MODULE_PATH = craDevModulePath(true);
 export const CRA_ENV_PATH = '.env.development.local';
 export const TOKEN_VAR = 'REACT_APP_RETICLE_TOKEN';
 /**
@@ -105,8 +117,22 @@ export function craEnvPatch(existing: string | null, token: string, url?: string
   return next === (existing ?? '') ? null : next;
 }
 
-/** The dev-only connect module imported from `src/index.tsx`. */
-export function craDevModuleFile(port: number | undefined, projectId?: string): string {
+/** Options for the CRA connect module. */
+export interface CraDevModuleOptions {
+  /**
+   * When false, emit a `.js`-shaped body (no `export {}`). Default true for callers that predate
+   * the language branch.
+   */
+  typescript?: boolean;
+}
+
+/** The dev-only connect module imported from the app entry. */
+export function craDevModuleFile(
+  port: number | undefined,
+  projectId?: string,
+  options: CraDevModuleOptions = {},
+): string {
+  const typescript = false !== options.typescript;
   const fields: string[] = [];
   // `bridgeWsUrl`, not a hand-written string. This was the only client URL in the product spelling
   // the host as `127.0.0.1` while every other generator said `localhost` — same endpoint, but a
@@ -134,6 +160,9 @@ export function craDevModuleFile(port: number | undefined, projectId?: string): 
   ].map((c) => JSON.stringify(c));
   // Eight spaces match the indent inside `console.error(` below.
   const missingExpr = missingChunks.join(' +\n        ');
+  // `export {}` is a TypeScript empty-module marker. A `.js` file with it is fine under Babel, but
+  // the workaround reporters used was to drop it when renaming to `.js` — keep the JS emit clean.
+  const trailer = typescript ? '\nexport {};\n' : '\n';
   return `// Dev-only: connect Reticle. Imported for its side effect from src/index.tsx.
 //
 // CRA's public/index.html is a static template the bundler never processes for
@@ -162,7 +191,5 @@ ${connectFields}
     });
   });
 }
-
-export {};
-`;
+${trailer}`;
 }

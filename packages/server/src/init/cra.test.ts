@@ -18,6 +18,7 @@ import {
   craImportPatch,
   craEnvPatch,
   craDevModuleFile,
+  craDevModulePath,
   CRA_DEV_MODULE_IMPORT,
   CRA_TOKEN_MISSING_NOTE,
 } from './cra.js';
@@ -96,5 +97,19 @@ describe('the clone that has no token', () => {
 
   it('still attempts the connect, so a bridge running without a token keeps working', () => {
     expect(craDevModuleFile(4400, 'proj')).toContain('reticle.connect(');
+  });
+});
+
+describe('JavaScript CRA gets a .js module (#675)', () => {
+  it('picks .js when the project has no TypeScript', () => {
+    expect(craDevModulePath(false)).toBe('src/reticle-dev.js');
+    expect(craDevModulePath(true)).toBe('src/reticle-dev.ts');
+  });
+
+  it('omits the TypeScript empty-module marker from the JS emit', () => {
+    const js = craDevModuleFile(4400, 'proj', { typescript: false });
+    expect(js).toContain('reticle.connect(');
+    expect(js).not.toContain('export {}');
+    expect(craDevModuleFile(4400, 'proj', { typescript: true })).toContain('export {}');
   });
 });

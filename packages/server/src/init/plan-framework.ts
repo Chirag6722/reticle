@@ -10,11 +10,11 @@ import { patchNextConfig, patchRootLayout, patchPagesApp } from './next-patch.js
 import { patchAstroConfig, patchAstroLayout } from './astro-patch.js';
 import {
   CRA_DEV_MODULE_IMPORT,
-  CRA_DEV_MODULE_PATH,
   CRA_ENV_PATH,
   CRA_TOKEN_PER_MACHINE_NOTICE,
   TOKEN_VAR,
   craDevModuleFile,
+  craDevModulePath,
   craEnvPatch,
   craImportPatch,
 } from './cra.js';
@@ -401,15 +401,19 @@ export function nextSteps(input: PlanInput): Step[] {
  */
 export function craSteps(input: PlanInput): Step[] {
   const entry = input.craEntry ?? null;
+  // Match the project language the same way Next does (#675): a JS CRA app cannot resolve `.ts`.
+  const modulePath = craDevModulePath(input.detection.typescript);
   const steps: Step[] = [
     {
       title: 'Reticle connect module',
-      target: CRA_DEV_MODULE_PATH,
+      target: modulePath,
       status: StepStatus.APPLY,
       detail: 'create the dev-only connect (CRA cannot inject through public/index.html)',
       write: {
-        path: CRA_DEV_MODULE_PATH,
-        content: craDevModuleFile(input.options.port, input.options.projectId),
+        path: modulePath,
+        content: craDevModuleFile(input.options.port, input.options.projectId, {
+          typescript: input.detection.typescript,
+        }),
       },
       dependsOnInstall: true,
     },
