@@ -6,27 +6,13 @@ import { GapLedger } from '../honesty/gap-ledger.js';
 import { CaptureLedger } from '../honesty/feature-capture.js';
 import { commandTimeoutMessage, type PageRuntime } from './command-timeout.js';
 import { readHealthEvent, type SessionHealth } from './session-health.js';
+import { MIRRORED_COMMANDS, mirroredNarration } from './session-mirror.js';
 
 export type { SessionHealth };
 
 /** The HUD does not need 200 frames to watch a counter climb; the last state always lands. */
 const IMPACT_PUSH_DEBOUNCE_MS = 700;
 
-/**
- * How a mirrored row is introduced on a tab that is only WATCHING.
- *
- * The row happened somewhere else, and a HUD that prints it unlabelled tells the reader their own
- * tab was driven. Naming the session is also the handle they need to address it.
- */
-function mirroredNarration(sessionId: string, text: string): string {
-  return `${sessionId} \u2192 ${text}`;
-}
-
-/** The pushes that are a REPORT of what happened, and so are worth showing to a watching tab. */
-const MIRRORED_COMMANDS: ReadonlySet<string> = new Set<string>([
-  ReticleCommand.NARRATE,
-  ReticleCommand.IMPACT,
-]);
 import { PendingCommands, CommandTimeoutError } from './pending-commands.js';
 import { span } from '../trace.js';
 import {
@@ -297,6 +283,9 @@ export class Session {
       hidden: this.#hidden,
       throttled: base.throttled,
       focused: base.focused,
+      // Without this the desktop branch is unreachable in production: every unit test would pass and
+      // every real Electron window would still be told to open a browser.
+      runtime: this.#runtime,
     });
     return recommendation === undefined ? base : { ...base, recommendation };
   }

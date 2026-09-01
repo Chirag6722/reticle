@@ -1,4 +1,9 @@
-import { HIDDEN_TAB_RECOMMENDATION, THROTTLED_TAB_RECOMMENDATION } from '@reticlehq/core';
+import {
+  AppRuntime,
+  DESKTOP_WINDOW_BACKGROUNDED,
+  HIDDEN_TAB_RECOMMENDATION,
+  THROTTLED_TAB_RECOMMENDATION,
+} from '@reticlehq/core';
 
 /**
  * The session flags the recommendation is derived from. All already exist on every
@@ -8,6 +13,12 @@ export interface RecommendationInputs {
   hidden: boolean;
   throttled: boolean;
   focused: boolean;
+  /**
+   * The shell this session runs in, as the SDK reported it at handshake. Undefined for an older SDK
+   * that does not report one — and an unknown runtime keeps the WEB advice, because a browser tab is
+   * what most sessions are and withholding a usable escape hatch is the worse error.
+   */
+  runtime?: string | undefined;
 }
 
 /**
@@ -26,7 +37,13 @@ export interface RecommendationInputs {
  * failure mode (events landing on a page that never advances) is the one worth warning about.
  */
 export function buildSessionRecommendation(inputs: RecommendationInputs): string | undefined {
+  if (!inputs.hidden && !inputs.throttled) return undefined;
+  // A desktop window gets the one answer it can act on. Checked BEFORE hidden/throttled are told
+  // apart, because the distinction between them is about browser tab lifecycle and neither of its
+  // two answers exists for an app whose window is the client. See DESKTOP_WINDOW_BACKGROUNDED.
+  if (AppRuntime.ELECTRON === inputs.runtime || AppRuntime.TAURI === inputs.runtime) {
+    return DESKTOP_WINDOW_BACKGROUNDED;
+  }
   if (inputs.hidden) return HIDDEN_TAB_RECOMMENDATION;
-  if (inputs.throttled) return THROTTLED_TAB_RECOMMENDATION;
-  return undefined;
+  return THROTTLED_TAB_RECOMMENDATION;
 }

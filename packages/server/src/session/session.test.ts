@@ -12,6 +12,7 @@ import {
   type HelloMessage,
   type ReticleEvent,
 } from '@reticlehq/core';
+import { AppRuntime } from '@reticlehq/core';
 import { Session, SessionManager } from './session.js';
 
 const HELLO: HelloMessage = {
@@ -312,5 +313,25 @@ describe('an event observer that throws', () => {
 
     expect(() => session.pushEvent(anyEvent())).not.toThrow();
     expect(seen).toEqual(['before', 'after']);
+  });
+});
+
+// The WIRING, not the helper. `buildSessionRecommendation` grew a desktop branch and every unit test
+// for it passed while the branch was unreachable in production, because `Session` was not passing
+// its own `runtime` in. Deleting that one argument left all 506 session tests green — which is the
+// same shape of gap this repo has hit twice before: the decision is tested, the call is not.
+describe('the session hands its runtime to the recommendation', () => {
+  it('an Electron window in the background is not told to open a browser', () => {
+    const session = new Session(HELLO, fakeSocket, () => 0);
+    session.applyHealth(true, false, AppRuntime.ELECTRON);
+    const advice = String(session.health().recommendation ?? '');
+    expect(advice).not.toContain('reticle_lease');
+    expect(advice).toContain('window');
+  });
+
+  it('a plain web tab still gets the lease it can actually use', () => {
+    const session = new Session(HELLO, fakeSocket, () => 0);
+    session.applyHealth(true, false, AppRuntime.WEB);
+    expect(String(session.health().recommendation ?? '')).toContain('reticle_lease');
   });
 });

@@ -133,6 +133,22 @@ export const LEASE_IS_INVISIBLE_NOTE =
  * lease is not on the default surface) and leaves `reticle drive` as the human-side equivalent: an
  * MCP-only agent has no shell, so a CLI sentence is advice it cannot follow.
  */
+/**
+ * A DESKTOP window that has gone to the background, which is a different problem with a different fix.
+ *
+ * The web answer — acquire a lease, or run `reticle drive <url>` — is unavailable here and saying it
+ * is worse than saying nothing. A lease opens a headless BROWSER context; an Electron or Tauri app's
+ * window IS the client, and a browser pointed at the same dev-server URL is a different program with
+ * no main process, no preload and no Rust commands. Driven on MarkText, a shipped Electron editor:
+ * its window went behind, the session reported hidden+throttled, and the only advice offered was the
+ * one thing that could not be done — while the thing that works, bringing the window forward, went
+ * unsaid.
+ *
+ * No `reticle_lease` and no `reticle drive` in this sentence, deliberately. Both are checked by test.
+ */
+export const DESKTOP_WINDOW_BACKGROUNDED =
+  "this app window is in the background, and a backgrounded webview clamps its timers and rAF — a synthetic action can land on a page that never advances. Bring the app window to the front and retry. A lease is NOT the answer for a desktop app: it opens a browser context, which has none of this app's IPC or commands.";
+
 export const HIDDEN_TAB_RECOMMENDATION =
   'tab hidden and may be un-focusable from here; timers and rAF are clamped in a background tab, so an action can land on a page that never advances. Refocus it, or acquire a guaranteed scriptable context yourself with `reticle_run { tool: "reticle_lease", action: "acquire", url }` (a human can equivalently run `reticle drive <url>`) — ' +
   LEASE_IS_INVISIBLE_NOTE;
