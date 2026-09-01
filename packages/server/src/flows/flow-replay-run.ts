@@ -4,14 +4,20 @@ import {
   FlowErrorCode,
   RecordedFlowSchema,
   ReplayStatus,
+  ReticleCommand,
   RunKind,
   RunStatus,
+  type CommandResult,
   type FlowFile,
   type FlowReplayResult,
   type FlowStepResult,
   type ReticleEvent,
 } from '@reticlehq/core';
-import { asString } from '../tools/tools-helpers.js';
+import { asRecord, asString } from '../tools/tools-helpers.js';
+import type { ArrivalClock } from '../tools/navigate-arrival.js';
+import { carryReticleIdentity } from '../tools/lease-tools.js';
+import type { SessionManager } from '../session/session-manager.js';
+import type { Session } from '../session/session.js';
 import { replayFlow } from './flow-replay.js';
 import { assertSuccess, dynamicTestids, successLabel, SUCCESS_STEP_TOOL } from './flow-success.js';
 import { buildDecision, unverifiableReason } from './decision.js';
@@ -112,6 +118,36 @@ async function recordReplayRun(
   }
 }
 
+/** The slice of a session the start-path logic reads: the live URL plus the event buffer. */
+interface StartPathSession {
+  url?: string;
+  eventsSince(cursor: number): ReticleEvent[];
+}
+
+/**
+ * The route the tab is on now: the last observed route.change, falling back to the pathname of the
+ * session's own URL. The fallback matters — a tab that hard-loaded its page emits no route event
+ * (the route observer only sees pushState/replaceState/popstate), but the HELLO url still names
+ * where it sits, and without it a wrong-page replay reported plain drift with no hint at all.
+ */
+function currentPathOf(session: StartPathSession): string | undefined {
+  const routes = session.eventsSince(0).filter((e) => e.type === EventType.ROUTE_CHANGE);
+  const data = routes.at(-1)?.data ?? {};
+  const observed = asString(data['pathname']) ?? asString(data['to']);
+  if (observed !== undefined) return observed;
+  if (session.url === undefined) return undefined;
+  try {
+    return new URL(session.url).pathname;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Pathname equality up to a trailing slash — a router normalising one must not read as "elsewhere". */
+function samePath(a: string, b: string): boolean {
+  return a.replace(/\/$/, '') === b.replace(/\/$/, '');
+}
+
 /**
  * Ask the project what it already knows about this flow.
  *
@@ -165,22 +201,99 @@ async function consultProjectMemory(
  * different route, step 1 drifts for a reason that has nothing to do with the app regressing — the
  * anchor simply isn't on this page yet. Detect that so the decision says "navigate there first"
  * instead of a mystifying "a step no longer matches". Returns undefined when the routes agree or the
- * current route is unobservable (no route event) — never a false alarm. Replay itself does NOT
- * navigate: a full-page load mid-replay tears down the session socket; the agent navigates between
- * tool calls (reticle_navigate) where the session is re-resolved fresh.
+ * current route is unobservable — never a false alarm. Replay normally never gets here on a
+ * wrong page (arriveAtStartPath navigates before step 1); this is the fallback for when that
+ * navigation was refused or the SDK never reconnected in the window.
  */
 export function startPathMismatchHint(
   flow: FlowFile,
-  session: { eventsSince(cursor: number): ReticleEvent[] },
+  session: StartPathSession,
 ): string | undefined {
   const startPath = flow.startPath;
   if (startPath === undefined || 0 === startPath.length) return undefined;
-  const routes = session.eventsSince(0).filter((e) => e.type === EventType.ROUTE_CHANGE);
-  const last = routes.at(-1);
-  const data = last?.data ?? {};
-  const current = asString(data['pathname']) ?? asString(data['to']);
-  if (current === undefined || current === startPath) return undefined;
+  const current = currentPathOf(session);
+  if (current === undefined || samePath(current, startPath)) return undefined;
   return `this flow's journey starts on ${startPath} but the tab is on ${current} — navigate there (reticle_navigate { url: "${startPath}" }), then replay`;
+}
+
+/** How long replay waits for the SDK to reconnect on the start page before falling back to the hint. */
+const START_PATH_ARRIVAL_TIMEOUT_MS = 5_000;
+const START_PATH_POLL_MS = 100;
+
+const REAL_ARRIVAL_CLOCK: ArrivalClock = {
+  now: () => Date.now(),
+  sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+};
+
+/**
+ * The session `oldId` denotes right now — itself, or the tombstone successor `resolve` rebinds to
+ * after a full-document navigation — but only once it actually sits on `target`. Undefined while
+ * the tab is still travelling (or in the gap between teardown and the successor's HELLO, when
+ * `resolve` throws). Keyed to the navigated tab's own identity on purpose: matching "any session at
+ * the target page" would happily hand replay an unrelated tab that was already sitting there.
+ */
+function arrivedSuccessor(
+  sessions: SessionManager,
+  oldId: string,
+  target: string,
+): Session | undefined {
+  try {
+    const candidate = sessions.resolve(oldId);
+    const path = currentPathOf(candidate);
+    return path !== undefined && samePath(path, target) ? candidate : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Replay's half of the FlowFile contract: navigate to the flow's `startPath` before step 1.
+ *
+ * A full-page load tears down the session socket, so the navigation must happen here — before any
+ * step runs — and the replay continues on the session the SDK reconnects as (found via the same
+ * tombstone rebind that lets `resolve(oldId)` answer after any navigation). Best-effort by design:
+ * when the flow carries no startPath, the tab is already there, the current route is unobservable,
+ * the navigation is refused, or the SDK never reconnects in the window, it returns undefined and
+ * replay proceeds on the connected session as before — with startPathMismatchHint turning any
+ * resulting drift into an actionable next move rather than a mystifying one.
+ */
+export async function arriveAtStartPath(
+  sessions: SessionManager,
+  session: StartPathSession & {
+    id: string;
+    command(name: string, args?: Record<string, unknown>): Promise<CommandResult>;
+  },
+  flow: FlowFile,
+  timeoutMs: number = START_PATH_ARRIVAL_TIMEOUT_MS,
+  clock: ArrivalClock = REAL_ARRIVAL_CLOCK,
+): Promise<Session | undefined> {
+  const target = flow.startPath;
+  if (target === undefined || 0 === target.length) return undefined;
+  const current = currentPathOf(session);
+  if (current === undefined || samePath(current, target)) return undefined;
+  let destination: string;
+  try {
+    // startPath is a pathname (a host belongs to the machine, not the journey) — resolve it
+    // against the tab's own URL to get something the browser can be sent to.
+    destination = new URL(target, session.url).toString();
+  } catch {
+    return undefined; // no usable base URL — nowhere to navigate from
+  }
+  // A leased tab is addressed by URL params, so navigating without them would strand the lease.
+  const url = carryReticleIdentity(session.url, destination);
+  try {
+    const outcome = await session.command(ReticleCommand.NAVIGATE, { url });
+    if (!outcome.ok || true !== asRecord(outcome.result)['ok']) return undefined;
+  } catch {
+    return undefined;
+  }
+  const deadline = clock.now() + timeoutMs;
+  for (;;) {
+    const arrived = arrivedSuccessor(sessions, session.id, target);
+    if (arrived !== undefined) return arrived;
+    if (clock.now() >= deadline) return undefined;
+    await clock.sleep(START_PATH_POLL_MS);
+  }
 }
 
 /**
@@ -234,9 +347,11 @@ export async function replayNamedFlow(
   const replayRoot = sessionRoot(deps, asString(args['sessionId']));
   const intents = new IntentStore(deps.fs, replayRoot, { now: deps.now });
   const intentSaid = await flowIntentStatement(intents, loaded.value);
-  const session = deps.sessions.resolve(asString(args['sessionId']));
-  // Captured before replay: if the tab isn't on the flow's start page, a step-1 drift is a wrong-page
-  // symptom, not a regression — surface that on the decision instead of a bare "a step no longer matches".
+  const connected = deps.sessions.resolve(asString(args['sessionId']));
+  // The FlowFile contract: replay navigates to the flow's startPath before step 1, and the steps run
+  // on the session the SDK reconnects as. When arrival can't be confirmed, replay proceeds on the
+  // connected session — and the hint below turns the wrong-page drift into an actionable next move.
+  const session = (await arriveAtStartPath(deps.sessions, connected, loaded.value)) ?? connected;
   const startPathHint = startPathMismatchHint(loaded.value, session);
   // Floor the success oracle at the start of THIS replay so a stale signal from a prior run
   // in the same session can't fake a pass.

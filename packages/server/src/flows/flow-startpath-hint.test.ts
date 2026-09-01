@@ -40,4 +40,21 @@ describe('startPathMismatchHint — wrong-page drift becomes an actionable next 
   it('never false-alarms when the current route is unobservable', () => {
     expect(startPathMismatchHint(flow('/cart'), noRoute())).toBeUndefined();
   });
+
+  it('falls back to the session URL when no route event was observed (hard-loaded tab)', () => {
+    const session = { url: 'http://localhost:3000/reset-password', eventsSince: () => [] };
+    const hint = startPathMismatchHint(flow('/login'), session);
+    expect(hint).toContain('/login');
+    expect(hint).toContain('/reset-password');
+  });
+
+  it('is silent when the session URL already sits on the start page', () => {
+    const session = { url: 'http://localhost:3000/login?next=%2F', eventsSince: () => [] };
+    expect(startPathMismatchHint(flow('/login'), session)).toBeUndefined();
+  });
+
+  it('treats a trailing slash as the same page, not as elsewhere', () => {
+    const session = { url: 'http://localhost:3000/login/', eventsSince: () => [] };
+    expect(startPathMismatchHint(flow('/login'), session)).toBeUndefined();
+  });
 });
