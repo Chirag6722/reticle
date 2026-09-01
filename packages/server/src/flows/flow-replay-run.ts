@@ -19,6 +19,8 @@ import { carryReticleIdentity } from '../tools/lease-tools.js';
 import type { SessionManager } from '../session/session-manager.js';
 import type { Session } from '../session/session.js';
 import { replayFlow } from './flow-replay.js';
+import { anchorQueryArgs } from './flow-step-runners.js';
+import { queryRefs } from './replay.js';
 import { assertSuccess, dynamicTestids, successLabel, SUCCESS_STEP_TOOL } from './flow-success.js';
 import { buildDecision, unverifiableReason } from './decision.js';
 import { classifyFlowAssertions } from './flow-classify.js';
@@ -257,6 +259,44 @@ function arrivedSuccessor(
  * replay proceeds on the connected session as before — with startPathMismatchHint turning any
  * resulting drift into an actionable next move rather than a mystifying one.
  */
+/**
+ * Can step 1 start from where the tab already is?
+ *
+ * `startPathMismatchHint` states the premise the navigation below exists to serve: on the wrong
+ * route "the anchor simply isn't on this page yet". That is the condition worth a page load — and
+ * it was never the condition checked. `arriveAtStartPath` fired on a route mismatch ALONE, so a
+ * flow whose first anchor lives somewhere persistent (a sidebar, a header, a nav rail — present on
+ * every route) was navigated for a problem it did not have.
+ *
+ * A navigation is a full page load, which tears the session down and brings the app back in its
+ * cold state. For the ordinary case of a flow recorded after signing in, that cold state is the
+ * LOGIN SCREEN: step 1 then reports its anchor missing and names the component that holds it, which
+ * is a correct sentence about a file that is completely fine. Found by the benchmark, on two flows
+ * with identical steps where the first replayed clean and the second — run after it, with the tab
+ * drifted off `/` — did not.
+ *
+ * So the question is asked directly. A best-effort step that can leave the caller WORSE off than
+ * skipping it is not best-effort; checking first is what makes the description true.
+ *
+ * Unresolvable either way (no anchor we can query, a failed query) reads as "cannot tell", and the
+ * navigation goes ahead — the pre-existing behaviour, and the safe direction for a check whose whole
+ * job is to avoid making things worse.
+ */
+async function firstStepResolvesHere(
+  session: { command(name: string, args?: Record<string, unknown>): Promise<CommandResult> },
+  flow: FlowFile,
+): Promise<boolean> {
+  const first = flow.steps?.[0];
+  if (first === undefined) return false;
+  const args = anchorQueryArgs(first.anchor);
+  if (null === args) return false;
+  try {
+    return 0 < queryRefs(await session.command(ReticleCommand.QUERY, args)).length;
+  } catch {
+    return false;
+  }
+}
+
 export async function arriveAtStartPath(
   sessions: SessionManager,
   session: StartPathSession & {
@@ -271,6 +311,8 @@ export async function arriveAtStartPath(
   if (target === undefined || 0 === target.length) return undefined;
   const current = currentPathOf(session);
   if (current === undefined || samePath(current, target)) return undefined;
+  // The route differs — but that only matters if it stops the flow starting. See above.
+  if (await firstStepResolvesHere(session, flow)) return undefined;
   let destination: string;
   try {
     // startPath is a pathname (a host belongs to the machine, not the journey) — resolve it
