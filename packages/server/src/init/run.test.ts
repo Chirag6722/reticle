@@ -546,6 +546,33 @@ describe('runInit — workspace roots', () => {
     expect(io.written['/app/.reticle.json']).toBeDefined();
   });
 
+  // A monorepo ROOT that carries shared tooling looks like an app to `detect` — `vite` in its
+  // devDependencies is the ordinary shape of one. The redirect used to give up on exactly that
+  // signal, BEFORE reading `--app`, so the one flag documented for this layout was ignored: measured
+  // on a real pnpm+turbo Tauri app, `init --app packages/player` installed the SDK into the root's
+  // package.json, wrote a whole `src/reticle-dev.ts` into a repository root that has no `src/`, left
+  // the app untouched, and reported three ✓ and one ⚠.
+  it('honours --app even when the invocation directory itself looks like an app', () => {
+    const io = memoryIo({
+      // Root with shared tooling: a framework dependency, and no app of its own.
+      'package.json': JSON.stringify({ name: 'mono', devDependencies: { vite: '^7' } }),
+      ...VITE_APP,
+    });
+    runInit({ ...OPTS, app: 'apps/web' }, io);
+    expect(io.written['apps/web/vite.config.ts']).toContain('reticle(');
+    expect(io.written['apps/web/.reticle.json']).toBeDefined();
+    // The root gets runtime config and NOTHING else — no wiring, and no invented src/ tree.
+    expect(io.written['vite.config.ts']).toBeUndefined();
+    expect(io.written['src/reticle-dev.ts']).toBeUndefined();
+  });
+
+  it('says so when --app names a directory that is not there', () => {
+    const io = memoryIo({ 'package.json': JSON.stringify({ devDependencies: { vite: '^7' } }) });
+    const r = runInit({ ...OPTS, app: 'apps/nope' }, io);
+    expect(r.ok).toBe(false);
+    expect(io.lines.join('\n')).toContain('--app apps/nope');
+  });
+
   it('asks for feedback exactly once, even though the redirect re-enters init', () => {
     const io = memoryIo({ 'package.json': WORKSPACE_ROOT, ...VITE_APP });
     runInit(OPTS, io);

@@ -13,7 +13,12 @@ import { projectIdOf, rememberProjectOnDisk } from '../project/remember-project.
 import { detect, Framework, namesAPackageManager, type DetectInput, UiLibrary } from './detect.js';
 import { wasMcpRegistered } from './mcp-registered.js';
 import { pickAstroHost } from './astro-host.js';
-import { workspaceParents } from './workspace-apps.js';
+import {
+  findWorkspaceApps,
+  NEXT_CONFIG_CANDIDATES,
+  PACKAGE_JSON,
+  VITE_CONFIG_CANDIDATES,
+} from './workspace-apps.js';
 import { chooseWorkspaceApp } from './app-choice.js';
 import { isConnectStep } from './connect-steps.js';
 import { CURSOR_RULE_PATH, RETICLE_MD_PATH } from './agent-rules.js';
@@ -114,7 +119,6 @@ export function resolveLockfiles(
   return set;
 }
 
-const PACKAGE_JSON = 'package.json';
 const NODE_MODULES_DIR = 'node_modules';
 /**
  * Root-layout candidates, App Router only. `--src-dir` apps keep theirs under `src/app`, and the
@@ -210,12 +214,6 @@ function dependencyNames(pkg: unknown): Set<string> {
     ...Object.keys(p['devDependencies'] ?? {}),
   ]);
 }
-const VITE_CONFIG_CANDIDATES = [
-  'vite.config.ts',
-  'vite.config.js',
-  'vite.config.mjs',
-  'vite.config.mts',
-];
 const ASTRO_CONFIG_CANDIDATES = [
   'astro.config.mjs',
   'astro.config.js',
@@ -226,12 +224,6 @@ const ASTRO_CONFIG_CANDIDATES = [
 const ASTRO_LAYOUTS_DIR = 'src/layouts';
 /** Also searched: an app with no layouts directory renders the document straight from a page. */
 const ASTRO_PAGES_DIR = 'src/pages';
-const NEXT_CONFIG_CANDIDATES = [
-  'next.config.mjs',
-  'next.config.js',
-  'next.config.ts',
-  'next.config.cjs',
-];
 
 export interface InitOptions {
   /** `--capture-bodies`: write `captureNetworkBodies: true` into the app's config. Off by default (#705). */
@@ -536,61 +528,6 @@ function gatherPlanInput(options: InitOptions, io: InitIo, pkg: unknown): PlanIn
 
 /** Where workspace tooling conventionally puts packages. */
 /** pnpm's workspace declaration, read when present — it is authoritative about where packages live. */
-const PNPM_WORKSPACE = 'pnpm-workspace.yaml';
-/** Deps that mark a directory as a runnable web app even when it has no bundler config file. */
-const APP_DEPS = ['next', 'vite'] as const;
-
-function looksLikeApp(dir: string, io: Pick<InitIo, 'exists' | 'readFile'>): boolean {
-  const pkgRaw = io.readFile(`${dir}/${PACKAGE_JSON}`);
-  if (null === pkgRaw) return false;
-  const configs = [...VITE_CONFIG_CANDIDATES, ...NEXT_CONFIG_CANDIDATES];
-  if (configs.some((c) => io.exists(`${dir}/${c}`))) return true;
-  // `next.config` is optional in Next, so the dependency list is the other half of the signal.
-  return APP_DEPS.some((d) => pkgRaw.includes(`"${d}"`));
-}
-
-/**
- * App directories under a workspace root.
- *
- * Running `reticle init` at the repo root is what people actually do, and in a monorepo the app is a
- * directory down — so init detected "no framework", printed a wall of manual HTML instructions, and
- * would have installed the SDK into the ROOT package.json. It already walks UP for the lockfile, so
- * it knows it is in a workspace; this is the matching walk DOWN.
- */
-export function findWorkspaceApps(io: Pick<InitIo, 'exists' | 'readFile' | 'listDirs'>): string[] {
-  const found: string[] = [];
-  // A workspace DECLARES its packages; `['apps','packages']` was a guess that missed a real repo
-  // with three Next apps at web/, admin/ and space/ — and missing them meant init ran against the
-  // root and reported ✓ for a file Next never compiles. See workspace-apps.
-  const pkgRaw = io.readFile(PACKAGE_JSON);
-  let pkgWorkspaces: unknown;
-  try {
-    const parsed: unknown = null === pkgRaw ? undefined : JSON.parse(pkgRaw);
-    pkgWorkspaces =
-      'object' === typeof parsed && parsed !== null
-        ? (parsed as { workspaces?: unknown }).workspaces
-        : undefined;
-  } catch {
-    pkgWorkspaces = undefined;
-  }
-  const parents = workspaceParents({
-    ...(null === io.readFile(PNPM_WORKSPACE)
-      ? {}
-      : { pnpmWorkspace: io.readFile(PNPM_WORKSPACE) ?? '' }),
-    ...(pkgWorkspaces === undefined ? {} : { pkgWorkspaces }),
-    topLevelDirs: io.listDirs('.'),
-  });
-  // A declared parent can itself BE the app (`workspaces: ["web"]`), so check both the directory and
-  // its children rather than assuming one level of nesting.
-  for (const parent of parents) {
-    if (looksLikeApp(parent, io)) found.push(parent);
-    for (const name of io.listDirs(parent)) {
-      const dir = `${parent}/${name}`;
-      if (looksLikeApp(dir, io)) found.push(dir);
-    }
-  }
-  return [...new Set(found)];
-}
 
 const SKIPPED_DETAIL =
   'skipped — the dependency install above failed, and wiring the app to a package that is not ' +
@@ -833,6 +770,26 @@ function redirectToWorkspaceApp(options: InitOptions, io: InitIo, pkg: unknown):
     configFiles: rootFiles,
     lockfiles: new Set(),
   });
+  // `--app` is an INSTRUCTION, and it is read before the guess below. The guess answers "where is
+  // the app?" for somebody who did not say; when somebody said, there is nothing left to infer.
+  //
+  // It used to be read after, and the check underneath returns early for any directory that looks
+  // like an app — which a JS monorepo ROOT does, because shared tooling puts `vite` in its
+  // devDependencies. So on a real pnpm+turbo monorepo (measured on nuclear, a Tauri v2 app at
+  // product scale) `reticle init --app packages/player` silently ignored the flag, installed the
+  // SDK into the root's package.json, wrote `.reticle.json` and a whole `src/reticle-dev.ts` into a
+  // repository root that has no `src/`, left `packages/player` untouched — and reported three ✓ and
+  // one ⚠. The one flag documented for this shape wired the wrong directory and said it worked.
+  //
+  // Existence is the test, not membership of the discovered list: discovery scans conventional
+  // directories, and somebody who names a path knows their own layout better than the scan does.
+  const named = options.app === undefined || '' === options.app ? undefined : options.app;
+  if (named !== undefined) {
+    const wanted = named.replace(/\/+$/, '');
+    if (io.exists(`${wanted}/${PACKAGE_JSON}`)) return enterApp(options, io, wanted, 'Wiring');
+    io.print(`--app ${named} does not name a directory with a package.json in it.`);
+    return { ok: false, applied: 0, manual: 1 };
+  }
   if (here.framework !== Framework.HTML) return null; // this directory IS the app
 
   const apps = findWorkspaceApps(io);
@@ -853,7 +810,19 @@ function redirectToWorkspaceApp(options: InitOptions, io: InitIo, pkg: unknown):
     io.print(`Or name one without changing directory:  reticle init --app ${apps[0] ?? '<dir>'}`);
     return { ok: false, applied: 0, manual: apps.length };
   }
-  io.print(`No app in this directory — wiring ${target} instead.`);
+  return enterApp(options, io, target, 'No app in this directory — wiring');
+}
+
+/**
+ * Re-enter `init` scoped to one directory of a workspace.
+ *
+ * One implementation for both routes in — the app somebody NAMED and the app discovery found when
+ * nobody did. They differ only in the sentence printed; scoping the io, moving the cwd and keeping
+ * the agent root has to be identical for both, and was worth having twice for exactly as long as it
+ * took to get one of them wrong.
+ */
+function enterApp(options: InitOptions, io: InitIo, target: string, lead: string): InitResult {
+  io.print(`${lead} ${target}.`);
   io.print('');
   return runInit(
     {

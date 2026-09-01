@@ -20,7 +20,8 @@ import {
   type Feedback,
 } from '@reticlehq/core';
 import { parseMajor } from '../init/detect.js';
-import { findWorkspaceApps, type InitIo } from '../init/run.js';
+import { findWorkspaceApps } from '../init/workspace-apps.js';
+import type { InitIo } from '../init/run.js';
 
 /** The context fields — the whole `Feedback` shape minus what the author supplies. */
 export type FeedbackContext = Pick<
