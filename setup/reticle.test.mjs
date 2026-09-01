@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SETUP = join(HERE, 'reticle.mjs');
 const LAUNCHER = join(HERE, 'reticle.sh');
+const LAUNCHER_CMD = join(HERE, 'reticle.cmd');
 let fails = 0;
 const ok = (n) => console.log(`  ok   ${n}`);
 const no = (n, got) => {
@@ -91,8 +92,17 @@ check('served-without-SDK records the evidence', served, '"served": true');
 fake.kill();
 
 // The launcher is the file people are told to run; if it stops resolving its own directory, every
-// documented invocation breaks while `node reticle.mjs` keeps working and nothing notices.
-if (process.platform !== 'win32') {
+// documented invocation breaks while `node reticle.mjs` keeps working and nothing notices. One per
+// platform, because a stock Windows box has no `sh` and the .sh refuses there by design — so each
+// machine checks the launcher it can actually run, and neither is left untested on the platform
+// that uses it.
+if (process.platform === 'win32') {
+  check(
+    'reticle.cmd launches reticle.mjs',
+    runIn(tmp, [], process.env.COMSPEC ?? 'cmd.exe', ['/d', '/c', LAUNCHER_CMD]),
+    'no dev/start/serve',
+  );
+} else {
   check(
     'reticle.sh launches reticle.mjs',
     runIn(tmp, [], '/bin/sh', [LAUNCHER]),

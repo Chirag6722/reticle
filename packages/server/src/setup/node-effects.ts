@@ -23,6 +23,7 @@ import {
   parseLsofPorts,
   parseNetstatListeners,
   parseWmicProcesses,
+  type ProcessPair,
 } from './listeners.js';
 import type { CandidateSession } from './session-pick.js';
 import type { PageProbe } from './page-probe.js';
@@ -88,12 +89,7 @@ export class OwnedDevServer {
     const pid = this.child?.pid;
     if (undefined === pid) return [];
     if (WINDOWS) {
-      const tree = new Set(
-        descendants(
-          parseWmicProcesses(run('wmic', ['process', 'get', 'ParentProcessId,ProcessId'])),
-          pid,
-        ),
-      );
+      const tree = new Set(descendants(windowsProcessPairs(), pid));
       return [
         ...new Set(
           parseNetstatListeners(run('netstat', ['-ano']))
@@ -156,6 +152,31 @@ export class OwnedDevServer {
 function run(file: string, args: string[]): string {
   const r = spawnSync(file, args, { encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 });
   return r.stdout ?? '';
+}
+
+/**
+ * Every (pid, ppid) pair on a Windows machine — from `wmic` if it is there, PowerShell if not.
+ *
+ * `wmic` was the only source, and Microsoft has been removing it: deprecated since 21H1 and absent
+ * from current Windows images. When it is missing `run` returns '' — the honest answer for a tool
+ * that does not exist, and a catastrophic one here, because an empty process list means an empty
+ * process TREE, which means no observed ports, which means the dev server's url is never found.
+ * `init` then waits out the full quiet window and reports "the dev server stopped producing output
+ * without ever serving a page" about a Vite server that was serving perfectly the whole time.
+ *
+ * The fallback prints the same two-integers-per-line shape, so `parseWmicProcesses` reads either
+ * without knowing which produced it. Tried in this order because `wmic` is an order of magnitude
+ * faster to start than PowerShell, and on a machine that still has it nothing needs to change.
+ */
+const POWERSHELL_PAIRS =
+  'Get-CimInstance Win32_Process | ForEach-Object { "$($_.ParentProcessId) $($_.ProcessId)" }';
+
+function windowsProcessPairs(): ProcessPair[] {
+  const fromWmic = parseWmicProcesses(run('wmic', ['process', 'get', 'ParentProcessId,ProcessId']));
+  if (0 < fromWmic.length) return fromWmic;
+  return parseWmicProcesses(
+    run('powershell', ['-NoProfile', '-NonInteractive', '-Command', POWERSHELL_PAIRS]),
+  );
 }
 
 /**

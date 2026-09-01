@@ -94,3 +94,22 @@ describe('process descendants', () => {
     ]);
   });
 });
+
+// The fallback source when `wmic` is absent, which Microsoft has been making the normal case.
+// node-effects asks PowerShell for the same pairs and hands the output to this same parser, so the
+// shape it prints is a contract. If this stops reading it, Windows silently loses port discovery
+// and `init` reports a healthy dev server as hung.
+describe('the PowerShell fallback prints a shape this parser reads', () => {
+  it('reads `ParentProcessId ProcessId` lines with CRLF endings', () => {
+    expect(parseWmicProcesses('1234 5678\r\n4 8\r\n\r\n')).toEqual([
+      { pid: 5678, ppid: 1234 },
+      { pid: 8, ppid: 4 },
+    ]);
+  });
+
+  it('ignores the blank and ragged lines PowerShell adds', () => {
+    expect(parseWmicProcesses('\r\n  \r\n7 9\r\nnot numbers here\r\n')).toEqual([
+      { pid: 9, ppid: 7 },
+    ]);
+  });
+});

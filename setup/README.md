@@ -4,10 +4,11 @@
 
 ```bash
 ./setup/reticle.sh                  # in the target project's root
+setup\reticle.cmd                   # the same thing, on Windows
 node setup/reticle.mjs              # same thing, and the only form that works on Windows
 ```
 
-`reticle.sh` is a launcher; `reticle.mjs` is the implementation. The split is deliberate: a `.sh` file cannot run on a stock Windows box (no `sh` without Git Bash or WSL), Windows is most of Reticle's users, and a `.sh` + `.ps1` pair drifts the first time somebody fixes a bug in one of them. Node is not an extra dependency to justify — it is the runtime every user of a JS SDK already has.
+`reticle.sh` and `reticle.cmd` are launchers; `reticle.mjs` is the implementation, and there is exactly one of it. A `.sh` cannot run on a stock Windows box (no `sh` without Git Bash or WSL) and Windows is most of Reticle's users, so the choice was never "one launcher or two" — it was "two launchers, or tell most users to type a different command than every doc shows". What must not be duplicated is the LOGIC, and it is not: each launcher checks for Node, checks the version (a Node too old to parse `reticle.mjs` never reaches the guard inside it), and hands over. Node is not an extra dependency to justify — it is the runtime every user of a JS SDK already has.
 
 ## Why it exists
 

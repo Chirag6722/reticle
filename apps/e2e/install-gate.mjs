@@ -76,7 +76,7 @@ import {
   writeFileSync,
   rmSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -444,6 +444,30 @@ function pathWithoutPnpm(workdir) {
   return `${binDir}${delimiter}${process.env.PATH ?? ''}`;
 }
 
+
+/**
+ * Everything that can say WHY a session never appeared, printed where the failure is.
+ *
+ * Two independent witnesses, because they fail differently: the page knows whether it tried, and
+ * the daemon knows whether it refused. `origin_rejected` in the daemon log is the difference
+ * between "the app never dialled" and "the app dialled and the gate said no" — opposite bugs with
+ * opposite fixes, indistinguishable from the browser side alone.
+ */
+function dumpEvidence(consoleLines, bridgePort) {
+  const say = (label, body) => {
+    const text = String(body).trim();
+    if (0 === text.length) return;
+    console.log(`      ── ${label} ──`);
+    for (const line of text.split('\n').slice(-40)) console.log(`      ${line.slice(0, 300)}`);
+  };
+  say('page console', consoleLines.join('\n'));
+  const daemonLog = join(homedir(), '.reticle', `daemon-${String(bridgePort)}.log`);
+  try {
+    say(`daemon log (${daemonLog})`, readFileSync(daemonLog, 'utf8'));
+  } catch {
+    say('daemon log', `not readable at ${daemonLog}`);
+  }
+}
 
 const run = (cmd, args, cwd, extraEnv = {}) => {
   const it = pm(cmd, args);
@@ -818,13 +842,20 @@ async function driveScaffold(scaffold, index) {
       console.log(`   ⚠️  INCONCLUSIVE — ${verdict.because}`);
       fail += 1;
     } else {
+      const passed = verdict.outcome === Attribution.PASS;
       chk(
         'a session appears and can answer a state question',
-        verdict.outcome === Attribution.PASS,
-        verdict.outcome === Attribution.PASS
+        passed,
+        passed
           ? (sessions[0]?.url ?? '')
           : `${verdict.because}; console: ${consoleLines.slice(-3).join(' | ').slice(0, 220)}`,
       );
+      // The one-line summary above is a headline, not evidence. A real failure here — the page
+      // never dialled, or dialled and was refused — is diagnosed from what the PAGE said and what
+      // the DAEMON said, and 220 characters of the last three console lines is enough to know
+      // something went wrong and not enough to know what. A `403 (Forbidden)` on Windows cost a
+      // whole CI round trip for exactly this reason: it named a status and not an origin.
+      if (!passed) dumpEvidence(consoleLines, bridgePort);
     }
 
     await browser.close();

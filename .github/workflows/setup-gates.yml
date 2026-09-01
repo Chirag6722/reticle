@@ -70,6 +70,19 @@ jobs:
           printf '{"name":"x","version":"1.0.0","scripts":{"build":"true"}}' > package.json
           out=$(node "$GITHUB_WORKSPACE/setup/reticle.mjs" --json --timeout 2 2>&1 || true)
           echo "$out" | grep -q "rather than invent" || { echo "$out"; exit 1; }
+      # The launcher, on the machine that has to run it. `reticle.sh` refuses on Windows by design —
+      # a stock box has no `sh` — so `reticle.cmd` is its sibling, and neither is worth having if
+      # nobody checks that it still finds reticle.mjs from its own directory. The POSIX half is
+      # covered by reticle.test.mjs in the break-matrix job below, which never runs on Windows.
+      - name: the Windows launcher finds reticle.mjs
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          mkdir "%RUNNER_TEMP%\launcher" 2>nul
+          cd /d "%RUNNER_TEMP%\launcher"
+          "%GITHUB_WORKSPACE%\setup\reticle.cmd" --json --timeout 2 > out.txt 2>&1
+          type out.txt
+          findstr /C:"no package.json" out.txt >nul || exit /b 1
 
   # POSIX-only, and labelled as such: the scenarios shim /bin/sh executables.
   break-matrix:
