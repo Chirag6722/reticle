@@ -84,6 +84,14 @@ export interface SnapshotResult {
    */
   scopeMissing?: boolean;
   /**
+   * How many MEANINGFUL nodes the lean walk passed over, present only in a lean mode and only when
+   * non-zero. This is what stops an empty `interactive` tree reading as an empty page — the mode is
+   * a role filter, and a production app whose controls carry no roles yields nothing while being
+   * full of things to drive. It shipped untyped: the value was spread into the result and every
+   * consumer had to reach for it without a type, including the tool that builds the note from it.
+   */
+  leanSkipped?: number;
+  /**
    * Refs of the subtree roots the walk never entered, present ONLY when `truncated`. This is the
    * cut's own frontier: re-snapshot each with `{ scope: ref, includeRoot: true }` and the union is
    * the whole tree. Without it `truncated` says only THAT the read stopped, never WHERE, so nobody
@@ -276,9 +284,31 @@ function visit(child: Element, depth: number, ctx: WalkCtx, inLive: boolean): vo
   // became twice the size of the complete one while adding nothing but nameless `- generic` lines.
   // The mode's whole claim is that it is smaller; a signal that cannot tell a control from its
   // ancestors cannot be used to decide what a control is.
-  const actionable = interactive || child.hasAttribute('data-testid');
+  // `data-testid` was tried here as a second signal, on the premise that it is a handle its author
+  // put there to be driven. Measured against our own instrumented bench app, the premise is false:
+  // the lean tree on its dashboard came to 16 nodes and 175 tokens, and EIGHT were display elements
+  // — kpi-deploys, kpi-success, kpi-p95, kpi-services, area-chart, activity-feed, brand. Half the
+  // "actionable" view was things nothing can act on, and the mode roughly doubled to carry them; the
+  // benchmark read it as a 4% verification-efficiency regression. A testid marks what a TEST cares
+  // about, which is a superset of what a driver can use.
+  //
+  // It did not even help the case it shipped for: MarkText's controls carry no testid. `leanSkipped`
+  // is what fixed that — an empty tree that says how many it passed over is no longer an empty page.
+  //
+  // `cursor: pointer` was tried too and was worse: interactive went from 0 nodes and 72 tokens to
+  // 180 and 870 against a FULL snapshot of 47/424, because the pointer cursor is inherited and every
+  // wrapper div inside a clickable row matched. A signal that cannot tell a control from its
+  // ancestors cannot decide what a control is.
+  const actionable = interactive;
+  // A testid still makes an element MEANINGFUL, so `full` keeps it and can name and address it. It
+  // just is not evidence that the element is ACTIONABLE, which is the only question lean mode asks.
   const meaningful =
-    actionable || role !== 'generic' || name.length > 0 || text.length > 0 || layout.length > 0;
+    actionable ||
+    child.hasAttribute('data-testid') ||
+    role !== 'generic' ||
+    name.length > 0 ||
+    text.length > 0 ||
+    layout.length > 0;
   const include = lean ? actionable : meaningful;
   // Counted, not just skipped. An empty INTERACTIVE tree is indistinguishable from an empty page,
   // and on a real app the difference is everything: MarkText's block picker is 20+ live controls

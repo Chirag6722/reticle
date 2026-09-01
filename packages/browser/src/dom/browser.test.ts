@@ -419,14 +419,55 @@ describe('query: open shadow roots and attribute projection', () => {
 // MarkText, a production Electron editor: interactive returned an empty tree where full found 47
 // nodes, because its block picker is `<div>`s. An empty tree reads as an empty page, and the tool
 // description recommends this mode as the default — so the cheap view said there was nothing to
-// drive. A `data-testid` and `cursor: pointer` are each the author's own statement that a thing is
-// a control: one aimed at a driver, one aimed at a human.
-describe('interactive mode finds controls that carry no ARIA role', () => {
-  it('includes a role-less div with a data-testid', () => {
-    document.body.innerHTML = `<div data-testid="pick-h1"># Heading</div><div>just text</div>`;
-    const tree = buildSnapshot({ mode: SnapshotMode.INTERACTIVE }).tree;
-    expect(tree).toContain('pick-h1');
-    expect(tree).not.toContain('just text');
+// drive.
+//
+// `data-testid` was tried as the fix, on the premise that it is "a handle its author put there to be
+// driven". Measured against our own instrumented bench app, that premise is false: the lean tree on
+// its dashboard went to 16 nodes and 175 tokens, and EIGHT of them were display elements —
+// kpi-deploys, kpi-success, kpi-p95, kpi-services, area-chart, activity-feed, brand. Half the
+// "interactive" view was things you cannot act on, and the mode roughly doubled to carry them. A
+// testid marks what a TEST cares about, which is a superset of what a driver can use, and it did not
+// help MarkText either — its controls carry no testid.
+//
+// What actually fixed MarkText is `leanSkipped`: the count turns an empty tree into "look again in
+// full mode", and it costs one number. The testid still supplies a NAME and a ref where an element
+// has no accessible name, so a display element remains addressable in `full` — read it there, or
+// query it directly.
+describe('interactive mode stays the actionable view', () => {
+  it('excludes a role-less div that only carries a data-testid', () => {
+    document.body.innerHTML = `<div data-testid="kpi-deploys">40</div><div>just text</div>`;
+    const snap = buildSnapshot({ mode: SnapshotMode.INTERACTIVE });
+    expect(snap.tree).not.toContain('kpi-deploys');
+    expect(snap.tree).not.toContain('just text');
+  });
+
+  it('counts what it passed over, so an empty tree is not an empty page', () => {
+    document.body.innerHTML = `<div data-testid="kpi-deploys">40</div>`;
+    expect(buildSnapshot({ mode: SnapshotMode.INTERACTIVE }).leanSkipped).toBeGreaterThan(0);
+  });
+
+  it('keeps a real control with no role, when it has one', () => {
+    document.body.innerHTML = `<button data-testid="go">Go</button>`;
+    expect(buildSnapshot({ mode: SnapshotMode.INTERACTIVE }).tree).toContain('Go');
+  });
+
+  // The testid still earns its keep in `full`: it names an element that has no accessible name, and
+  // a named element gets a ref, which is what makes it addressable rather than merely visible.
+  it('names and addresses a testid container in full mode', () => {
+    document.body.innerHTML = `<div data-testid="area-chart"><svg></svg></div>`;
+    const tree = buildSnapshot({ mode: SnapshotMode.FULL }).tree;
+    expect(tree).toContain('area-chart');
+    expect(tree).toMatch(/ref=/);
+  });
+
+  // Not every shape: a div whose only content is text collapses to that text, so the testid does not
+  // appear in either tree. Its content is still readable, and `reticle_query { by: "testid" }`
+  // addresses it directly — which is the right tool for a value you want to ASSERT on rather than
+  // drive. Written down because it is the one thing lost by keeping display elements out of the
+  // actionable view.
+  it('shows the text of a text-only testid div, without the handle', () => {
+    document.body.innerHTML = `<div data-testid="kpi-deploys">40</div>`;
+    expect(buildSnapshot({ mode: SnapshotMode.FULL }).tree).toContain('40');
   });
 
   it('still excludes ordinary content, so the mode stays lean', () => {
