@@ -4,6 +4,12 @@ All notable changes to the **`@reticlehq/*`** packages are documented here (each
 
 ## [Unreleased]
 
+### Changed
+
+- **`@reticlehq/server` — `reticle init` no longer turns on network body capture.** It wrote `captureNetworkBodies: true` into the app's `vite.config`, and the first drive after an install therefore buffered every request and response body. Reported by a workspace whose client UI proxies authenticated API traffic through Vite: their login tokens and customer payloads were in the daemon's buffer before anyone had chosen that. The capability is worth having — without a body, a write that answers 2xx grades `outcome_unread`, because a 200 describes the transport and not the result — but that argues for the capability, not for the default. `init` runs unattended, and the person who knows the data is sensitive is not in the room when it does.
+
+  Three deliberate ways in, none of them silent: `reticle init --capture-bodies` writes the line for someone who has decided, `VITE_RETICLE_CAPTURE_BODIES=1` turns it on for a single dev-server run with no config edit, and adding the option by hand is what every tool that needs a body already tells you to do when it is missing. Nothing goes quiet in exchange: `reticle_assert`, `reticle_reconcile`, `bodyContains` and the coverage block each name the option at the moment a body would have answered the question. Closes [#705](https://github.com/reticlehq/reticle/issues/705).
+
 ### Added
 
 - **`@reticlehq/core` + `@reticlehq/server` — socket-level MCP POST failures are now a session count.** `ENOBUFS`, `EMFILE`, `EADDRNOTAVAIL` and `ECONNREFUSED` before any bytes were sent never produced `tool_refused` (the handler never ran) and never produced `mcp_connection_lost` (the SSE stream was fine), so a keep-alive retry that saved the call was indistinguishable from one that never fired. `postSocketFailures` and `postRetriesSaved` ride the existing session summary, omitted when zero, and the proxy awaits the flush before exit.

@@ -111,6 +111,7 @@ function handleInit(parsed: {
   flow?: string | undefined;
   env?: string[] | undefined;
   filesOnly?: boolean | undefined;
+  captureBodies?: boolean | undefined;
   licenseKey?: string | undefined;
   json?: boolean | undefined;
   drive?: boolean | undefined;
@@ -130,6 +131,7 @@ function handleInit(parsed: {
       dryRun: parsed.dryRun,
       install: parsed.install,
       ...(parsed.app === undefined ? {} : { app: parsed.app }),
+      captureBodies: true === parsed.captureBodies,
       // The outcome is reported by confirmInstall instead, once it knows whether an app connected —
       // `init` writing files was never the same thing as `init` working (#269).
       deferOutcome: true,

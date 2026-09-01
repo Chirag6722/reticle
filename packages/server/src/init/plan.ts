@@ -201,6 +201,13 @@ export interface Plan {
 
 export interface PlanInput {
   detection: Detection;
+  /**
+   * Write `captureNetworkBodies: true` into the app's config. Off unless the caller asked (#705).
+   *
+   * Optional so every existing caller and test keeps the safe default without naming it — the one
+   * direction a default about somebody else's data should be wrong in.
+   */
+  captureBodies?: boolean | undefined;
   /** Whether the `claude` CLI is installed (so we can register the MCP server globally). */
   claudeCli: boolean;
   /** Whether an `reticle` MCP server is already registered with Claude (any scope) — idempotency. */

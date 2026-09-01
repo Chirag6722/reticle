@@ -516,7 +516,7 @@ describe('runInit', () => {
     // Without the token the bridge answers "authentication failed" and no session ever appears —
     // the same silent no-connect Next.js shipped. The plugin inlines it as a define.
     expect(io.written['src/hooks.client.ts']).toContain('__RETICLE_TOKEN__');
-    expect(io.written['vite.config.ts']).toContain('reticle({');
+    expect(io.written['vite.config.ts']).toContain('reticle(');
     expect(io.written['vite.config.ts']).toContain('sveltekit()'); // the app's own plugin survives
   });
 });
@@ -537,7 +537,7 @@ describe('runInit — workspace roots', () => {
     const io = memoryIo({ 'package.json': WORKSPACE_ROOT, ...VITE_APP });
     runInit(OPTS, io);
     expect(io.lines.join('\n')).toContain('apps/web');
-    expect(io.written['apps/web/vite.config.ts']).toContain('reticle({');
+    expect(io.written['apps/web/vite.config.ts']).toContain('reticle(');
     expect(io.written['apps/web/.reticle.json']).toBeDefined();
     // The root is not the app — nothing of the app's WIRING belongs there. `.reticle.json` is not
     // wiring: it is runtime config the CLI and `reticle mcp` read from their own CWD, which is the
@@ -573,7 +573,7 @@ describe('runInit — workspace roots', () => {
       ...VITE_APP, // a nested apps/ dir must not hijack a root that is itself an app
     });
     runInit(OPTS, io);
-    expect(io.written['vite.config.ts']).toContain('reticle({');
+    expect(io.written['vite.config.ts']).toContain('reticle(');
     expect(io.written['apps/web/vite.config.ts']).toBeUndefined();
   });
 
@@ -923,7 +923,7 @@ describe('runInit — a refused pin falls back instead of blocking the install',
   it('still wires the app — a fallback install is a real install', () => {
     const io = pinRefusingIo(VITE_APP);
     runInit({ ...OPTS, install: true }, io);
-    expect(io.written['vite.config.ts']).toContain('reticle({');
+    expect(io.written['vite.config.ts']).toContain('reticle(');
   });
 });
 

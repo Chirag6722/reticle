@@ -66,6 +66,7 @@ const INIT_DEFAULTS = {
   flow: undefined,
   env: [] as string[],
   filesOnly: false,
+  captureBodies: false,
   json: false,
   drive: true,
   open: true,
@@ -349,6 +350,7 @@ describe('parseCliArgs', () => {
       flow: 'add to cart and check the badge',
       env: ['API=http://x', 'TOKEN=a=b'],
       filesOnly: true,
+      captureBodies: false,
     });
   });
 

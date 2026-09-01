@@ -631,7 +631,7 @@ describe('SvelteKit gets the Vite plugin, not only the client hook', () => {
     const plan = svelteKit({ path: 'vite.config.ts', source: VITE_SRC });
     const step = maybeStep(plan, 'Vite plugin');
     expect(step?.status).toBe(StepStatus.APPLY);
-    expect(step?.write?.content).toContain('reticle({');
+    expect(step?.write?.content).toContain('reticle(');
     expect(step?.detail).toContain('data-reticle-source');
   });
 

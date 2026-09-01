@@ -201,6 +201,14 @@ const FLOW_FLAG = '--flow';
 const ENV_FLAG = '--env';
 const FILES_ONLY_FLAG = '--files-only';
 /**
+ * Write `captureNetworkBodies: true` into the app's config. OFF unless asked (#705).
+ *
+ * Body capture is what makes a 2xx write's OUTCOME readable rather than just its transport, so it
+ * is worth having — but a body is the one part of a request that routinely carries personal data,
+ * and `init` runs unattended. Whoever passes this has decided; nothing decides it for them.
+ */
+const CAPTURE_BODIES_FLAG = '--capture-bodies';
+/**
  * The rest of the runtime surface.
  *
  * `--json` is not a convenience: SKILL.md tells an agent to read the result and act on `agentTodo`,
@@ -241,6 +249,7 @@ export type CliResult =
       flow: string | undefined;
       env: string[];
       filesOnly: boolean;
+      captureBodies: boolean;
       json: boolean;
       drive: boolean;
       open: boolean;
@@ -550,6 +559,7 @@ type InitFlags =
       flow: string | undefined;
       env: string[];
       filesOnly: boolean;
+      captureBodies: boolean;
       json: boolean;
       drive: boolean;
       open: boolean;
@@ -571,6 +581,7 @@ function parseInitFlags(args: string[]): InitFlags {
   // Repeatable: one variable per flag, so a value containing spaces or `=` needs no quoting rules.
   const env: string[] = [];
   let filesOnly = false;
+  let captureBodies = false;
   let json = false;
   let drive = true;
   let open = true;
@@ -609,6 +620,8 @@ function parseInitFlags(args: string[]): InitFlags {
       env.push(value);
     } else if (arg === FILES_ONLY_FLAG) {
       filesOnly = true;
+    } else if (arg === CAPTURE_BODIES_FLAG) {
+      captureBodies = true;
     } else if (arg === JSON_FLAG) {
       json = true;
     } else if (arg === NO_DRIVE_FLAG) {
@@ -662,6 +675,7 @@ function parseInitFlags(args: string[]): InitFlags {
     flow,
     env,
     filesOnly,
+    captureBodies,
     json,
     drive,
     open,
@@ -748,6 +762,7 @@ export function parseCliArgs(
         flow: r.flow,
         env: r.env,
         filesOnly: r.filesOnly,
+        captureBodies: r.captureBodies,
         json: r.json,
         drive: r.drive,
         open: r.open,

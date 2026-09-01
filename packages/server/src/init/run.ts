@@ -234,6 +234,8 @@ const NEXT_CONFIG_CANDIDATES = [
 ];
 
 export interface InitOptions {
+  /** `--capture-bodies`: write `captureNetworkBodies: true` into the app's config. Off by default (#705). */
+  captureBodies?: boolean | undefined;
   cwd: string;
   port: number | undefined;
   mcp: boolean;
@@ -469,6 +471,7 @@ function gatherPlanInput(options: InitOptions, io: InitIo, pkgRaw: string): Plan
 
   return {
     detection,
+    captureBodies: options.captureBodies,
     claudeCli,
     mcpExists,
     platform: process.platform,
