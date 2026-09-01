@@ -399,7 +399,13 @@ export async function handleStatus(port: number): Promise<void> {
       // `init` promises this command says why the app has not connected. Without it the answer was
       // `running: false` and nothing else, which reads as "Reticle is broken" for what is usually
       // just a daemon that has not been asked to do anything yet.
-      ...withNextAction({ running: false, sessionCount: 0, previouslyConnected, initialized, devServerPorts }),
+      ...withNextAction({
+        running: false,
+        sessionCount: 0,
+        previouslyConnected,
+        initialized,
+        devServerPorts,
+      }),
       ...client,
       ...split,
     });
@@ -418,7 +424,13 @@ export async function handleStatus(port: number): Promise<void> {
       running: true,
       pid,
       ...nudge,
-      ...withNextAction({ running: true, sessionCount: 0, previouslyConnected, initialized, devServerPorts }),
+      ...withNextAction({
+        running: true,
+        sessionCount: 0,
+        previouslyConnected,
+        initialized,
+        devServerPorts,
+      }),
       ...client,
       ...split,
     });
@@ -430,9 +442,24 @@ export async function handleStatus(port: number): Promise<void> {
   // answers pointing different ways, which is worse than one.
   const next =
     summary.why === undefined
-      ? withNextAction({ running: true, ...summary, previouslyConnected, initialized, devServerPorts })
+      ? withNextAction({
+          running: true,
+          ...summary,
+          previouslyConnected,
+          initialized,
+          devServerPorts,
+        })
       : {};
-  log('reticle_status', { port, running: true, pid, ...summary, ...next, ...client, ...split, ...nudge });
+  log('reticle_status', {
+    port,
+    running: true,
+    pid,
+    ...summary,
+    ...next,
+    ...client,
+    ...split,
+    ...nudge,
+  });
 }
 
 /** Print the running package version (resolved once in server-version.ts). */

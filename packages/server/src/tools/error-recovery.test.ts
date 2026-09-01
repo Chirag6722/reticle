@@ -502,6 +502,12 @@ describe('no condition Reticle itself authored is reported as a possible Reticle
       'cannot hover without a real pointer — CSS :hover only applies to a native mouse move, never to a synthetic mouseover',
       RECOVERY.HOVER_NEEDS_POINTER,
     ],
+    [
+      'a sequence that names two sessions',
+      "reticle_act_sequence steps name different sessionIds ('lease-1' and 'tab-old'). " +
+        'Pass one sessionId at the top level to target a tab. Nothing was acted on.',
+      RECOVERY.BAD_ARGUMENTS,
+    ],
   ])('%s is recognized', (_label, message, expected) => {
     const payload = buildErrorPayload(message);
     expect(payload.feedback, message).toBeUndefined();
