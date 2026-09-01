@@ -826,6 +826,20 @@ async function driveScaffold(scaffold, index) {
     }
     handedOverPorts = [];
 
+    // Killing the process does not undo a half-written `.next`. That is the other half of the same
+    // problem and the reason the mitigation above was not enough: init's dev server is stopped
+    // mid-compile, leaving a build directory that describes a build nobody finished, and the gate's
+    // own server then reads it, finds it inconsistent and exits without ever binding. Reported as
+    // "the app boots ❌" with Next's telemetry banner as the detail, on all three Next scaffolds,
+    // on Linux only — where Next gets far enough to have written something before it is killed.
+    //
+    // Next rebuilds this from source, so deleting it costs a cold compile and nothing else.
+    const nextBuildDir = join(app, '.next');
+    if (existsSync(nextBuildDir)) {
+      rmSync(nextBuildDir, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 });
+      note('removed a .next left behind by the dev server init handed over');
+    }
+
     // ── 5. own the daemon before the app can dial it (harness rule 2) ───────────────────────────
     daemon = await startOwnedDaemon(bridgePort, { cliPath: CLI, cwd: ROOT });
     const transport = watchTransport(bridgePort);
@@ -853,7 +867,21 @@ async function driveScaffold(scaffold, index) {
       }
       await sleep(500);
     }
-    chk('the app boots', booted, booted ? `:${String(appPort)}` : devLog.join('').slice(-300));
+    // The LAST 300 characters of a dev server's log is its banner, not its error — Next prints a
+    // telemetry notice on the way out, so every boot failure here was reported as
+    // "…completely anonymous telemetry regarding usage." and the actual cause was never shown.
+    // Lines that look like a failure first, then the tail as context.
+    const devText = devLog.join('');
+    const devErrors = devText
+      .split('\n')
+      .filter((l) => /error|failed|EADDRINUSE|cannot|ENOENT|exit/i.test(l))
+      .slice(-6)
+      .join(' | ');
+    chk(
+      'the app boots',
+      booted,
+      booted ? `:${String(appPort)}` : `${devErrors || '(no error lines)'} ⟨tail⟩ ${devText.slice(-300)}`,
+    );
 
     const { chromium } = await import('playwright');
     const browser = await chromium.launch();
