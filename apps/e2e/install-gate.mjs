@@ -905,7 +905,20 @@ async function driveScaffold(scaffold, index) {
     if (KEEP) note(`kept: ${workdir}`);
     // A dev server that has just been signalled is still flushing `.next` into this directory, so
     // the first rmdir loses a race it does not have to lose.
-    else rmSync(workdir, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 });
+    //
+    // And it must never decide the run. On Windows a handle survives the process that held it, so
+    // this raised `EBUSY: resource busy or locked, rmdir …\app` AFTER a scaffold had passed all
+    // nine of its checks — and because the throw escaped a `finally`, it reached the top level and
+    // was reported as "the gate could not start", aborting every scaffold behind it. A whole run's
+    // worth of Windows coverage lost to a directory that would not delete. A leaked temp directory
+    // is a leak; it is not an install failure, and this gate answers exactly one question.
+    else {
+      try {
+        rmSync(workdir, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 });
+      } catch (err) {
+        note(`could not remove ${workdir} (${String(err).slice(0, 120)}) — leaving it behind`);
+      }
+    }
   }
 
   console.log(`   ${fail === 0 ? '✓' : '✗'} ${scaffold.id}: ${pass} passed, ${fail} failed`);
@@ -928,7 +941,17 @@ try {
   console.log('   · publishing @reticlehq/* to a local registry…');
   registry = await startLocalRegistry();
   for (const [index, scaffold] of chosen.entries()) {
-    results.push(await driveScaffold(scaffold, index));
+    // Isolated, for the same reason the CI matrix sets `fail-fast: false`: which scaffolds install
+    // and which do not is the entire output of this gate, and one of them throwing used to take the
+    // answer for every scaffold behind it. Measured on Windows — vite-react passed all nine checks,
+    // then an EBUSY on a temp directory ended the run and four scaffolds were never attempted.
+    // A crash is that scaffold's failure to report, not a reason to stop asking the question.
+    try {
+      results.push(await driveScaffold(scaffold, index));
+    } catch (err) {
+      console.log(`   ✗ ${scaffold.id} crashed: ${String(err).slice(0, 300)}`);
+      results.push({ id: scaffold.id, pass: 0, fail: 1 });
+    }
   }
 } catch (err) {
   // The reason, not the banner. execFileSync's message begins with the command and then its STDOUT,
