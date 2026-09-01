@@ -25,7 +25,8 @@ import { affectedSavedFlows } from './flows/flow-sources.js';
 import { availableUpdate } from './update/update-nudge.js';
 import { handleUpdate, handleRollback } from './cli/cli-update-commands.js';
 
-import { startDaemon } from './index.js';
+import { startDaemon, RETICLE_VERIFY_DEFAULT_PORT } from './index.js';
+import { verifyEndpointMismatch } from './status-payload.js';
 import { isCloudCommand, runCloudCommand } from './cli/cloud-cli.js';
 import { SERVER_VERSION } from './version/server-version.js';
 import { log } from './log.js';
@@ -160,6 +161,23 @@ async function serveWithHonestExit(parsed: {
     status: fetchStatus,
   });
   if (presence === PortPresence.DAEMON) {
+    // A daemon that is already up was started with ITS flags, not these — `serve` only attaches.
+    // Exiting 0 here regardless is how `--http-port` came to be accepted and ignored (#687): the
+    // running daemon kept serving whatever it was started with, and the flag vanished without a
+    // word. Ask the daemon which verify port it actually serves and refuse when it is not the one
+    // requested — a flag that cannot be honoured must say so, not report success.
+    if (parsed.http) {
+      const mismatch = verifyEndpointMismatch(
+        await fetchStatus(parsed.port),
+        parsed.httpPort ?? RETICLE_VERIFY_DEFAULT_PORT,
+      );
+      if (mismatch !== undefined) {
+        log('reticle_daemon_start_refused', { port: parsed.port, reason: mismatch });
+        process.stderr.write(`${mismatch}\n`);
+        process.exit(1);
+        return;
+      }
+    }
     log('reticle_daemon_already_running', { port: parsed.port });
     return;
   }
