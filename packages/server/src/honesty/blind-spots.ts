@@ -9,14 +9,16 @@
 // honesty-side imports keep working.
 export { BlindSpotKind } from '@reticlehq/core';
 import {
+  AppRuntime,
   BlindSpotKind,
   EventType,
   ReticleEnv,
   TRANSPORT_LIMITS,
+  isDesktopBlindSpot,
   type ReticleEvent,
 } from '@reticlehq/core';
 
-interface BlindSpot {
+export interface BlindSpot {
   kind: BlindSpotKind;
   count: number;
 }
@@ -142,6 +144,22 @@ export function blindSpotsFromEvents(events: readonly ReticleEvent[]): BlindSpot
 }
 
 /**
+ * Drop Electron-only coverage rows unless this session is actually an Electron renderer.
+ *
+ * The kinds live in the same vocabulary as "no store registered", so listing whatever is present
+ * reported a Vite + React tab as an un-instrumented Electron renderer. The session already knows
+ * the runtime (PAGE_HEALTH). Unknown runtime (older SDK) keeps the rows — dropping them would hide
+ * a real missing-preload warning.
+ */
+export function spotsForRuntime(
+  spots: readonly BlindSpot[],
+  runtime: string | undefined,
+): BlindSpot[] {
+  if (runtime === undefined || AppRuntime.ELECTRON === runtime) return [...spots];
+  return spots.filter((spot) => !isDesktopBlindSpot(spot.kind));
+}
+
+/**
  * Blind spots from the session's remembered LEVEL state rather than from a window of events.
  *
  * The SDK emits BLIND_SPOT only when the count changes, so a page that mounted cross-origin frames at
@@ -149,9 +167,19 @@ export function blindSpotsFromEvents(events: readonly ReticleEvent[]): BlindSpot
  * reports "full" for a page a third of which is unobservable — and the act tool's own description
  * tells harnesses to gate on that block. Ask the session what is true now instead of inferring it
  * from what happened to be said recently.
+ *
+ * `runtime` gates Electron-only kinds (see `spotsForRuntime`) so a web session cannot inherit them
+ * from the coverage vocabulary.
  */
-export function blindSpotsFromState(state: Readonly<Record<string, number>>): BlindSpot[] {
-  return Object.entries(state).map(([kind, count]) => ({ kind: kind as BlindSpotKind, count }));
+export function blindSpotsFromState(
+  state: Readonly<Record<string, number>>,
+  runtime?: string,
+): BlindSpot[] {
+  const spots = Object.entries(state).map(([kind, count]) => ({
+    kind: kind as BlindSpotKind,
+    count,
+  }));
+  return spotsForRuntime(spots, runtime);
 }
 
 /**
