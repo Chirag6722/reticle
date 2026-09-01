@@ -346,6 +346,42 @@ const NET_TYPES: ReadonlySet<EventType> = new Set([
 ]);
 
 /**
+ * Hash-router paths put the route in the fragment (`#/settings`, `#!/home`). An in-page skip link
+ * does not (`#main-content`, `#`, empty). The blank-destination rule must still see the former.
+ */
+function isInPageFragment(hash: string): boolean {
+  if ('' === hash || '#' === hash) return true;
+  const body = hash.startsWith('#') ? hash.slice(1) : hash;
+  return !body.startsWith('/') && !body.startsWith('!');
+}
+
+function hrefAsUrl(value: string | undefined): URL | undefined {
+  if (value === undefined || '' === value) return undefined;
+  try {
+    return new URL(value);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Same origin + pathname + search, different in-page fragment — a skip link, not a new view.
+ *
+ * Returns false when `from`/`to` are missing, so older events without hrefs keep the existing rule.
+ */
+function isSameDocumentHashAnchor(event: ReticleEvent): boolean {
+  if (event.type !== EventType.ROUTE_CHANGE) return false;
+  const from = hrefAsUrl(asString(event.data['from']));
+  const to = hrefAsUrl(asString(event.data['to']));
+  if (from === undefined || to === undefined) return false;
+  if (from.origin !== to.origin || from.pathname !== to.pathname || from.search !== to.search) {
+    return false;
+  }
+  if (from.hash === to.hash) return false;
+  return isInPageFragment(to.hash);
+}
+
+/**
  * Split the window into the app's traffic and the dev toolchain's own (see `DevToolingChannel`).
  *
  * NOTHING below may judge the toolchain. Reported from a real drive: a correct Next.js navigation
@@ -523,7 +559,13 @@ function findWindowContradictions(
   // A navigation that neither fetches nor renders arrived nowhere. Distinct from a dead control:
   // the control worked, the DESTINATION is empty — which is why every "did the click do something"
   // heuristic passes it, a route change being unambiguously something.
-  const routed = events.some((e) => e.type === EventType.ROUTE_CHANGE);
+  const routeEvents = events.filter((e) => e.type === EventType.ROUTE_CHANGE);
+  const routed = routeEvents.length > 0;
+  // A skip link (`href="#main-content"`) is a same-document hash change. The observable
+  // consequences are location.hash, focus, and scroll — not a DOM mutation. Treating it as a
+  // blank destination made "did my skip link work" unanswerable. Hash-router paths (`#/invoices`)
+  // still go through the rule: those ARE a new view.
+  const hashAnchorOnly = routed && routeEvents.every(isSameDocumentHashAnchor);
   // `dom.text` counts as rendered, and it has to: React reconciles a destination IN PLACE far more
   // often than it adds nodes. Measured on three ordinary sidebar navigations of the bench app — every
   // one emitted { dom.attr:2, dom.text:2, render.commit, state.change } and ZERO dom.added/removed,
@@ -543,7 +585,7 @@ function findWindowContradictions(
   const fetched = events.some(
     (e) => e.type === EventType.NET_REQUEST || e.type === EventType.NET_PENDING,
   );
-  if (routed && !rendered && !fetched && true !== options.renderProved) {
+  if (routed && !hashAnchorOnly && !rendered && !fetched && true !== options.renderProved) {
     found.push({
       kind: ContradictionKind.ROUTE_RENDERED_NOTHING,
       claim: 'the app navigated to a new route',

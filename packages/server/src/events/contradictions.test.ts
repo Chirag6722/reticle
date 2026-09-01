@@ -378,6 +378,47 @@ describe('the route moved and nothing was rendered for it', () => {
     ];
     expect(kinds(measured)).not.toContain(ContradictionKind.ROUTE_RENDERED_NOTHING);
   });
+
+  /**
+   * A skip link (`href="#main-content"`) is a same-document hash change: the observable
+   * consequences are location.hash, focus, and scroll — not a DOM mutation or a route render.
+   * Grading it `route-rendered-nothing` made "did my skip link work" unanswerable.
+   */
+  it('stays silent for a same-page hash anchor — skip links do not render a new view', () => {
+    const skip = ev(EventType.ROUTE_CHANGE, {
+      from: 'http://localhost:5173/app',
+      to: 'http://localhost:5173/app#main-content',
+      pathname: '/app',
+      search: '',
+      hash: '#main-content',
+    });
+    expect(kinds([skip])).not.toContain(ContradictionKind.ROUTE_RENDERED_NOTHING);
+    expect(kinds([skip, attrOnly()])).not.toContain(ContradictionKind.ROUTE_RENDERED_NOTHING);
+  });
+
+  it('stays silent for href="#" (scroll to top), which is also same-document', () => {
+    const top = ev(EventType.ROUTE_CHANGE, {
+      from: 'http://localhost:5173/app#section',
+      to: 'http://localhost:5173/app#',
+      pathname: '/app',
+      search: '',
+      hash: '#',
+    });
+    expect(kinds([top])).not.toContain(ContradictionKind.ROUTE_RENDERED_NOTHING);
+  });
+
+  it('still flags a hash-router navigation to a blank view (`#/invoices`)', () => {
+    // Hash routers keep the route in the fragment. That IS a new view, and a blank one is
+    // the original true positive — silencing every hash change would hide it.
+    const hashRoute = ev(EventType.ROUTE_CHANGE, {
+      from: 'http://localhost:5173/#/home',
+      to: 'http://localhost:5173/#/invoices',
+      pathname: '/',
+      search: '',
+      hash: '#/invoices',
+    });
+    expect(kinds([hashRoute])).toContain(ContradictionKind.ROUTE_RENDERED_NOTHING);
+  });
 });
 
 describe('failure misattributed — the server broke, the app blamed the user', () => {
