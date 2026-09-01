@@ -71,6 +71,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   writeFileSync,
@@ -124,8 +125,24 @@ function pm(cmd, args = []) {
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const CLI = join(ROOT, 'packages/server/dist/cli.js');
 /** Private ports, so this never fights the battery or a developer's own daemon. */
-const BRIDGE_PORT_BASE = Number(process.env.INSTALL_GATE_PORT ?? '4788');
-const APP_PORT_BASE = Number(process.env.INSTALL_GATE_APP_PORT ?? '4820');
+/**
+ * Separate port ranges for the self-test, which runs FIRST in CI and in the same job.
+ *
+ * The self-test deliberately points each scaffold's init one port off its daemon, so its own init
+ * daemons land on exactly the ports the real run is about to use. On Windows, where a process's
+ * teardown outlives the kill, the real run's monorepo init then found its port taken, moved up one,
+ * and registered this run's projectId on a port the harness was not watching. Discovery did the
+ * right thing with the wrong daemon and the gate reported "no session ever appeared".
+ *
+ * Ranges that cannot overlap are cheaper than reasoning about how long a Windows handle lives.
+ */
+const SELF_TEST_PORT_OFFSET = 60;
+const BRIDGE_PORT_BASE =
+  Number(process.env.INSTALL_GATE_PORT ?? '4788') +
+  (process.argv.includes('--self-test') ? SELF_TEST_PORT_OFFSET : 0);
+const APP_PORT_BASE =
+  Number(process.env.INSTALL_GATE_APP_PORT ?? '4820') +
+  (process.argv.includes('--self-test') ? SELF_TEST_PORT_OFFSET : 0);
 /** Generous: a cold Next build is slow, and a timeout here reads as an install failure. */
 const BOOT_TIMEOUT_MS = 180_000;
 const CONNECT_TIMEOUT_MS = 45_000;
@@ -463,6 +480,17 @@ function dumpEvidence(consoleLines, bridgePort, failedResponses = [], wsAttempts
   say('page console', consoleLines.join('\n'));
   say('non-2xx responses', failedResponses.join('\n'));
   say('websocket attempts', wsAttempts.join('\n'));
+  // Which daemon claims which project. Discovery is registry-first, so when a page dials a port the
+  // harness is not watching, this is the file that says why it chose that one.
+  const stateHome = join(homedir(), '.reticle');
+  try {
+    const claims = readdirSync(stateHome)
+      .filter((f) => f.startsWith('connected-'))
+      .map((f) => `${f}: ${readFileSync(join(stateHome, f), 'utf8').slice(0, 200)}`);
+    say('daemon registry', claims.join('\n'));
+  } catch {
+    say('daemon registry', `not readable in ${stateHome}`);
+  }
   const daemonLog = join(homedir(), '.reticle', `daemon-${String(bridgePort)}.log`);
   try {
     say(`daemon log (${daemonLog})`, readFileSync(daemonLog, 'utf8'));
@@ -537,10 +565,22 @@ function stampInstallProbe(app) {
  *
  * Read out of init's own output rather than assumed from the framework: a scaffold that relocates
  * (5173 taken, vite moves to 5174) would otherwise leave the moved one behind.
+ *
+ * Two shapes, because init reports two kinds of thing. Dev servers arrive as URLs. The DAEMON
+ * arrives as a JSON event — `{"event":"reticle_setup_daemon_started","port":4797}` — and matching
+ * only URLs meant it was never swept. That daemon then outlived init holding a registry entry for
+ * this scaffold's projectId, and daemon discovery is registry-FIRST by design: the app correctly
+ * preferred the live daemon serving its project over the port written into its config at install
+ * time. So the page dialled 4797 while the harness watched 4796 and reported "no session ever
+ * appeared" about an app that had connected perfectly well to the wrong witness. Harness rule 2 is
+ * "own the daemon before the app can dial it", and a daemon left running by init breaks it.
  */
 function portsMentionedIn(text) {
   const found = new Set();
   for (const m of String(text).matchAll(/https?:\/\/(?:localhost|127\.0\.0\.1):(\d{2,5})/g)) {
+    found.add(Number(m[1]));
+  }
+  for (const m of String(text).matchAll(/"event":"reticle_setup_daemon_started"[^}]*"port":(\d{2,5})/g)) {
     found.add(Number(m[1]));
   }
   return [...found];
