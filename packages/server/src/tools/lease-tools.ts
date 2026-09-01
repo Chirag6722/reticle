@@ -264,6 +264,14 @@ export const LEASE_ACQUIRE_TOOL: ToolDef = {
     leased: z.number().describe('How many contexts are currently leased from the pool.'),
     queued: z.number().describe('How many acquires are waiting for a free slot.'),
     hint: z.string().optional(),
+    versionSkew: z
+      .string()
+      .optional()
+      .describe(
+        "Present when the leased tab's SDK disagrees with this daemon. ready is still true — the " +
+          'page dialled in — but CDP-backed tools (screenshot, viewport, real input, network_mock) ' +
+          'will fail until the versions match. Same sentence as reticle_sessions.versionSkew.',
+      ),
   },
   handler: async (deps: ToolDeps, args) => {
     const pool = deps.pool;
@@ -306,6 +314,10 @@ export const LEASE_ACQUIRE_TOOL: ToolDef = {
     // without this the touches miss, the lease ages out despite continuous activity, and the
     // reaper closes the context mid-flow. See BrowserPool.alias and #157.
     if (registeredId !== undefined) pool.alias(registeredId, lease.sessionId);
+    // ready means the SDK dialled in — not that contracts match. Carry the skew warning on acquire
+    // so the agent does not learn it only after a CDP tool invents a closed page (#688).
+    const versionSkew =
+      registeredId === undefined ? undefined : deps.sessions.get(registeredId)?.versionSkew;
     return {
       sessionId: registeredId ?? lease.sessionId,
       url,
@@ -313,6 +325,7 @@ export const LEASE_ACQUIRE_TOOL: ToolDef = {
       expiresInMs: pool.leaseTtlMs(),
       leased: pool.activeCount(),
       queued: pool.queuedCount(),
+      ...(versionSkew === undefined ? {} : { versionSkew }),
       ...(ready
         ? {}
         : { hint: await notConnectedHint(deps, url, pool.dialFailureUrl?.(lease.sessionId)) }),

@@ -11,6 +11,7 @@ import { getSessionMetrics } from '../telemetry/session-metrics.js';
 import { getTelemetry } from '../telemetry/telemetry.js';
 import { takeUpdateNudge } from '../update/update-nudge.js';
 import { takeVersionSkew } from '../version/version-nudge.js';
+import { rewriteClosedAsSkew } from '../version/version-skew.js';
 import { noteToolCall } from '../daemon/daemon-usefulness.js';
 import { bugsInResult, routeOf } from '../telemetry/bug-found.js';
 import { noteToolServed, reportToolRefused } from '../telemetry/tool-refused.js';
@@ -55,6 +56,21 @@ const ACTION_TOOLS: ReadonlySet<string> = new Set([
   ReticleTool.ACT,
   ReticleTool.ACT_SEQUENCE,
   ReticleTool.ACT_AND_WAIT,
+]);
+
+/**
+ * Tools that go through Playwright CDP rather than the page SDK.
+ *
+ * Under version skew these fail with "Target page, context or browser has been closed" while every
+ * DOM tool against the same tab still works (#688). They are session-EXEMPT (own result contracts),
+ * so the bound-tool resolve above never runs for them — resolve again here so we can refuse with
+ * the skew sentence before Playwright lies about a closed page.
+ */
+const CDP_TOOLS: ReadonlySet<string> = new Set([
+  ReticleTool.SCREENSHOT,
+  ReticleTool.VISUAL_DIFF,
+  ReticleTool.NETWORK_MOCK,
+  ReticleTool.VIEWPORT,
 ]);
 
 /**
@@ -330,12 +346,19 @@ export async function runTool<Ext>(
   // before the handler so a long ACT_AND_WAIT is protected for its whole duration; on failure leave it
   // to the handler to throw the canonical no-session error.
   let session: Session | undefined;
-  if (bound) {
+  if (bound || CDP_TOOLS.has(tool.name)) {
     try {
       session = deps.sessions.resolve(rawSessionId);
     } catch {
       session = undefined;
     }
+  }
+  // CDP tools against a skewed session: refuse with the sentence reticle_sessions already knows,
+  // before Playwright invents a closed page. ready:true leases still hit this path.
+  if (session?.versionSkew !== undefined && CDP_TOOLS.has(tool.name)) {
+    const message = session.versionSkew;
+    reportRefusal(tool.name, message);
+    throw new Error(message);
   }
   // The read-only calls the journal never keeps, recorded HERE because this is the one dispatch
   // point every call routes through — a second recording site is a second thing to forget, and this
@@ -408,7 +431,21 @@ export async function runTool<Ext>(
     // to the agent by the MCP boundary, and discarded. Reported here rather than at that boundary
     // because there are two of them (mcp.ts and the reticle_run hatch) and this is the one place both
     // go through — a third would otherwise be invisible from the day it was added.
-    const message = error instanceof Error ? error.message : String(error);
+    //
+    // Under version skew, Playwright's "Target page has been closed" is the wrong cause (#688): the
+    // page is still dialled in. Prefer the session's skew sentence when we already know the pair is
+    // mismatched — including for tools that are not in CDP_TOOLS (real-input fallbacks that throw).
+    let skewText = session?.versionSkew;
+    if (skewText === undefined) {
+      try {
+        skewText = deps.sessions.resolve(rawSessionId).versionSkew;
+      } catch {
+        skewText = undefined;
+      }
+    }
+    const rewritten = rewriteClosedAsSkew(error, skewText);
+    const toThrow = rewritten ?? error;
+    const message = toThrow instanceof Error ? toThrow.message : String(toThrow);
     reportRefusal(tool.name, message);
     // The invitation on THIS path is the one `buildErrorPayload` attaches when it does not recognise
     // the error, and it was never counted — so the denominator excluded the commonest friction there
@@ -417,7 +454,7 @@ export async function runTool<Ext>(
     if (tool.name !== ReticleTool.RUN && buildErrorPayload(message).feedback !== undefined) {
       getSessionMetrics().recordFeedbackPrompt();
     }
-    throw error;
+    throw toThrow;
   } finally {
     // In a `finally` so a THROWN call still settles: otherwise every failing tool would leak a
     // concurrency slot and peakConcurrentTools would climb forever on an unhealthy session.
