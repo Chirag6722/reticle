@@ -317,7 +317,7 @@ function withNextAction(facts: {
   return next === undefined ? {} : { nextAction: next };
 }
 
-function handleStatus(port: number): void {
+export async function handleStatus(port: number): Promise<void> {
   const pid = readPid(port);
   // Durable, so it survives the daemon idling out — which is the state `status` is most often run in.
   const projectId = readProjectId(process.cwd());
@@ -330,53 +330,50 @@ function handleStatus(port: number): void {
   // Reticle and never lists its tools looks exactly like an abandoned install from here — same idle
   // daemon, same zero sessions — and the user sees a tool that does nothing. See attach-memory.ts.
   const client = attachStatusFields(reticleStateHome(), port);
-  if (null === pid || !isAlive(pid)) {
-    // `running: false` on its own has been reported about a port that was demonstrably occupied,
-    // because the pid file is not the port. Ask the port before answering.
-    void probePresence(port, { tcpOpen: probeDaemon, status: fetchStatus }).then((presence) => {
-      const running = presenceIsUsable(presence);
-      log('reticle_status', {
-        port,
-        running,
-        presence,
-        ...(presence === PortPresence.FOREIGN ? { reason: describePresence(presence, port) } : {}),
-        // `init` promises this command says why the app has not connected. Without it the answer was
-        // `running: false` and nothing else, which reads as "Reticle is broken" for what is usually
-        // just a daemon that has not been asked to do anything yet.
-        ...withNextAction({ running, sessionCount: 0, previouslyConnected, initialized }),
-        ...client,
-      });
+  // Doctor and status must answer the same liveness question. A live pid only says that some
+  // process exists; a Reticle daemon is running only when the shared port probe reaches /status.
+  const presence = await probePresence(port, { tcpOpen: probeDaemon, status: fetchStatus });
+  if (!presenceIsUsable(presence)) {
+    log('reticle_status', {
+      port,
+      running: false,
+      presence,
+      ...(presence === PortPresence.FOREIGN ? { reason: describePresence(presence, port) } : {}),
+      // `init` promises this command says why the app has not connected. Without it the answer was
+      // `running: false` and nothing else, which reads as "Reticle is broken" for what is usually
+      // just a daemon that has not been asked to do anything yet.
+      ...withNextAction({ running: false, sessionCount: 0, previouslyConnected, initialized }),
+      ...client,
     });
     return;
   }
-  // The daemon is up — ask it for live sessions + health so status is at-a-glance, not just a pid.
-  void fetchStatus(port).then((payload) => {
-    // `status` is the second-most-run command and the one a HUMAN types. The update nudge otherwise
-    // only rides a tool result, which the majority of daemons never produce — so the people most in
-    // need of an upgrade were the ones with no path to hearing about it.
-    const update = availableUpdate();
-    const nudge = update === undefined ? {} : { updateAvailable: update };
-    if (payload === undefined) {
-      log('reticle_status', {
-        port,
-        running: true,
-        pid,
-        ...nudge,
-        ...withNextAction({ running: true, sessionCount: 0, previouslyConnected, initialized }),
-        ...client,
-      });
-      return;
-    }
-    const summary = summarizeStatus(payload);
-    // Only when the daemon did NOT already explain itself. It has the whole diagnosis in-process and
-    // puts it on the wire as `why`; printing a second, thinner opinion beside it risks two confident
-    // answers pointing different ways, which is worse than one.
-    const next =
-      summary.why === undefined
-        ? withNextAction({ running: true, ...summary, previouslyConnected, initialized })
-        : {};
-    log('reticle_status', { port, running: true, pid, ...summary, ...next, ...client, ...nudge });
-  });
+  // The daemon answered the same probe doctor trusts — ask it for live sessions + health.
+  const payload = await fetchStatus(port);
+  // `status` is the second-most-run command and the one a HUMAN types. The update nudge otherwise
+  // only rides a tool result, which the majority of daemons never produce — so the people most in
+  // need of an upgrade were the ones with no path to hearing about it.
+  const update = availableUpdate();
+  const nudge = update === undefined ? {} : { updateAvailable: update };
+  if (payload === undefined) {
+    log('reticle_status', {
+      port,
+      running: true,
+      pid,
+      ...nudge,
+      ...withNextAction({ running: true, sessionCount: 0, previouslyConnected, initialized }),
+      ...client,
+    });
+    return;
+  }
+  const summary = summarizeStatus(payload);
+  // Only when the daemon did NOT already explain itself. It has the whole diagnosis in-process and
+  // puts it on the wire as `why`; printing a second, thinner opinion beside it risks two confident
+  // answers pointing different ways, which is worse than one.
+  const next =
+    summary.why === undefined
+      ? withNextAction({ running: true, ...summary, previouslyConnected, initialized })
+      : {};
+  log('reticle_status', { port, running: true, pid, ...summary, ...next, ...client, ...nudge });
 }
 
 /** Print the running package version (resolved once in server-version.ts). */
@@ -789,7 +786,7 @@ function main(): void {
       void handleRestart(parsed.port, parsed.force);
       break;
     case 'status':
-      handleStatus(parsed.port);
+      void handleStatus(parsed.port);
       break;
     case 'license':
       handleLicense();
