@@ -300,6 +300,14 @@ export const LEASE_ACQUIRE_TOOL: ToolDef = {
         'True when this acquire returned an existing live lease on the same origin rather than minting a second context.',
       ),
     hint: z.string().optional(),
+    versionSkew: z
+      .string()
+      .optional()
+      .describe(
+        "Present when the leased tab's SDK disagrees with this daemon. ready is still true — the " +
+          'page dialled in — but CDP-backed tools (screenshot, viewport, real input, network_mock) ' +
+          'will fail until the versions match. Same sentence as reticle_sessions.versionSkew.',
+      ),
   },
   handler: async (deps: ToolDeps, args) => {
     const pool = deps.pool;
@@ -371,6 +379,10 @@ export const LEASE_ACQUIRE_TOOL: ToolDef = {
     if (registeredId !== undefined) pool.alias(registeredId, lease.sessionId);
     // The lease now exists, so any HUD a human is watching has just gone dark. Say so.
     tellWatchers(deps, projectId, AGENT_DRIVING_ELSEWHERE);
+    // ready means the SDK dialled in — not that contracts match. Carry the skew warning on acquire
+    // so the agent does not learn it only after a CDP tool invents a closed page (#688).
+    const versionSkew =
+      registeredId === undefined ? undefined : deps.sessions.get(registeredId)?.versionSkew;
     return {
       sessionId: registeredId ?? lease.sessionId,
       url,
@@ -386,6 +398,7 @@ export const LEASE_ACQUIRE_TOOL: ToolDef = {
               note: PREFER_EXISTING_NOTE,
             },
           }),
+      ...(versionSkew === undefined ? {} : { versionSkew }),
       ...(ready
         ? {}
         : { hint: await notConnectedHint(deps, url, pool.dialFailureUrl?.(lease.sessionId)) }),

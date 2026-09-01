@@ -155,3 +155,28 @@ export function daemonFix(
     'it (other agents on that daemon will need to reconnect).'
   );
 }
+
+/**
+ * Playwright wording when a CDP call cannot bind to the page.
+ *
+ * Under SDK/daemon version skew this text is a LIE: the page is still connected (DOM tools work),
+ * and the agent spends turns re-acquiring leases and asking a human to sign into a fresh profile
+ * (#688). Matched only so we can replace it with the skew sentence already on the session.
+ */
+export const PLAYWRIGHT_CLOSED_ERROR =
+  /target (?:page|context|browser) has been closed|browser has been closed|browser has disconnected/i;
+
+/** True when `error` is Playwright's closed-target class — not proof the tab is gone. */
+export function isPlaywrightClosedError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return PLAYWRIGHT_CLOSED_ERROR.test(message);
+}
+
+/**
+ * Replace a closed-target throw with the session's skew sentence when we already know the pair is
+ * mismatched. Undefined when there is no skew to name, or the throw is something else.
+ */
+export function rewriteClosedAsSkew(error: unknown, skew: string | undefined): Error | undefined {
+  if (skew === undefined || !isPlaywrightClosedError(error)) return undefined;
+  return new Error(skew);
+}

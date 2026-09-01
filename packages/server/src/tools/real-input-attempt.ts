@@ -317,6 +317,13 @@ export async function tryRealInput(
     return synthetic(InputModeReason.SYNTHETIC_CLICK_PREFERRED);
   }
 
+  // Under version skew CDP is unusable while DOM tools still work (#688). Surface the skew sentence
+  // rather than "page not correlated" / a silent provider-error fallback — those send the agent
+  // hunting a dead context that is not dead.
+  if (session.versionSkew !== undefined) {
+    throw new Error(session.versionSkew);
+  }
+
   if (!(await provider.isAvailableFor(session.url)))
     return synthetic(InputModeReason.PAGE_NOT_CORRELATED);
 
@@ -351,6 +358,7 @@ export async function tryRealInput(
     if (!performed.performed) return synthetic(InputModeReason.PROVIDER_DECLINED);
     return { result: { performed: true, center: performed.center, action }, settled: true };
   } catch {
+    if (session.versionSkew !== undefined) throw new Error(session.versionSkew);
     return {
       result: undefined,
       settled: false,

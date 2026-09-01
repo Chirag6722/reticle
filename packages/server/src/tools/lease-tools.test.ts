@@ -272,6 +272,21 @@ describe('reticle_lease_acquire', () => {
     expect(result.expiresInMs).toBe(300_000);
   });
 
+  it('carries versionSkew on a ready lease whose tab is skewed (#688)', async () => {
+    const SKEW = 'version skew: the page is 2.2.1; this daemon is 2.4.1. run reticle update';
+    const { pool } = fakePool();
+    const sessions = {
+      get: () => ({ id: 'live', versionSkew: SKEW }),
+      all: () => [],
+    };
+    const result = (await tool(ReticleTool.LEASE_ACQUIRE)(
+      { sessions, pool } as unknown as ToolDeps,
+      { url: 'http://localhost:3000/' },
+    )) as { ready: boolean; versionSkew?: string };
+    expect(result.ready).toBe(true);
+    expect(result.versionSkew).toBe(SKEW);
+  });
+
   it('throws a clear error when no pool is available', async () => {
     await expect(
       tool(ReticleTool.LEASE_ACQUIRE)(baseDeps, { url: 'http://localhost:3000/' }),
