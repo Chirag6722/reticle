@@ -7,6 +7,7 @@
  */
 
 import type { CaptureLoss } from '@reticlehq/core';
+import { Verified } from '@reticlehq/core';
 
 /** Assertion grade, strongest first — the tier the verdict actually proved. */
 export const HonestyGrade = {
@@ -141,4 +142,23 @@ export function meetsHonestyBar(
     reasons.push(`integrity not clean: ${block.integrity.issues.join('; ')}`);
   }
   return { ok: 0 === reasons.length, reasons };
+}
+
+/**
+ * The coverage sentence, kept only on a verdict that points at it.
+ *
+ * Exactly one branch of `decideVerified` promises it — the YES branch says "coverage was PARTIAL —
+ * see `coverage` for what went unobserved". UNKNOWN keeps it too, because "I could not tell" is a
+ * statement about what went unseen and the note is the answer. A NO has already named a concrete
+ * counter-example, nothing directs the reader to `coverage`, and `partial` plus the spot kinds still
+ * travel — so the prose there is cost with no question behind it.
+ *
+ * Measured: emitting it on every verdict regressed the benchmark's verification efficiency by 4.1%,
+ * one note per observation. Accuracy outranks tokens, but this buys no accuracy — the promise is
+ * kept wherever it is made.
+ */
+export function honestyForVerdict(verified: string, honesty: HonestyBlock): HonestyBlock {
+  if (Verified.NO !== verified || honesty.coverage.note === undefined) return honesty;
+  const { note: _dropped, ...coverage } = honesty.coverage;
+  return { ...honesty, coverage };
 }

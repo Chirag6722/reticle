@@ -47,6 +47,7 @@ import {
 } from './settle-in-flight.js';
 import { waitForReaction } from './react-grace.js';
 import { decideVerified } from '../honesty/verified.js';
+import { honestyForVerdict } from '../honesty/honesty.js';
 import { declaredExpectations, declaresBodyIndependentChannel } from '../events/declared.js';
 import { readsDomState } from '../honesty/already-true.js';
 import { describeWaitTarget } from '../honesty/unsettled.js';
@@ -860,7 +861,7 @@ export const ACT_TOOLS: ToolDef[] = [
           // agent cannot miss it by not asking. Omitted entirely when clean, so a healthy action
           // pays nothing.
           ...(contradictions.length > 0 ? { contradictions } : {}),
-          honesty,
+          honesty: honestyForVerdict(String(decision.verified), honesty),
           ...(capsule === undefined ? {} : { capsule }),
           since,
           ...(session.id === actedSessionId ? {} : { sessionId: session.id }),
