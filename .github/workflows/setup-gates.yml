@@ -90,6 +90,10 @@ jobs:
           Write-Host "---- launcher said ----"
           Write-Host $out
           if ($out -notmatch 'no package.json') { throw 'the launcher did not reach reticle.mjs' }
+          # A REFUSAL is the pass here, and setup exits non-zero when it refuses — correctly. A pwsh
+          # step fails on a non-zero $LASTEXITCODE left behind by the last native command, so without
+          # this the step reports the launcher's success as its own failure.
+          exit 0
 
   # POSIX-only, and labelled as such: the scenarios shim /bin/sh executables.
   break-matrix:
