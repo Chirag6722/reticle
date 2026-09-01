@@ -21,7 +21,10 @@ if errorlevel 1 (
   exit /b 1
 )
 
-node -e "process.exit(Number(process.versions.node.split('.')[0]) >= 18 ? 0 : 1)" 2>nul
+rem No `>` or `<` in this one-liner: cmd.exe treats both as redirection in more contexts than the
+rem quoting rules suggest, and a mis-parsed guard here would refuse every supported Node instead.
+rem Math.min against the floor says "at least 18" without a comparison operator.
+node -e "process.exit(Math.min(Number(process.versions.node.split('.')[0]) || 0, 18) === 18 ? 0 : 1)" 2>nul
 if errorlevel 1 (
   echo reticle setup needs Node 18 or newer. 1>&2
   echo Node 16 and older have no global fetch, so setup would edit your build config and then die halfway through. 1>&2

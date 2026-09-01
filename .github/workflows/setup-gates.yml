@@ -81,7 +81,9 @@ jobs:
           mkdir "%RUNNER_TEMP%\launcher" 2>nul
           cd /d "%RUNNER_TEMP%\launcher"
           "%GITHUB_WORKSPACE%\setup\reticle.cmd" --json --timeout 2 > out.txt 2>&1
+          echo ---- launcher said (exit %errorlevel%) ----
           type out.txt
+          echo ---- end ----
           findstr /C:"no package.json" out.txt >nul || exit /b 1
 
   # POSIX-only, and labelled as such: the scenarios shim /bin/sh executables.
