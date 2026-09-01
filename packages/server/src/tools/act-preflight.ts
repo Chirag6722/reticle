@@ -25,6 +25,20 @@ import { unevaluablePredicateReason } from '../events/predicate-precheck.js';
  * with `resolveActTarget` before dispatch. This check only asks that every step names one of the
  * two, and it runs before the first step, so a typo in step three cannot leave one and two applied.
  */
+/**
+ * Keys an agent reaches for when it means "and prove this happened".
+ *
+ * A sub-step reads `ref`/`target`/`action`/`args` and nothing else, and the schema is a permissive
+ * record, so any of these was accepted and dropped. `until` is the likeliest of them by a distance:
+ * it is what act_and_wait — the tool immediately next to this one — calls its assertion.
+ *
+ * Silently ignoring one manufactures a false green. A sequence carrying an impossible `until` came
+ * back `completed: 1` with no error and nothing said about the predicate, which reads as the
+ * consequence having held. act_sequence cannot grade one; refusing and naming the tool that can is
+ * the same answer given to an unsupported native click, and for the same reason.
+ */
+const CONSEQUENCE_KEYS = ['until', 'expect', 'assert', 'waitFor'] as const;
+
 export function assertSequenceSteps(steps: readonly unknown[]): void {
   if (0 === steps.length) {
     throw new Error(
@@ -33,6 +47,16 @@ export function assertSequenceSteps(steps: readonly unknown[]): void {
   }
   steps.forEach((raw, i) => {
     const step = 'object' === typeof raw && null !== raw ? (raw as Record<string, unknown>) : {};
+    const claimed = CONSEQUENCE_KEYS.find((k) => step[k] !== undefined);
+    if (claimed !== undefined) {
+      throw new Error(
+        `step ${String(i)} carries \`${claimed}\`, and reticle_act_sequence cannot grade it. ` +
+          'Sub-steps are dispatched, never asserted — the key would be dropped and the sequence ' +
+          'would report success having checked nothing. Drive the steps here, then prove the ' +
+          'consequence with reticle_act_and_wait on the LAST action (its `until` is graded), or ' +
+          'with reticle_assert after this call. Nothing was acted on.',
+      );
+    }
     if ('string' === typeof step['ref'] && step['ref'].length > 0) return;
     if (step['target'] !== undefined) return;
     throw new Error(

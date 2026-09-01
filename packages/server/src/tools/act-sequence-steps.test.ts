@@ -107,3 +107,46 @@ describe('what a step reports', () => {
     expect(out['name']).toBe('Sign In');
   });
 });
+
+/**
+ * A sub-step reads `{ ref | target, action, args }` and NOTHING else. The schema is
+ * `z.record(z.unknown())`, so any other key is accepted and dropped — and the keys an agent is most
+ * likely to reach for are the ones that claim a consequence, because `until` is what the neighbouring
+ * act_and_wait calls its assertion.
+ *
+ * Driven against the Electron fixture, a step carrying `until: { kind: 'net', urlContains:
+ * 'this-endpoint-does-not-exist-at-all' }` returned `completed: 1` with no error and no mention of
+ * the predicate. The endpoint cannot exist, so the assertion could never hold; nothing evaluated it.
+ * An agent reads `completed` plus `settled: true` and records a consequence that was never checked.
+ *
+ * act_sequence cannot grade a consequence — only act_and_wait and reticle_assert produce a verdict —
+ * so the honest answer is to refuse and name the tool that can, the same way an unsupported native
+ * click is refused rather than faked.
+ */
+describe('a sub-step cannot silently carry an assertion it will never grade', () => {
+  for (const key of ['until', 'expect', 'assert', 'waitFor']) {
+    it(`refuses a step carrying \`${key}\``, () => {
+      expect(() =>
+        assertSequenceSteps([{ ref: 'e1', action: 'click', [key]: { kind: 'settled' } }]),
+      ).toThrow(/act_and_wait|reticle_assert/);
+    });
+  }
+
+  it('names the offending step and key so the caller can fix it', () => {
+    expect(() =>
+      assertSequenceSteps([
+        { ref: 'e1', action: 'click' },
+        { ref: 'e2', action: 'click', until: {} },
+      ]),
+    ).toThrow(/step 1[\s\S]*until/);
+  });
+
+  it('still accepts the documented shape', () => {
+    expect(() =>
+      assertSequenceSteps([
+        { ref: 'e1', action: 'fill', args: { value: 'a' } },
+        { target: { testid: 't' }, action: 'click' },
+      ]),
+    ).not.toThrow();
+  });
+});
