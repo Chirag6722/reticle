@@ -628,7 +628,7 @@ export const ACT_TOOLS: ToolDef[] = [
         // stronger than this block. Grade from the strongest asserted consequence; integrity from evictions.
         // Coverage: cross-origin frames / other blind spots the SDK reported during this window mean the
         // verdict didn't see everything — say so, never imply full coverage.
-        const spots = blindSpotsFromState(session.blindSpots());
+        const spots = blindSpotsFromState(session.blindSpots(), session.runtime);
         const coverage = buildCoverageStatement(spots);
         const absenceBlindSpot = absenceBlindSpotNote(until, spots);
         // Nothing subscribed ⇒ the state channel is dark, and the summary must say so rather than

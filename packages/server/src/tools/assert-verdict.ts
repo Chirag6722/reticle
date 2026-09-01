@@ -79,7 +79,7 @@ export async function assertVerdict(
   // in that session partial — including ones about a region it cannot affect. That errs toward
   // over-warning, which is the correct direction here: the failure this guards against is a green
   // that implies coverage it never had, and a needless caveat costs the agent a sentence.
-  const spots = blindSpotsFromState(session.blindSpots());
+  const spots = blindSpotsFromState(session.blindSpots(), session.runtime);
   const statement = buildCoverageStatement(spots);
   const absenceBlindSpot = absenceBlindSpotNote(predicate, spots);
   // Omitted entirely when coverage is full, so an intact page pays nothing and the field's PRESENCE
