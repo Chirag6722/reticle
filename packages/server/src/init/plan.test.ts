@@ -482,6 +482,17 @@ describe('buildPlan — CRA pairing token', () => {
       }),
     );
 
+  it('writes a .js connect module when the CRA app has no TypeScript (#675)', () => {
+    const plan = craPlan({
+      detection: { ...detection(Framework.CRA), typescript: false },
+      craEntry: { path: 'src/index.js', source: "import React from 'react';\n" },
+    });
+    const mod = plan.steps.find((s) => s.title === 'Reticle connect module');
+    expect(mod?.write?.path).toBe('src/reticle-dev.js');
+    expect(mod?.write?.content).not.toContain('export {}');
+    expect(plan.steps.find((s) => s.write?.path === 'src/reticle-dev.ts')).toBeUndefined();
+  });
+
   it('warns that the env file is gitignored, so a teammate cloning must run init too', () => {
     const written = maybeStep(craPlan({ pairingToken: 'tok-1' }), TOKEN_STEP);
     expect(StepStatus.APPLY).toBe(written?.status);

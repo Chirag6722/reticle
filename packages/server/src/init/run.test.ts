@@ -392,6 +392,20 @@ describe('runInit', () => {
     expect(io.written['app/reticle-dev.tsx']).toBeUndefined();
   });
 
+  it('writes a .js connect module for a JavaScript CRA app (#675)', () => {
+    const io = memoryIo({
+      'package.json': JSON.stringify({
+        dependencies: { 'react-scripts': '5.0.1', react: '^18', 'react-dom': '^18' },
+      }),
+      'src/index.js': "import React from 'react';\nimport App from './App';\n",
+    });
+    runInit(OPTS, io);
+    expect(io.written['src/reticle-dev.js']).toContain('reticle.connect');
+    expect(io.written['src/reticle-dev.js']).not.toContain('export {}');
+    expect(io.written['src/reticle-dev.ts']).toBeUndefined();
+    expect(io.written['src/index.js']).toContain("import './reticle-dev'");
+  });
+
   it('uses .tsx once the project has a tsconfig', () => {
     const io = memoryIo({
       'package.json': JSON.stringify({ dependencies: { next: '15', react: '^19' } }),
