@@ -140,12 +140,21 @@ export async function assertVerdict(
     honesty: buildHonestyBlock({
       grade: gradeOfPredicate(predicate),
       attribution: 'window',
+      // Did the buffer evict SCARCE evidence belonging to this window — the same window-scoped
+      // question the act path asks, asked here because it has the same answer. The old reasoning was
+      // that assert "observes an already-open window" and so cannot have lost anything; but eviction
+      // happens on push, regardless of who opened the window, and assert reads the same buffer over
+      // an arbitrary `since`. The result was that one loss in one window graded `unknown` through
+      // act_and_wait and `yes` through assert. NOT the raw drop counter, which moves on every push —
+      // see RingBuffer.lostSince, and the field episode where conflating the two made
+      // `unclean_capture` the dominant cause of `unknown`.
+      truncated: session.lostSince(since),
       coveragePartial: Coverage.PARTIAL === statement.coverage,
       ...(statement.note === undefined ? {} : { coverageNote: statement.note }),
       ...(0 === impeachingNotes.length ? {} : { blindSpots: impeachingNotes }),
-      // Which loss, as an enum, beside the prose. `assert` observes an already-open window and never
-      // consults the ring buffer's health, so `buffer_loss` is not one of its answers.
+      // Which loss, as an enum, beside the prose.
       losses: [
+        ...(session.lostSince(since) ? [CaptureLoss.BUFFER_LOSS] : []),
         ...(gap === undefined ? [] : [CaptureLoss.TRANSPORT_GAP]),
         ...(impeaching.note === undefined ? [] : [CaptureLoss.BLIND_SPOT]),
       ],

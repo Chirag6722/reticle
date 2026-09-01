@@ -41,6 +41,7 @@ function depsWithBlindSpots(
   const session: Partial<Session> = {
     id: 'demo',
     bufferHealth: () => ({ total: 5, dropped: 0 }),
+    lostSince: () => false,
     recordAction: () => 'a1',
     lastAct: new LastAct(),
     command: () =>
@@ -224,6 +225,7 @@ describe('reticle_assert carries the verdict, not just pass', () => {
     const session: Partial<Session> = {
       id: 'demo',
       bufferHealth: () => ({ total: 5, dropped: 0 }),
+      lostSince: () => false,
       recordAction: () => 'a1',
       lastAct: new LastAct(),
       blindSpots: () => ({}),

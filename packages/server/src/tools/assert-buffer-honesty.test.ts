@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { LastAct } from '../session/last-act.js';
-import { BUFFER_EVICTION_WARNING, SessionState } from '@reticlehq/core';
+import { BUFFER_EVICTION_WARNING, SessionState, Verified, VerifiedReason } from '@reticlehq/core';
 import { TOOLS, type ToolDef, type ToolDeps } from './tools.js';
 import { ReticleTool } from './tool-names.js';
 import type { Session, SessionManager } from '../session/session.js';
@@ -17,7 +17,7 @@ import type { Session, SessionManager } from '../session/session.js';
  * The block stays OMITTED when nothing was dropped: silence has to keep meaning "the buffer was
  * intact", or it becomes noise on every healthy call and gets ignored.
  */
-function depsWithBuffer(dropped: number, lastActSource?: string): ToolDeps {
+function depsWithBuffer(dropped: number, lastActSource?: string, lost = false): ToolDeps {
   const session: Partial<Session> = {
     id: 'demo',
     recordAction: () => 'a1',
@@ -27,6 +27,7 @@ function depsWithBuffer(dropped: number, lastActSource?: string): ToolDeps {
       return a;
     })(),
     bufferHealth: () => ({ total: 12, dropped }),
+    lostSince: () => lost,
     blindSpots: () => ({}),
     eventsSince: () => [],
     queryEvents: () => Promise.resolve([]),
@@ -121,5 +122,49 @@ describe('a non-element failure still names a file', () => {
     };
     expect(result.pass).toBe(false);
     expect(result.source).toBeUndefined();
+  });
+});
+
+/**
+ * The `buffer` block above discloses the RAW drop counter, and ring-buffer.ts says in as many words
+ * that the counter cannot answer "was the capture clean": it moves for the age eviction that runs on
+ * every push and for the churn floor that is sacrificed on purpose. `lostSince` is the honest input —
+ * did this buffer evict SCARCE evidence belonging to the window opened at `since`.
+ *
+ * act_and_wait passes it as `truncated`, and `decideVerified` turns a dirty capture into UNKNOWN /
+ * unclean_capture, because the evidence is ABSENT rather than negative. reticle_assert never consulted
+ * it, on the reasoning that it "observes an already-open window" — but eviction happens on push,
+ * regardless of who opened the window, and assert reads the same buffer over an arbitrary `since`.
+ *
+ * So the same loss in the same window returned `unknown` through one half of the verdict surface and
+ * `yes` through the other — and assert is the half agents call most. An absence assertion is where it
+ * bites hardest: the evicted error is exactly the evidence that would have made it fail.
+ */
+describe('assert does not grade a window the buffer lost evidence from', () => {
+  it('refuses a green when scarce evidence from this window was evicted', async () => {
+    const result = (await tool(ReticleTool.ASSERT).handler(
+      depsWithBuffer(0, undefined, true),
+      absentConsole,
+    )) as { verified?: string; verifiedReason?: string };
+    expect(result.verified).toBe(Verified.UNKNOWN);
+    expect(result.verifiedReason).toBe(VerifiedReason.UNCLEAN_CAPTURE);
+  });
+
+  it('still grades normally when the window is intact', async () => {
+    const result = (await tool(ReticleTool.ASSERT).handler(
+      depsWithBuffer(0, undefined, false),
+      absentConsole,
+    )) as { verified?: string; verifiedReason?: string };
+    expect(result.verified).not.toBe(Verified.UNKNOWN);
+  });
+
+  // The counter moving is NOT loss from this window — that conflation is what made unclean_capture
+  // the dominant cause of unknown in the field once already.
+  it('a moving drop counter alone does not impeach the verdict', async () => {
+    const result = (await tool(ReticleTool.ASSERT).handler(
+      depsWithBuffer(7, undefined, false),
+      absentConsole,
+    )) as { verified?: string };
+    expect(result.verified).not.toBe(Verified.UNKNOWN);
   });
 });
