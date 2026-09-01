@@ -7,7 +7,12 @@
 import { bridgeWsUrl } from '@reticlehq/core';
 import { patchViteConfig, VitePatchKind } from './vite-config.js';
 import { patchNextConfig, patchRootLayout, patchPagesApp } from './next-patch.js';
-import { patchAstroConfig, patchAstroLayout } from './astro-patch.js';
+import {
+  ASTRO_ENV_DTS_PATH,
+  patchAstroConfig,
+  patchAstroEnvDts,
+  patchAstroLayout,
+} from './astro-patch.js';
 import {
   CRA_DEV_MODULE_IMPORT,
   CRA_ENV_PATH,
@@ -596,6 +601,7 @@ export function astroSteps(input: PlanInput): Step[] {
       },
     ];
   }
+  const envPatch = patchAstroEnvDts(input.astroEnvDts ?? null);
   return [
     patchStep(
       'Astro config (token + build target)',
@@ -609,6 +615,16 @@ export function astroSteps(input: PlanInput): Step[] {
       layout.path,
       layoutPatch,
       'add the dev-only connect <script> before </body>',
+      manualWithLayout,
+    ),
+    // Declares the Vite define names so `astro check` (create-astro's default build) can see them
+    // (#677). Independent of the two halves above: even an ALREADY config/layout still needs this
+    // when the env file was never written.
+    patchStep(
+      'Astro env types (Vite defines)',
+      ASTRO_ENV_DTS_PATH,
+      envPatch,
+      'declare __RETICLE_TOKEN__ / __RETICLE_ROOT__ for astro check',
       manualWithLayout,
     ),
   ];

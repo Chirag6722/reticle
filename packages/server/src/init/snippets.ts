@@ -334,6 +334,12 @@ ${layoutHost(layoutPath)}
     }
   </script>
 
+3. In src/env.d.ts — declare the Vite define names so \`astro check\` can see them (create-astro's
+   default build runs check first, and without this it fails with Cannot find name '__RETICLE_TOKEN__'):
+
+  declare const __RETICLE_TOKEN__: string | undefined;
+  declare const __RETICLE_ROOT__: string | undefined;
+
 Start the daemon BEFORE \`astro dev\`, so the token file exists when the config is read. Until it does the token is empty and the page reloads once the daemon is up.`;
 }
 

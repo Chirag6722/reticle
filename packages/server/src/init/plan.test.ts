@@ -41,6 +41,7 @@ function input(partial: Partial<PlanInput>): PlanInput {
     viteConfig: partial.viteConfig ?? null,
     astroConfig: partial.astroConfig,
     astroLayout: partial.astroLayout,
+    ...(partial.astroEnvDts === undefined ? {} : { astroEnvDts: partial.astroEnvDts }),
     nextConfigFile: partial.nextConfigFile ?? null,
     nextConfigSource: partial.nextConfigSource,
     nextLayout: partial.nextLayout,
@@ -747,6 +748,12 @@ describe('buildPlan — Astro', () => {
     expect(layout.status).toBe(StepStatus.APPLY);
     expect(layout.write?.path).toBe('src/layouts/Layout.astro');
     expect(layout.write?.content).toContain('reticle.connect');
+    // #677: without this, create-astro's `astro check && astro build` fails on undeclared defines.
+    const env = step(plan, 'Astro env types (Vite defines)');
+    expect(env.status).toBe(StepStatus.APPLY);
+    expect(env.write?.path).toBe('src/env.d.ts');
+    expect(env.write?.content).toContain('__RETICLE_TOKEN__');
+    expect(env.write?.content).toContain('__RETICLE_ROOT__');
   });
 
   it('falls back to the printed recipe when the layout is ambiguous', () => {
@@ -769,6 +776,8 @@ describe('buildPlan — Astro', () => {
     expect(s.detail).toContain('__RETICLE_TOKEN__');
     expect(s.detail).toContain('es2022');
     expect(s.detail).toContain('<script>');
+    // #677: the manual recipe must name env.d.ts too.
+    expect(s.detail).toContain('src/env.d.ts');
   });
 
   it('installs the kit but no bundler plugin — Astro owns its own Vite', () => {
