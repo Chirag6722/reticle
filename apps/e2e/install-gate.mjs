@@ -453,7 +453,7 @@ function pathWithoutPnpm(workdir) {
  * between "the app never dialled" and "the app dialled and the gate said no" — opposite bugs with
  * opposite fixes, indistinguishable from the browser side alone.
  */
-function dumpEvidence(consoleLines, bridgePort) {
+function dumpEvidence(consoleLines, bridgePort, failedResponses = [], wsAttempts = []) {
   const say = (label, body) => {
     const text = String(body).trim();
     if (0 === text.length) return;
@@ -461,6 +461,8 @@ function dumpEvidence(consoleLines, bridgePort) {
     for (const line of text.split('\n').slice(-40)) console.log(`      ${line.slice(0, 300)}`);
   };
   say('page console', consoleLines.join('\n'));
+  say('non-2xx responses', failedResponses.join('\n'));
+  say('websocket attempts', wsAttempts.join('\n'));
   const daemonLog = join(homedir(), '.reticle', `daemon-${String(bridgePort)}.log`);
   try {
     say(`daemon log (${daemonLog})`, readFileSync(daemonLog, 'utf8'));
@@ -584,7 +586,17 @@ async function driveScaffold(scaffold, index) {
   await freePortSafely(bridgePort);
   await freePortSafely(appPort);
 
-  const workdir = mkdtempSync(join(tmpdir(), `reticle-install-${scaffold.id}-`));
+  // `realpathSync.native`, because on Windows `tmpdir()` hands back the 8.3 SHORT form —
+  // `C:\Users\RUNNER~1\AppData\Local\Temp`, which is literally what the gate's own log prints.
+  // Two paths for one directory is a containment check waiting to fail, and Vite's file server does
+  // exactly that: `server.fs.allow` compares a request's resolved path against the workspace root,
+  // and a short-form root against a long-form request answers 403 Forbidden. Whether or not that is
+  // what bit here, no real user's project lives behind an 8.3 alias, so a gate that tests one is
+  // testing a path shape its users do not have. On POSIX this only resolves symlinks — macOS's
+  // /var -> /private/var among them, which is the same class of two-names-one-directory problem.
+  const workdir = realpathSync.native(
+    mkdtempSync(join(tmpdir(), `reticle-install-${scaffold.id}-`)),
+  );
   const app = join(workdir, scaffold.appDir ?? DEFAULT_APP_DIR);
   // Where `init` is invoked. Defaults to the app, which is the only shape that used to exist here.
   const initFrom = scaffold.initFrom === undefined ? app : join(workdir, scaffold.initFrom);
@@ -800,6 +812,21 @@ async function driveScaffold(scaffold, index) {
     const page = await browser.newPage();
     const consoleLines = [];
     page.on('console', (m) => consoleLines.push(`${m.type()}: ${m.text()}`));
+    // WHAT was refused, not just that something was. A console line reading "Failed to load
+    // resource: 403 (Forbidden)" cost a full CI round trip on Windows because it names a status and
+    // no url — and the two candidates need opposite fixes: a 403 on `ws://…/reticle` is the bridge
+    // refusing an origin, a 403 on an `http://…/@fs/…` is Vite refusing to serve a file outside its
+    // allow-list. Both are plausible from the console text alone, which is the problem.
+    const failedResponses = [];
+    const wsAttempts = [];
+    page.on('response', (r) => {
+      if (r.status() >= 400) failedResponses.push(`${String(r.status())} ${r.url()}`);
+    });
+    // A websocket that never opens produces no `response` event at all, so it is watched separately.
+    page.on('websocket', (ws) => {
+      wsAttempts.push(`opened ${ws.url()}`);
+      ws.on('socketerror', (e) => wsAttempts.push(`FAILED ${ws.url()} — ${String(e)}`));
+    });
     try {
       await page.goto(`http://localhost:${String(appPort)}/`, {
         waitUntil: 'domcontentloaded',
@@ -855,7 +882,7 @@ async function driveScaffold(scaffold, index) {
       // the DAEMON said, and 220 characters of the last three console lines is enough to know
       // something went wrong and not enough to know what. A `403 (Forbidden)` on Windows cost a
       // whole CI round trip for exactly this reason: it named a status and not an origin.
-      if (!passed) dumpEvidence(consoleLines, bridgePort);
+      if (!passed) dumpEvidence(consoleLines, bridgePort, failedResponses, wsAttempts);
     }
 
     await browser.close();
