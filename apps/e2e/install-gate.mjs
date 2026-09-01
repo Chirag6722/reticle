@@ -834,10 +834,20 @@ async function driveScaffold(scaffold, index) {
     // on Linux only — where Next gets far enough to have written something before it is killed.
     //
     // Next rebuilds this from source, so deleting it costs a cold compile and nothing else.
+    //
+    // Best-effort, like every other cleanup here. On Windows the dev server still holds files under
+    // `.next\dev` when this runs, so the delete raises ENOTEMPTY — and Windows does not need this
+    // in the first place: it passed 5/5 before the removal existed, because Next there does not get
+    // far enough to leave an inconsistent build behind. Throwing turned a Linux fix into a Windows
+    // failure on the one scaffold whose dev server was slowest to let go.
     const nextBuildDir = join(app, '.next');
     if (existsSync(nextBuildDir)) {
-      rmSync(nextBuildDir, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 });
-      note('removed a .next left behind by the dev server init handed over');
+      try {
+        rmSync(nextBuildDir, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 });
+        note('removed a .next left behind by the dev server init handed over');
+      } catch (err) {
+        note(`left .next in place (${String(err).slice(0, 100)}) — the boot below may still be cold`);
+      }
     }
 
     // ── 5. own the daemon before the app can dial it (harness rule 2) ───────────────────────────
