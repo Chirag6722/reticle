@@ -677,8 +677,16 @@ jobs:
     # compiles packages/tauri at all: it sits outside every JS gate, so an absent entry here meant a
     # red Rust build merged clean. Adding a job to the workflow is half the work; this line is the
     # other half.
+    #
+    # `changes` is in this list, and it is the subtle one. It emits the booleans `install-gate` and
+    # `bench` are conditioned on. If it FAILS, those conditions evaluate against an empty string, so
+    # both jobs are SKIPPED — and `skipped` is accepted below. The two most expensive gates in this
+    # repo could therefore be silently switched off by a failure in the five-line job that decides
+    # whether to run them, and this aggregate would still go green. Exactly the hole the paragraph
+    # above describes, one level down: the job that gates the gates was not itself gated.
     needs:
       [
+        changes,
         verify,
         e2e,
         install-gate,

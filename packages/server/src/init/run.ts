@@ -381,8 +381,7 @@ function agentRootOf(options: InitOptions): string | undefined {
   return root === undefined || root === options.cwd ? undefined : root;
 }
 
-function gatherPlanInput(options: InitOptions, io: InitIo, pkgRaw: string): PlanInput {
-  const pkg: unknown = JSON.parse(pkgRaw);
+function gatherPlanInput(options: InitOptions, io: InitIo, pkg: unknown): PlanInput {
   // Stable identity derived from the app's package.json name + root, so it survives port changes.
   const projectId = deriveProjectId(packageName(pkg), options.cwd);
   const rootFiles = new Set(io.rootFiles());
@@ -826,13 +825,8 @@ const AMBIGUOUS_HEADER =
  * guessing which app someone meant is worse than one line of output.
  * Returns null when there is nothing to redirect to — the caller then proceeds here as before.
  */
-function redirectToWorkspaceApp(
-  options: InitOptions,
-  io: InitIo,
-  pkgRaw: string,
-): InitResult | null {
+function redirectToWorkspaceApp(options: InitOptions, io: InitIo, pkg: unknown): InitResult | null {
   if (true === options.redirected) return null;
-  const pkg: unknown = JSON.parse(pkgRaw);
   const rootFiles = new Set(io.rootFiles());
   const here = detect({
     pkg: 'object' === typeof pkg && pkg !== null ? pkg : {},
@@ -890,8 +884,43 @@ export function runInit(options: InitOptions, io: InitIo): InitResult {
   return result;
 }
 
+/**
+ * The manifest, parsed once, or the reason it could not be.
+ *
+ * It used to be parsed in three places from the same raw string, and two of them were unguarded —
+ * so `reticle init` on a `package.json` with a trailing comma died with a raw `SyntaxError` and a
+ * stack through `redirectToWorkspaceApp`. A stack trace in front of a user is a bug whatever caused
+ * it, and this one lands on the very first thing the command does, before it has said anything.
+ *
+ * `setup/reticle.mjs` has always got this right ("… is not valid JSON (…). Fix it and re-run"). The
+ * shipped CLI did not, which is the shape of every divergence between the two: the prototype refuses
+ * politely, `init` throws. Parsing once at the single point the file enters means no later caller
+ * CAN reintroduce it — a guard per call site would have been three guards and a fourth one waiting.
+ */
+function readManifest(io: InitIo): { pkg: unknown } | { error: string } {
+  const raw = io.readFile(PACKAGE_JSON);
+  if (null === raw) return { pkg: null };
+  try {
+    return { pkg: JSON.parse(raw) };
+  } catch (err) {
+    // First line only: JSON.parse's message carries the offending position, and the rest is noise.
+    const detail = String(err instanceof Error ? err.message : err).split('\n')[0] ?? 'unparseable';
+    return { error: detail };
+  }
+}
+
 function runInitSteps(options: InitOptions, io: InitIo): InitResult {
-  const pkgRaw = io.readFile(PACKAGE_JSON);
+  const manifest = readManifest(io);
+  if ('error' in manifest) {
+    io.print(
+      `${PACKAGE_JSON} is not valid JSON (${manifest.error}). Fix it and re-run — init reads the ` +
+        'framework, the dev script and the package manager from it, and will not guess at any of ' +
+        'them from a file it cannot read.',
+    );
+    reportInitOutcome({ ok: false, reason: InitFailure.MALFORMED_PACKAGE_JSON });
+    return { ok: false, applied: 0, manual: 0 };
+  }
+  const pkgRaw = manifest.pkg;
   // Look for the app BEFORE concluding there isn't one.
   //
   // A root with no package.json is not a dead end — it is the ordinary shape of a repo whose app
@@ -904,7 +933,7 @@ function runInitSteps(options: InitOptions, io: InitIo): InitResult {
   //
   // `'{}'` because the redirect only needs the manifest to ask "is THIS directory the app", and a
   // directory with no package.json is definitively not.
-  const redirectedEarly = redirectToWorkspaceApp(options, io, pkgRaw ?? '{}');
+  const redirectedEarly = redirectToWorkspaceApp(options, io, pkgRaw ?? {});
   if (redirectedEarly !== null) return redirectedEarly;
   if (null === pkgRaw) {
     io.print(
