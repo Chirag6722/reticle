@@ -484,6 +484,12 @@ describe('no condition Reticle itself authored is reported as a possible Reticle
       'Chromium is not installed for Playwright. Run: npx playwright install chromium',
       RECOVERY.NO_POOL,
     ],
+    [
+      'a sequence that names two sessions',
+      "reticle_act_sequence steps name different sessionIds ('lease-1' and 'tab-old'). " +
+        'Pass one sessionId at the top level to target a tab. Nothing was acted on.',
+      RECOVERY.BAD_ARGUMENTS,
+    ],
   ])('%s is recognized', (_label, message, expected) => {
     const payload = buildErrorPayload(message);
     expect(payload.feedback, message).toBeUndefined();

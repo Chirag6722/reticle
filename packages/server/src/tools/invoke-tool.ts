@@ -17,7 +17,7 @@ import { noteToolServed, reportToolRefused } from '../telemetry/tool-refused.js'
 import { buildErrorPayload, refusalReasonFor } from './error-recovery.js';
 import { resultIsError } from '../mcp/mcp-is-error.js';
 import { verificationOf } from '../telemetry/verification-of.js';
-import { asString } from './tools-helpers.js';
+import { asString, sessionIdFromArgs, spentRefFromArgs } from './tools-helpers.js';
 import { EnvelopeKey } from './tool-kit.js';
 import { ReticleTool } from './tool-names.js';
 import { takeFeedbackPrompt } from './feedback-tools.js';
@@ -320,7 +320,7 @@ export async function runTool<Ext>(
   if (ACTION_TOOLS.has(tool.name)) getSessionMetrics().recordAction();
   const settleTiming = getSessionMetrics().startToolCall(tool.name, args);
   const startedAt = Date.now();
-  const rawSessionId = asString(args['sessionId']);
+  const rawSessionId = sessionIdFromArgs(args);
   const bound = SESSION_BOUND_TOOLS.has(tool.name);
 
   // Resolve the session identity ONCE, up front, for a live-session tool. The lease heartbeat must
@@ -380,7 +380,7 @@ export async function runTool<Ext>(
   // the guessed tab and return a green about a page nobody asked about.
   if (session !== undefined) {
     const wrongTab = wrongTabRefusal({
-      ref: asString(args['ref']),
+      ref: spentRefFromArgs(args),
       explicitSessionId: rawSessionId,
       chosenSessionId: session.id,
       connected: () => deps.sessions.list(),

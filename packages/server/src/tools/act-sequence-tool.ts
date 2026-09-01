@@ -16,7 +16,7 @@ import { compileSequenceStep } from '../flows/replay.js';
 import { ReticleTool } from './tool-names.js';
 import { healthEnvelope } from '../session/session-health.js';
 import { pausedShortCircuit, pausedOutputShape, withControl } from '../session/control-envelope.js';
-import { asString, asRecord } from './tools-helpers.js';
+import { asRecord, sessionIdFromArgs } from './tools-helpers.js';
 import { describeStepResult, runStepWithStaleRetry } from './act-sequence-retry.js';
 import { assertSequenceSteps } from './act-preflight.js';
 import { type ToolDef, sessionIdShape } from './tool-kit.js';
@@ -64,7 +64,7 @@ export const ACT_SEQUENCE_TOOL: ToolDef = {
     ...pausedOutputShape,
   },
   handler: async (deps, args) => {
-    const session = deps.sessions.resolve(asString(args['sessionId']));
+    const session = deps.sessions.resolve(sessionIdFromArgs(args));
     const paused = pausedShortCircuit(session);
     if (paused !== undefined) return paused;
     const since = session.elapsed();
