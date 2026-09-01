@@ -76,15 +76,20 @@ jobs:
       # covered by reticle.test.mjs in the break-matrix job below, which never runs on Windows.
       - name: the Windows launcher finds reticle.mjs
         if: runner.os == 'Windows'
-        shell: cmd
+        # Driven from PowerShell rather than `shell: cmd`. The launcher under test is a .cmd; the
+        # STEP does not have to be, and a cmd step is its own parsing hazard — an unquoted `(` in an
+        # echo is a syntax error there, which is how the first attempt at this check produced no
+        # output whatsoever, including the marker meant to explain the absence.
+        shell: pwsh
         run: |
-          mkdir "%RUNNER_TEMP%\launcher" 2>nul
-          cd /d "%RUNNER_TEMP%\launcher"
-          "%GITHUB_WORKSPACE%\setup\reticle.cmd" --json --timeout 2 > out.txt 2>&1
-          echo ---- launcher said (exit %errorlevel%) ----
-          type out.txt
-          echo ---- end ----
-          findstr /C:"no package.json" out.txt >nul || exit /b 1
+          $dir = Join-Path $env:RUNNER_TEMP 'launcher'
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          Push-Location $dir
+          $out = & cmd /c "`"$env:GITHUB_WORKSPACE\setup\reticle.cmd`" --json --timeout 2" 2>&1 | Out-String
+          Pop-Location
+          Write-Host "---- launcher said ----"
+          Write-Host $out
+          if ($out -notmatch 'no package.json') { throw 'the launcher did not reach reticle.mjs' }
 
   # POSIX-only, and labelled as such: the scenarios shim /bin/sh executables.
   break-matrix:
