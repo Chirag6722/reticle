@@ -141,6 +141,7 @@ export async function assertVerdict(
       grade: gradeOfPredicate(predicate),
       attribution: 'window',
       coveragePartial: Coverage.PARTIAL === statement.coverage,
+      ...(statement.note === undefined ? {} : { coverageNote: statement.note }),
       ...(0 === impeachingNotes.length ? {} : { blindSpots: impeachingNotes }),
       // Which loss, as an enum, beside the prose. `assert` observes an already-open window and never
       // consults the ring buffer's health, so `buffer_loss` is not one of its answers.

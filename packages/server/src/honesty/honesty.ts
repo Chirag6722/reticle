@@ -39,6 +39,15 @@ interface HonestyInputs {
   envelopeSamples?: number;
   coveragePct?: number;
   coveragePartial?: boolean;
+  /**
+   * The sentence naming WHAT went unobserved, from `buildCoverageStatement`.
+   *
+   * Separate from `blindSpots`, which carries only the IMPEACHING notes — the ones that downgrade a
+   * verdict. A bounding spot does not impeach anything, so it never entered that list, and the flag
+   * that survived (`partial: true`) is unanswerable on its own: the verdict prose tells the reader
+   * to see `coverage` for what went unobserved, and there was nothing there to see.
+   */
+  coverageNote?: string;
   truncated?: boolean;
   blindSpots?: readonly string[];
   /**
@@ -67,7 +76,7 @@ export interface HonestyBlock {
   /** Present only when an envelope was actually sampled — never a fabricated zero. */
   envelope?: { samples: number; sufficient: boolean };
   /** `pct` is present only when it was measured (or provably full); `partial` is always known. */
-  coverage: { pct?: number; partial: boolean };
+  coverage: { pct?: number; partial: boolean; note?: string };
   integrity: { clean: boolean; issues: string[]; losses?: CaptureLoss[] };
   /** Whether the page went quiet in this window — present only when it was measured. */
   settled?: boolean;
@@ -94,7 +103,11 @@ export function buildHonestyBlock(inputs: HonestyInputs): HonestyBlock {
     ...(samples === undefined
       ? {}
       : { envelope: { samples, sufficient: samples >= MIN_ENVELOPE_SAMPLES } }),
-    coverage: { ...(pct === undefined ? {} : { pct }), partial },
+    coverage: {
+      ...(pct === undefined ? {} : { pct }),
+      partial,
+      ...(partial && inputs.coverageNote !== undefined ? { note: inputs.coverageNote } : {}),
+    },
     ...(inputs.settled === undefined ? {} : { settled: inputs.settled }),
     integrity: {
       clean: 0 === issues.length,

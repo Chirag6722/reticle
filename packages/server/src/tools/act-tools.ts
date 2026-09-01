@@ -670,6 +670,7 @@ export const ACT_TOOLS: ToolDef[] = [
           // evictions that happened outside the window they impeached.
           truncated: bufferLost,
           coveragePartial: Coverage.PARTIAL === coverage.coverage,
+          ...(coverage.note === undefined ? {} : { coverageNote: coverage.note }),
           // Settlement no longer vetoes a declared consequence that held, so the fact is carried
           // here instead of only in the verdict it used to decide. Omitted when never measured.
           ...(settledOutcome === undefined ? {} : { settled: settledOutcome }),
