@@ -715,10 +715,18 @@ async function driveScaffold(scaffold, index) {
     // LONGEST FIRST, and that is the whole subtlety. One spelling is a suffix of the other, so
     // folding the short one first eats the tail of the long one and leaves `/private<root>` behind
     // — a baseline diff that fails while reporting a path that never existed.
+    //
+    // The separator is folded too, and only here. `init` prints `<root>\.reticle.json` on Windows
+    // and `<root>/.reticle.json` everywhere else, and BOTH are right — that is what a path looks
+    // like on each platform. One recorded baseline has to be readable on both, and the thing it
+    // exists to catch is a step changing its mark or vanishing from the plan, never which slash the
+    // host uses. Without this the monorepo scaffold failed the diff on Windows over one character.
     const foldRoot = (text) =>
       [workdir, realpathSync(workdir)]
         .sort((a, b) => b.length - a.length)
-        .reduce((acc, dir) => acc.split(dir).join('<root>'), text);
+        .reduce((acc, dir) => acc.split(dir).join('<root>'), text)
+        .split('<root>\\')
+        .join('<root>/');
     const steps = fingerprint(stepsOf(foldRoot(report)));
     const expected = BASELINE[scaffold.id];
     if (UPDATE_BASELINE) {
