@@ -40,9 +40,10 @@ import {
   nuxtManual,
   NUXT_PLUGIN_PATH,
 } from './snippets.js';
-import { RETICLE_CONFIG_FILE, StepStatus, type PlanInput, type Step } from './plan.js';
+import { StepStatus, type PlanInput, type Step } from './plan.js';
 import { RETICLE_DEFAULT_PORT } from '@reticlehq/core';
-import { CSP_STEP_TITLE, cspPlanProblem } from './csp-check.js';
+import { CSP_STEP_TITLE } from './csp-check.js';
+import { diagnoseWebCsp } from './csp-doctor.js';
 
 /** What adding `reticle()` to a Vite config buys, which differs by framework. */
 export const VITE_PLUGIN_DETAIL = {
@@ -640,17 +641,39 @@ export function astroSteps(input: PlanInput): Step[] {
  * warning and a fix.
  */
 export function cspStep(input: PlanInput): Step[] {
-  const problem = cspPlanProblem(
-    [input.nextConfigSource, input.nextLayout?.source],
-    input.options.port ?? RETICLE_DEFAULT_PORT,
-  );
-  if (problem === undefined) return [];
+  // Reads the SAME list `reticle doctor` reads. It used to read a hand-written pair —
+  // `[nextConfigSource, nextLayout?.source]` — while csp-doctor.ts already carried the full set
+  // including `index.html`, which is where every Vite and Electron app declares its policy. So the
+  // command you run BEFORE anything works checked less than the one you run after it has failed.
+  //
+  // Measured on MarkText, a production Electron editor: its renderer sets `default-src 'self'` with
+  // no `connect-src`, the browser blocked the bridge WebSocket, and `init` printed a clean plan. The
+  // daemon cannot see a dial that never left the page, so nothing anywhere said why — and the check
+  // that would have said it was sitting one import away.
+  // The pre-read Next sources are folded in ON TOP of the shared list, not replaced by it: init
+  // resolves `nextConfigFile` across more spellings than CSP_FILES names (`.mts`, for one), and a
+  // layout is found by search rather than by a fixed path. Two sources of the same truth is the
+  // problem being fixed here — one of them being a SUPERSET is not.
+  const extra: Record<string, string | undefined> = {
+    ...(input.nextConfigFile !== null && input.nextConfigFile !== undefined
+      ? { [input.nextConfigFile]: input.nextConfigSource ?? undefined }
+      : {}),
+    ...(input.nextLayout ? { [input.nextLayout.path]: input.nextLayout.source } : {}),
+  };
+  const read = (file: string): string | undefined => extra[file] ?? input.cspSources?.[file];
+  const findings = diagnoseWebCsp(read, input.options.port ?? RETICLE_DEFAULT_PORT, [
+    ...Object.keys(extra),
+  ]);
+  const first = findings[0];
+  if (first === undefined) return [];
   return [
     {
       title: CSP_STEP_TITLE,
-      target: input.nextConfigFile ?? RETICLE_CONFIG_FILE,
+      target: first.file,
       status: StepStatus.NOTICE,
-      detail: problem,
+      // `problem` already ends with the text to paste; `fix` is the same sentence for callers that
+      // want it on its own (doctor renders them separately). Printing both said it twice.
+      detail: first.problem,
     },
   ];
 }

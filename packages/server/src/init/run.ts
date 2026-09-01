@@ -5,6 +5,7 @@
  */
 
 import { dirname, join } from 'node:path';
+import { CSP_FILES } from './csp-doctor.js';
 import { noPackageJsonMessage } from './non-js-project.js';
 import { devCommandFrom } from './dev-script.js';
 import { restartHint, FEEDBACK_HINT } from './closing-hint.js';
@@ -460,9 +461,16 @@ function gatherPlanInput(options: InitOptions, io: InitIo, pkg: unknown): PlanIn
   const agentFile = (relPath: string): string =>
     agentRoot === undefined ? relPath : join(agentRoot, relPath);
 
+  const cspSources: Record<string, string | undefined> = {};
+  for (const file of CSP_FILES) {
+    const source = io.readFile(file);
+    if (null !== source) cspSources[file] = source;
+  }
+
   return {
     detection,
     captureBodies: options.captureBodies,
+    cspSources,
     claudeCli,
     mcpExists,
     platform: process.platform,

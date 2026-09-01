@@ -151,8 +151,13 @@ function formatLine(
 ): string {
   const indent = '  '.repeat(depth);
   const value = getValue(el);
-  const namePart = name.length > 0 ? ` "${name}"` : '';
-  const refPart = INTERACTIVE.has(role) || name.length > 0 ? ` (ref=${refs.refFor(el)})` : '';
+  // A testid stands in for the accessible name when there is none. Including a role-less control and
+  // then printing it as a bare `- generic` is worse than leaving it out: it is visible and it cannot
+  // be addressed. This is the name its author gave it.
+  const testid = el.getAttribute('data-testid') ?? '';
+  const label = name.length > 0 ? name : testid;
+  const namePart = label.length > 0 ? ` "${label}"` : '';
+  const refPart = INTERACTIVE.has(role) || label.length > 0 ? ` (ref=${refs.refFor(el)})` : '';
   const valuePart = value !== undefined && value.length > 0 ? ` [value="${value}"]` : '';
   const layoutPart = layout.length > 0 ? ` [${layout}]` : '';
   return `${indent}- ${role}${namePart}${refPart}${valuePart}${layoutPart}${stateSuffix(el)}`;
@@ -187,6 +192,8 @@ interface WalkCtx {
   truncated: boolean;
   mode: SnapshotMode;
   maxNodes: number;
+  /** Meaningful nodes INTERACTIVE mode passed over — see the note where it is set. */
+  leanSkipped: number;
   maxDepth: number;
   unread: string[];
   unreadOverflow: boolean;
@@ -251,9 +258,34 @@ function visit(child: Element, depth: number, ctx: WalkCtx, inLive: boolean): vo
   const text = !lean && 'generic' === role && 0 === name.length ? directText(child) : '';
   // Layout signature for grid/flex containers — makes CLS/layout regressions visible.
   const layout = lean ? '' : layoutSignature(style);
+  // Actionable WITHOUT an interactive role, which is most of the real web.
+  //
+  // `interactive` is a role test, and a large share of production UI carries no roles at all.
+  // Measured on MarkText, a production Electron editor: `mode:"interactive"` returned an EMPTY tree
+  // where `mode:"full"` found 47 nodes, because its whole block picker is `<div>`s. An empty tree is
+  // indistinguishable from an empty page, and the tool description recommends this mode as the
+  // default — so the cheaper view told an agent there was nothing to drive.
+  //
+  // A `data-testid` ONLY. It is a handle its author put there to be driven, and it marks one element
+  // rather than a subtree.
+  //
+  // `cursor: pointer` was tried here as a second signal — it is how an app tells a HUMAN that a
+  // thing is clickable — and measured on MarkText it was a disaster: interactive went from 0 nodes
+  // and 72 tokens to 180 nodes and 870, against a FULL snapshot of 47 nodes and 424. The pointer
+  // cursor is inherited, so every wrapper div inside a clickable row matched, and the lean mode
+  // became twice the size of the complete one while adding nothing but nameless `- generic` lines.
+  // The mode's whole claim is that it is smaller; a signal that cannot tell a control from its
+  // ancestors cannot be used to decide what a control is.
+  const actionable = interactive || child.hasAttribute('data-testid');
   const meaningful =
-    interactive || role !== 'generic' || name.length > 0 || text.length > 0 || layout.length > 0;
-  const include = lean ? interactive : meaningful;
+    actionable || role !== 'generic' || name.length > 0 || text.length > 0 || layout.length > 0;
+  const include = lean ? actionable : meaningful;
+  // Counted, not just skipped. An empty INTERACTIVE tree is indistinguishable from an empty page,
+  // and on a real app the difference is everything: MarkText's block picker is 20+ live controls
+  // that carry no role, no testid and no pointer cursor, so the lean view is empty while the app is
+  // full of things to drive. Knowing how many were passed over is what turns "" into "look again in
+  // full mode" — see the note the snapshot tool builds from this.
+  if (lean && !include && meaningful) ctx.leanSkipped += 1;
   if (include) {
     ctx.nodes += 1;
     ctx.lines.push(
@@ -382,6 +414,7 @@ export function buildSnapshot(options: SnapshotOptions = {}): SnapshotResult {
   const ctx: WalkCtx = {
     lines: [],
     nodes: 0,
+    leanSkipped: 0,
     truncated: false,
     mode,
     maxNodes: options.maxNodes ?? 400,
@@ -396,6 +429,7 @@ export function buildSnapshot(options: SnapshotOptions = {}): SnapshotResult {
     status,
     nodes: ctx.nodes,
     truncated: ctx.truncated,
+    ...(ctx.leanSkipped > 0 ? { leanSkipped: ctx.leanSkipped } : {}),
     ...(ctx.unread.length > 0 ? { unread: ctx.unread } : {}),
     ...(ctx.unreadOverflow ? { unreadOverflow: true as const } : {}),
   };

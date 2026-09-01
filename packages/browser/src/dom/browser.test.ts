@@ -414,3 +414,23 @@ describe('query: open shadow roots and attribute projection', () => {
     expect((href ?? '').length).toBeLessThanOrEqual(ATTR_VALUE_MAX + 1);
   });
 });
+
+// `mode:"interactive"` is a ROLE filter, and most production UI carries no roles. Measured on
+// MarkText, a production Electron editor: interactive returned an empty tree where full found 47
+// nodes, because its block picker is `<div>`s. An empty tree reads as an empty page, and the tool
+// description recommends this mode as the default — so the cheap view said there was nothing to
+// drive. A `data-testid` and `cursor: pointer` are each the author's own statement that a thing is
+// a control: one aimed at a driver, one aimed at a human.
+describe('interactive mode finds controls that carry no ARIA role', () => {
+  it('includes a role-less div with a data-testid', () => {
+    document.body.innerHTML = `<div data-testid="pick-h1"># Heading</div><div>just text</div>`;
+    const tree = buildSnapshot({ mode: SnapshotMode.INTERACTIVE }).tree;
+    expect(tree).toContain('pick-h1');
+    expect(tree).not.toContain('just text');
+  });
+
+  it('still excludes ordinary content, so the mode stays lean', () => {
+    document.body.innerHTML = `<p>a paragraph</p><span>a span</span>`;
+    expect(buildSnapshot({ mode: SnapshotMode.INTERACTIVE }).tree.trim()).toBe('');
+  });
+});

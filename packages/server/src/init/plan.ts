@@ -208,6 +208,13 @@ export interface PlanInput {
    * direction a default about somebody else's data should be wrong in.
    */
   captureBodies?: boolean | undefined;
+  /**
+   * The CSP-bearing files this project actually has, keyed by path — read once in `gatherPlanInput`.
+   *
+   * Pre-read rather than given a reader, because `PlanInput` is the pure input to a pure planner and
+   * handing it an io would let any later step reach the disk from inside `buildPlan`.
+   */
+  cspSources?: Readonly<Record<string, string | undefined>> | undefined;
   /** Whether the `claude` CLI is installed (so we can register the MCP server globally). */
   claudeCli: boolean;
   /** Whether an `reticle` MCP server is already registered with Claude (any scope) — idempotency. */

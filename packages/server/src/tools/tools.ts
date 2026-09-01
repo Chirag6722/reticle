@@ -3,7 +3,7 @@ import { NoSessionAction, QueryBy, ReticleCommand, SnapshotMode } from '@reticle
 import { ReticleTool } from './tool-names.js';
 import { withSizeCost } from '../session/output-budget.js';
 import { applySnapshotDelta, SnapshotCache } from './snapshot-delta.js';
-import { asString, asNumber } from './tools-helpers.js';
+import { asRecord, asString, asNumber } from './tools-helpers.js';
 import { countSchema } from './numeric-bounds.js';
 import { normalizeQueryArgs } from './query-shape.js';
 import { paginateQueryResult } from './query-paginate.js';
@@ -268,15 +268,18 @@ export const RAW_TOOLS: ToolDef[] = [
         mode,
       }).then((raw) =>
         withSizeCost(
-          applySnapshotDelta(
-            raw,
-            {
-              sessionId: resolved.id,
-              scope: asString(args['scope']) ?? '',
-              mode,
-              diff: true === args['diff'],
-            },
-            SNAPSHOT_CACHE,
+          noteEmptyLeanTree(
+            applySnapshotDelta(
+              raw,
+              {
+                sessionId: resolved.id,
+                scope: asString(args['scope']) ?? '',
+                mode,
+                diff: true === args['diff'],
+              },
+              SNAPSHOT_CACHE,
+            ),
+            mode,
           ),
         ),
       );
@@ -688,5 +691,32 @@ export const RETIRED_FROM_SURFACE: string[] = [
   ReticleTool.REFRESH, // absorbed into reticle_navigate { reload: true }
   ReticleTool.WAIT_READY, // server-internal: the first live call already blocks for the session
 ];
+
+/**
+ * An empty `interactive` tree is a claim, and it is usually the wrong one.
+ *
+ * `mode:"interactive"` filters on ARIA role, and a large share of production UI carries none. On
+ * MarkText — a shipped Electron editor — it returns NOTHING while `mode:"full"` returns 47 nodes,
+ * because its whole block picker is `<div>`s with no role, no testid and no pointer cursor. This
+ * tool's own description recommends the lean mode, so an agent takes the cheap look, is handed `""`,
+ * and reads it as an empty page. It is the one shape of answer this product must never invent.
+ *
+ * The browser counts what leanness passed over, so the tool can say which of the two it is.
+ */
+function noteEmptyLeanTree(result: unknown, mode: string): unknown {
+  if (SnapshotMode.INTERACTIVE !== mode) return result;
+  const row = asRecord(result);
+  if (0 !== asNumber(row['nodes'])) return result;
+  const skipped = asNumber(row['leanSkipped']) ?? 0;
+  if (0 === skipped) return result;
+  return {
+    ...row,
+    note:
+      `no element on this page carries an interactive ARIA role, so this mode found nothing — ` +
+      `${String(skipped)} element(s) were passed over for leanness and this is NOT an empty page. ` +
+      `Take reticle_snapshot { mode: "full" } instead; the controls here are addressed by text or ` +
+      `by testid rather than by role.`,
+  };
+}
 
 export const TOOLS: ToolDef[] = applyMerges(RAW_TOOLS, MERGE_PLANS, RETIRED_FROM_SURFACE);
