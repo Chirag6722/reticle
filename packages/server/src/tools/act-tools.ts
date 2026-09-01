@@ -80,9 +80,9 @@ import {
 import { asString, asNumber, asRecord, sourceOf } from './tools-helpers.js';
 import { dispatchAct, preflightAct } from './act-preflight.js';
 import { followLostObservation } from './act-observation.js';
-import { type ToolDef, intentArg, sessionIdShape } from './tool-kit.js';
+import { type ToolDef, type ToolDeps, intentArg, sessionIdShape } from './tool-kit.js';
 import { asActionType, gradeOf } from './act-helpers.js';
-import { tryRealInput, rewriteUploadArgs } from './real-input-attempt.js';
+import { tryRealInput, rewriteUploadArgs, HOVER_NEEDS_POINTER_MSG } from './real-input-attempt.js';
 
 /**
  * Single dispatch point for every ACT and ACT_SEQUENCE command.
@@ -96,14 +96,8 @@ import { tryRealInput, rewriteUploadArgs } from './real-input-attempt.js';
  * base64 to the browser as if it were an inline content call.
  */
 export async function actCommand(
-  deps: Parameters<typeof rewriteUploadArgs>[0],
-  session: {
-    command: (
-      name: string,
-      args: Record<string, unknown>,
-      timeout?: number,
-    ) => Promise<import('@reticlehq/core').CommandResult>;
-  },
+  deps: ToolDeps,
+  session: Session,
   actArgs: Record<string, unknown>,
   timeoutMs?: number,
 ): Promise<import('@reticlehq/core').CommandResult> {
@@ -112,6 +106,21 @@ export async function actCommand(
     'string' === typeof actArgs['action'] ? actArgs['action'] : '',
     asRecord(actArgs['args']),
   );
+  // Sequence and act_and_wait dispatch through here without the ACT handler's tryRealInput.
+  // A synthetic hover reports dispatched/settled while CSS :hover never applies — drive a real
+  // pointer when one is available, otherwise refuse rather than lie.
+  if (ActionType.HOVER === actArgs['action']) {
+    const ref = asString(actArgs['ref']);
+    if (ref === undefined) throw new Error(HOVER_NEEDS_POINTER_MSG);
+    const real = await tryRealInput(deps, session, ref, ActionType.HOVER, actArgs);
+    if (real.result === undefined) throw new Error(HOVER_NEEDS_POINTER_MSG);
+    return {
+      kind: 'command_result',
+      id: 'hover',
+      ok: true,
+      result: { dispatched: true, settled: real.settled, ...asRecord(real.result) },
+    };
+  }
   const bridgeArgs: Record<string, unknown> = { ...actArgs, args: rewritten };
   return timeoutMs !== undefined
     ? session.command(ReticleCommand.ACT, bridgeArgs, timeoutMs)

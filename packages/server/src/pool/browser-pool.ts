@@ -31,6 +31,12 @@ export interface PooledPage {
    * compare against and pass.
    */
   screenshot?(opts?: { fullPage?: boolean }): Promise<Uint8Array>;
+  /**
+   * Move the real pointer to (x, y) so CSS `:hover` applies. OPTIONAL, like `screenshot`: a fake
+   * that does not implement it makes hover refuse rather than dispatch a synthetic mouseover that
+   * reports dispatched/settled while the styles never ran.
+   */
+  hover?(x: number, y: number): Promise<void>;
 }
 
 /** An isolated browsing context (cookies/storage). Real Playwright `BrowserContext` satisfies this. */
@@ -243,6 +249,25 @@ export class BrowserPool {
       // A capture that fails is not a broken lease. Report "could not capture" and leave the lease
       // usable — the alternative is losing a working context to one bad frame.
       return undefined;
+    }
+  }
+
+  /**
+   * Move the real pointer on a leased page, or false when this session is not a lease or cannot
+   * hover. Same optional-capability contract as screenshotLease: absence must read as "could not
+   * hover", never as a successful dispatch of a synthetic mouseover.
+   *
+   * Touches the lease like any other tool call, so hovering keeps it alive.
+   */
+  async hoverLease(sessionId: string, x: number, y: number): Promise<boolean> {
+    const lease = this.#active.get(sessionId);
+    if (lease === undefined || lease.page.hover === undefined) return false;
+    this.touch(sessionId);
+    try {
+      await lease.page.hover(x, y);
+      return true;
+    } catch {
+      return false;
     }
   }
 
