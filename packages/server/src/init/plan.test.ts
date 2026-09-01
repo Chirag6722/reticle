@@ -487,10 +487,10 @@ describe('buildPlan — CRA pairing token', () => {
       detection: { ...detection(Framework.CRA), typescript: false },
       craEntry: { path: 'src/index.js', source: "import React from 'react';\n" },
     });
-    const mod = plan.steps.find((s) => s.title === 'Reticle connect module');
+    const mod = maybeStep(plan, 'Reticle connect module');
     expect(mod?.write?.path).toBe('src/reticle-dev.js');
     expect(mod?.write?.content).not.toContain('export {}');
-    expect(plan.steps.find((s) => s.write?.path === 'src/reticle-dev.ts')).toBeUndefined();
+    expect(plan.steps.find((s) => 'src/reticle-dev.ts' === s.write?.path)).toBeUndefined();
   });
 
   it('warns that the env file is gitignored, so a teammate cloning must run init too', () => {
