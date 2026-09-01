@@ -35,7 +35,7 @@
     "@reticlehq/vite-plugin": "workspace:*",
     "@types/node": "^26.4.0",
     "@vitejs/plugin-vue": "^6.0.2",
-    "electron": "^43.4.1",
+    "electron": "^44.0.0",
     "electron-builder": "^26.0.12",
     "electron-vite": "^5.0.0",
     "eslint": "^9.39.1",
