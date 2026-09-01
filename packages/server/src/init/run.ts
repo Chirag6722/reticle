@@ -19,6 +19,7 @@ import { isConnectStep } from './connect-steps.js';
 import { CURSOR_RULE_PATH, RETICLE_MD_PATH } from './agent-rules.js';
 import { CRA_ENV_PATH } from './cra.js';
 import { defaultPairingTokenDir, readOrCreatePairingTokenSync } from '../bridge/pairing-token.js';
+import { formatGeneratedSource } from './format-generated.js';
 
 /** CRA's bundled entry, in the order create-react-app itself generates them. */
 const CRA_ENTRY_CANDIDATES = ['src/index.tsx', 'src/index.jsx', 'src/index.ts', 'src/index.js'];
@@ -734,7 +735,10 @@ function applyEffects(
       // is decoration, and this one is the first thing a new user reads. Same shape as #139.
       const wrote = spanSync('init.write', { target: s.target, path: write.path }, () => {
         try {
-          io.writeFile(write.path, write.content);
+          // Format connect modules with the project's Prettier when present (#684) — a clean
+          // install must not fail the project's own lint on a file we just wrote.
+          const content = formatGeneratedSource(write.content, write.path, io.cwd());
+          io.writeFile(write.path, content);
         } catch {
           return false; // a throw is the loud version of the same failure
         }

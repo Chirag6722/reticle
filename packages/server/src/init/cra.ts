@@ -114,24 +114,52 @@ export function craDevModuleFile(port: number | undefined, projectId?: string): 
   // of it.
   if (port !== undefined) fields.push(`url: '${bridgeWsUrl(port)}'`);
   if (projectId !== undefined && projectId.length > 0) fields.push(`projectId: '${projectId}'`);
-  const inline = fields.length > 0 ? `${fields.join(', ')}, ` : '';
+  // Multiline on purpose (#684): a single-line connect + console.error fails CRA boilerplate
+  // Prettier (printWidth 80) and the project's own lint blocks a clean install.
+  const connectFields = [
+    ...fields.map((f) => `      ${f},`),
+    '      ...(url.length > 0 ? { url } : {}),',
+    '      ...(token.length > 0 ? { token } : {}),',
+  ].join('\n');
+  // Split so every emitted line stays under a CRA boilerplate printWidth of 80 (#684). A single
+  // JSON.stringify of the whole note is ~290 characters and fails prettier-as-eslint on install.
+  // Chunks are joined with `+` in the emitted file; together they equal `[reticle] ${CRA_TOKEN_MISSING_NOTE}`.
+  const missingChunks = [
+    `[reticle] ${TOKEN_VAR} is not set, so Reticle `,
+    'cannot pair with the daemon. The pairing token is ',
+    `per-machine and ${CRA_ENV_PATH} is gitignored by `,
+    "CRA's template, so it does not survive a clone. Run ",
+    `\`${CLI} init\` in this project to write it for this `,
+    'machine.',
+  ].map((c) => JSON.stringify(c));
+  // Eight spaces match the indent inside `console.error(` below.
+  const missingExpr = missingChunks.join(' +\n        ');
   return `// Dev-only: connect Reticle. Imported for its side effect from src/index.tsx.
 //
-// CRA's public/index.html is a static template the bundler never processes for modules, so the
-// connect cannot live there. The pairing token arrives through REACT_APP_RETICLE_TOKEN because
-// REACT_APP_* is the only thing CRA inlines into browser code.
+// CRA's public/index.html is a static template the bundler never processes for
+// modules, so the connect cannot live there. The pairing token arrives through
+// REACT_APP_RETICLE_TOKEN because REACT_APP_* is the only thing CRA inlines
+// into browser code.
 if (process.env.NODE_ENV === 'development') {
   void import('@reticlehq/react').then(({ reticle, install }) => {
     install();
     const token = process.env.${TOKEN_VAR} ?? '';
-    // Written by \`reticle init\` from the daemon that was live when it ran, and refreshed by
-    // re-running it. CRA gives us no hook to resolve this at dev-server start, so if the daemon
-    // moves, re-run \`reticle init\` rather than editing the url below.
+    // Written by \`reticle init\` from the daemon that was live when it ran, and
+    // refreshed by re-running it. CRA gives us no hook to resolve this at
+    // dev-server start, so if the daemon moves, re-run \`reticle init\` rather
+    // than editing the url below.
     const url = process.env.${URL_VAR} ?? '';
-    // Loud on purpose: without this the only symptom is the bridge's generic auth failure.
-    if (token.length === 0) console.error(${JSON.stringify(`[reticle] ${CRA_TOKEN_MISSING_NOTE}`)});
+    // Loud on purpose: without this the only symptom is the bridge's generic
+    // auth failure.
+    if (token.length === 0) {
+      console.error(
+        ${missingExpr},
+      );
+    }
     // Still attempt it — a bridge running without a token pairs fine.
-    reticle.connect({ ${inline}...(url.length > 0 ? { url } : {}), ...(token.length > 0 ? { token } : {}) });
+    reticle.connect({
+${connectFields}
+    });
   });
 }
 

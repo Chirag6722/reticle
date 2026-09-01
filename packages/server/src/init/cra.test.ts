@@ -78,7 +78,13 @@ describe('the clone that has no token', () => {
   it('names the missing variable and the one command that fixes it', () => {
     const file = craDevModuleFile(4400, 'proj');
     expect(true).toBe(file.includes('console.error'));
-    expect(file).toContain(CRA_TOKEN_MISSING_NOTE);
+    // The note is split across short string concatenations so printWidth 80 passes (#684).
+    // Joined, it is still the same sentence the rest of the product names.
+    const arg = file.split('console.error(')[1]?.split(');')[0] ?? '';
+    const text = [...arg.matchAll(/"(?:\\.|[^"\\])*"/g)]
+      .map((m) => JSON.parse(m[0]) as string)
+      .join('');
+    expect(text).toBe(`[reticle] ${CRA_TOKEN_MISSING_NOTE}`);
     expect(CRA_TOKEN_MISSING_NOTE).toContain('REACT_APP_RETICLE_TOKEN');
     expect(CRA_TOKEN_MISSING_NOTE).toContain('.env.development.local');
     // The RUNNABLE invocation, not the bin name. This note is printed into a CRA app where nothing
