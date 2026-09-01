@@ -117,7 +117,13 @@ export const FLOW_TOOLS: ToolDef[] = [
       flowName: z
         .string()
         .describe(
-          'Name for the flow file (saved to .reticle/flows/<flowName>.json). Use again in reticle_flow{action:"load"} / reticle_flow_replay.',
+          'Which RECORDING to save — the name reticle_record{start} was called with. This is a lookup key, not the filename: pass `saveAs` to choose that.',
+        ),
+      saveAs: z
+        .string()
+        .optional()
+        .describe(
+          'Name for the flow file (.reticle/flows/<saveAs>.json), and the name reticle_flow{action:"load"} / reticle_flow_replay take. Omit to reuse the recording name.',
         ),
       intent: z
         .string()
@@ -178,7 +184,22 @@ export const FLOW_TOOLS: ToolDef[] = [
           code: FlowErrorCode.NO_RECORDING,
         });
       }
+      // The name to save AS, which is not the name looked up above.
+      //
+      // `flowName` selects the recording; a recording is named at `record{start}`, often `default`
+      // or whatever the drive began as. Every other flow tool reads a flow name as the thing you
+      // load and replay, so a caller naming their flow at save time had no way to do it and had to
+      // `mv` the file on disk. The error message below already had to explain this ambiguity; that
+      // it needed explaining is the bug (#698).
+      const saveAs = asString(args['saveAs']);
+      if (saveAs !== undefined && !isValidFlowName(saveAs)) {
+        return Promise.resolve({
+          error: `'${saveAs}' is not a usable flow name — it becomes a filename under .reticle/flows/.`,
+          code: FlowErrorCode.INVALID_NAME,
+        });
+      }
       // fold any structured annotations (expect/dynamic/success/intent) onto the saved flow.
+      // Keyed by the RECORDING name: annotations were left against the recording, not the file.
       const success = deps.annotations.success(name);
       // The inline argument wins over an annotation left from an earlier call: it is the more recent
       // statement, and it is the one the author just typed.
@@ -195,7 +216,8 @@ export const FLOW_TOOLS: ToolDef[] = [
       const emptyRefusal = emptyFlowRefusal(program.steps.length, name);
       if (emptyRefusal !== undefined) return Promise.resolve(emptyRefusal);
       const { flows, root } = flowsForSession(deps, projectId);
-      return flows.save(program, annotations, projectId).then(async (res) => {
+      const toSave = saveAs === undefined ? program : { ...program, name: saveAs };
+      return flows.save(toSave, annotations, projectId).then(async (res) => {
         if (!res.ok) return { error: flowErrorMessage(res.code), code: res.code };
         deps.annotations.clear(name);
         // Grade the saved flow's assertions so the agent learns immediately if it just saved a flow
