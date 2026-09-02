@@ -14,26 +14,25 @@ export interface PreflightIo {
   cwd(): string;
   /** Can this process write into the project root. */
   canWrite(): boolean;
-  /** Is this basename present in the project root. */
-  exists(name: string): boolean;
   /** Runs a command quietly for a yes/no check; true on exit code 0. */
   probe(command: string, args: readonly string[]): boolean;
 }
 
 /**
- * The package manager a lockfile commits the project to, and never `npm`.
- *
- * npm ships with node, so refusing for its absence would refuse on a machine that is fine — and the
- * absence of any lockfile means nothing has been committed to.
+ * npm ships with node, so refusing for its absence would refuse on a machine that is fine.
  */
-const LOCKFILES = [
-  { file: 'pnpm-lock.yaml', pm: 'pnpm' },
-  { file: 'yarn.lock', pm: 'yarn' },
-  { file: 'bun.lockb', pm: 'bun' },
-] as const;
+const ALWAYS_PRESENT = 'npm';
 
-/** The refusal to print, or undefined when this machine can run the install. */
-export function preflightRefusal(io: PreflightIo): string | undefined {
+/**
+ * The refusal to print, or undefined when this machine can run the install.
+ *
+ * `packageManager` is the one init RESOLVED, never a raw lockfile check. An inherited
+ * `pnpm-lock.yaml` at a monorepo root does not mean the app in `frontend/` uses pnpm — that app's own
+ * installed tree outranks an ancestor lockfile, and detect.ts already works this out. Re-deriving it
+ * here from `exists('pnpm-lock.yaml')` refused an npm app sitting under a pnpm monorepo on a machine
+ * with no pnpm, which the install gate proves must succeed.
+ */
+export function preflightRefusal(io: PreflightIo, packageManager: string): string | undefined {
   // First: on a read-only checkout nothing else matters, and one access check is cheaper and
   // quieter than spawning a subprocess to discover the same thing.
   if (!io.canWrite()) {
@@ -42,16 +41,14 @@ export function preflightRefusal(io: PreflightIo): string | undefined {
       'a capabilities file). Fix the permissions, or run init from a checkout you own.'
     );
   }
-  for (const { file, pm } of LOCKFILES) {
-    // The lockfile says what the PROJECT uses. It says nothing about what the machine has, and a
-    // pnpm-lock.yaml on an npm-only box is an ordinary Monday.
-    if (io.exists(file) && !io.probe(pm, ['--version'])) {
-      return (
-        `this project uses ${pm} (its lockfile says so) and ${pm} is not installed on this machine. ` +
-        `Install it (npm i -g ${pm}, or corepack enable), or pass --url with the address the app ` +
-        'already serves.'
-      );
-    }
+  // What the project resolves to says nothing about what the machine HAS, and a project committed to
+  // pnpm on an npm-only box is an ordinary Monday.
+  if (ALWAYS_PRESENT !== packageManager && !io.probe(packageManager, ['--version'])) {
+    return (
+      `this project uses ${packageManager} (its lockfile says so) and ${packageManager} is not ` +
+      `installed on this machine. Install it (npm i -g ${packageManager}, or corepack enable), or ` +
+      'pass --url with the address the app already serves.'
+    );
   }
   return undefined;
 }

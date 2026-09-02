@@ -849,23 +849,6 @@ function enterApp(options: InitOptions, io: InitIo, target: string, lead: string
 }
 
 export function runInit(options: InitOptions, io: InitIo): InitResult {
-  // Before anything is written. Both conditions make every later phase fail, and each one arrives
-  // far from its cause when it is not checked here — see preflight.ts. Skipped on the inner call of
-  // a monorepo redirect: the outer one already cleared the machine.
-  if (true !== options.redirected) {
-    const refusal = preflightRefusal({
-      cwd: () => io.cwd(),
-      canWrite: () => io.canWrite(),
-      exists: (name) => io.exists(name),
-      probe: (command, args) => io.probe(command, args),
-    });
-    if (refusal !== undefined) {
-      io.print(refusal);
-      io.print('');
-      io.print(FEEDBACK_HINT);
-      return { ok: false, applied: 0, manual: 1 };
-    }
-  }
   const result = runInitSteps(options, io);
   // The ask goes here, not in report(): report() is only the success-shaped path, and the exits that
   // matter most are the ones that never reach it — no package.json, an ambiguous workspace — where
@@ -955,6 +938,24 @@ function runInitSteps(options: InitOptions, io: InitIo): InitResult {
   // 1–6s per app with no explanation of the spread. These three spans split that number into detect
   // (filesystem probing), plan (pure), and apply (writes + package-manager and CLI subprocesses).
   const planInput = gatherPlanInput(options, io, pkgRaw);
+
+  // Before anything is written, and AFTER detection — the package manager to check is the one init
+  // RESOLVED, not a raw lockfile read. An inherited pnpm-lock.yaml at a monorepo root does not mean
+  // the app in frontend/ uses pnpm, and checking the file refused a scaffold the install gate proves
+  // must succeed. Both conditions make every later phase fail, and each arrives far from its cause
+  // when it is not checked here. See preflight.ts.
+  const refusal = preflightRefusal(
+    {
+      cwd: () => io.cwd(),
+      canWrite: () => io.canWrite(),
+      probe: (command, args) => io.probe(command, args),
+    },
+    planInput.detection.packageManager,
+  );
+  if (refusal !== undefined) {
+    io.print(refusal);
+    return { ok: false, applied: 0, manual: 1 };
+  }
   const plan = spanSync('init.plan', {}, () => buildPlan(planInput));
   const effects = options.dryRun
     ? { failed: new Set<string>(), skipped: new Set<string>(), degraded: new Map<string, string>() }
