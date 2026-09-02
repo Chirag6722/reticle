@@ -47,10 +47,13 @@ export function readPage(probe: PageProbe): PageFinding {
 export function describePage(finding: PageFinding, url: string): string {
   switch (finding) {
     case PageFinding.NOT_SERVED:
-      return `Nothing answered at ${url} when setup checked, so the SDK was never given the chance to load.`;
+      // Leads with the cause. The break-matrix asserts this phrasing because it is what a reader
+      // greps for after a timeout, and "nothing answered" reads as an observation about the check
+      // rather than a statement about the machine.
+      return `nothing is serving ${url} — the dev server is not up, so the SDK was never given the chance to load.`;
     case PageFinding.TLS_REFUSED:
       return (
-        `${url} answered over HTTPS with a certificate this process would not accept, so setup could ` +
+        `${url} answered over HTTPS with a certificate this process will not accept, so setup could ` +
         'not read the page. The app itself may be perfectly fine; re-run with ' +
         'NODE_TLS_REJECT_UNAUTHORIZED=0 if you trust this dev certificate, or use the http origin.'
       );

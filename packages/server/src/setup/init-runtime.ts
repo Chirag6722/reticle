@@ -93,10 +93,22 @@ export function continueAfterInit(
   }
 
   const context = result.context;
-  if (!result.ok || context === undefined) {
+  if (context === undefined) {
     // Nothing was established, so there is nothing to run against. init has already said why.
     process.exit(1);
   }
+  // A PENDING connect step is not a reason to skip the runtime phase, and treating it as one made
+  // `init` stop with "paste this snippet" while never looking at the app.
+  //
+  // `result.ok` is exactly `!connectPending`, so every project whose instrumentation needs a manual
+  // step — a plain-HTML app, anything with no recognised build config — exited here. The user was
+  // told to do something by hand and told nothing about whether their server was even up, whether
+  // the snippet had landed, or which url was checked. The runtime phase answers all three, and its
+  // answers are the actionable ones: "nothing is serving http://…", "the SDK is NOT in the page".
+  //
+  // The run still ends non-zero: the phase returns `ok: false` when no session appears, and a
+  // session appearing means the manual step WAS done and the app really did connect — which is a
+  // green worth reporting, not one to suppress.
 
   return runSetupCommand(
     {
@@ -113,6 +125,11 @@ export function continueAfterInit(
         undefined === parsed.timeoutSeconds
           ? DEFAULT_PHASE_TIMEOUT_MS
           : parsed.timeoutSeconds * 1000,
+      // Only when the caller actually said so — see connectBudgetMs. Omitted, the shape's policy
+      // keeps deciding, so nobody who passed nothing waits less than they used to.
+      ...(undefined === parsed.timeoutSeconds
+        ? {}
+        : { connectBudgetMs: parsed.timeoutSeconds * 1000 }),
       pollMs: POLL_MS,
       ...(undefined === context.devCommand ? {} : { devCommand: context.devCommand }),
       ...(undefined === parsed.flow ? {} : { flow: parsed.flow }),

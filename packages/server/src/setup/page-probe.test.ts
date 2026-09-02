@@ -47,3 +47,35 @@ describe('the sentence each finding contributes', () => {
     for (const f of Object.values(PageFinding)) expect(describePage(f, URL)).toContain(URL);
   });
 });
+
+/**
+ * The wording is a contract, not prose.
+ *
+ * These sentences were written in setup/reticle.mjs and the break-matrix asserts them verbatim —
+ * it is a negative control, and it judges a setup script by whether its failures NAME the cause.
+ * Porting the runtime phase into `init` carried the behaviour across but not the words, so eight
+ * scenarios reported "never said 'nothing is serving'" against a run that had diagnosed the problem
+ * correctly and described it differently.
+ *
+ * Two rules follow. The sentence leads with what is wrong rather than with the observation, and it
+ * names the url — an agent greps this, and a human reads it after waiting out a timeout.
+ */
+describe('the diagnosis says what the break-matrix asserts', () => {
+  it('leads with "nothing is serving" and names the url', () => {
+    const line = describePage(PageFinding.NOT_SERVED, 'http://127.0.0.1:59985/');
+    expect(line).toContain('nothing is serving');
+    expect(line).toContain('http://127.0.0.1:59985/');
+  });
+
+  // "would not accept" vs "will not accept" — one word, and the scenario that pins it is the one
+  // where the server is UP and healthy, so a wrong reading sends someone to start it again.
+  it('says the certificate is one this process WILL not accept', () => {
+    const line = describePage(PageFinding.TLS_REFUSED, 'https://127.0.0.1:59993/');
+    expect(line).toContain('certificate this process will not accept');
+  });
+
+  it('still names the two readable outcomes distinctly', () => {
+    expect(describePage(PageFinding.SDK_MISSING, 'http://x/')).toContain('SDK is NOT in the page');
+    expect(describePage(PageFinding.SDK_PRESENT, 'http://x/')).toContain('SDK IS in the page');
+  });
+});

@@ -234,3 +234,85 @@ describe('opting out', () => {
     expect(r.ok).toBe(false);
   });
 });
+
+/**
+ * The words the break-matrix asserts.
+ *
+ * It is a negative control: it builds environments designed to break setup and judges each one on
+ * whether the output NAMES the cause. The sentences were written in setup/reticle.mjs; porting the
+ * runtime phase into `init` carried the behaviour but not the wording, so scenarios reported
+ * `never said "..."` against runs that had diagnosed the problem correctly.
+ *
+ * Pinned here because prose is the deliverable on this path — a user reads it after waiting out a
+ * timeout, and an agent greps it.
+ */
+describe('the dev-server diagnoses name their cause', () => {
+  const notesFrom = async (
+    over: Partial<SetupEffects>,
+    input: Partial<SetupInput> = {},
+  ): Promise<string> => {
+    const lines: string[] = [];
+    await runSetupPhases({ ...INPUT, ...input }, world({ ...over, note: (l) => lines.push(l) }));
+    return lines.join('\n');
+  };
+
+  // "stop here rather than invent one" — the SKILL.md rule. Inventing a dev command is how a setup
+  // script runs the wrong thing and reports success.
+  it('refuses to invent a dev command, in those words', async () => {
+    const out = await notesFrom({}, { devCommand: undefined });
+    expect(out).toContain('rather than invent');
+  });
+
+  it('says the dev server exited', async () => {
+    const out = await notesFrom({ devServerExited: () => true, devServerOutput: () => '' });
+    expect(out).toContain('dev server exited');
+  });
+
+  // Both halves matter: a server that prints nothing but IS listening is the CRA case and must not
+  // be failed, so the sentence has to say that both were checked.
+  it('says it checked BOTH the output and the ports', async () => {
+    const out = await notesFrom({
+      devServerOutput: () => 'starting...',
+      observedPorts: () => [],
+      devServerQuietForMs: () => 60_000,
+    });
+    expect(out).toContain('neither printed a URL nor bound a port');
+  });
+});
+
+/**
+ * An explicit `--timeout` is the caller's budget, including for the connect wait.
+ *
+ * The deadline was `max(phaseTimeoutMs, policy.connectBudgetMs)`, so a caller asking for 3 seconds
+ * got the policy's 120 — the flag could only ever LENGTHEN the wait, never shorten it. A timeout the
+ * tool ignores is a lie, and it is the reason every hostile-environment scenario that reaches this
+ * phase was killed by its own harness before setup could say what was wrong.
+ *
+ * The policy budget stays the DEFAULT — a desktop shell genuinely needs longer, and nobody who said
+ * nothing should get a shorter wait than before.
+ */
+describe('the connect wait honours an explicit budget', () => {
+  const ranFor = async (over: Partial<SetupInput>): Promise<number> => {
+    let last = 0;
+    const fx = world({
+      listSessions: () => Promise.resolve([]),
+      now: () => (last += 1000),
+      probePage: () => Promise.resolve({ served: false, sdkInPage: false }),
+    });
+    // A supplied url skips the dev-server phase, so what this measures is the CONNECT wait and
+    // nothing else. Without it the numbers came from the dev-server loop and said nothing about the
+    // budget under test.
+    await runSetupPhases({ ...INPUT, suppliedUrl: 'http://localhost:5173', ...over }, fx);
+    return last;
+  };
+
+  it('gives up at the budget the caller named', async () => {
+    const elapsed = await ranFor({ connectBudgetMs: 3_000, phaseTimeoutMs: 3_000 });
+    expect(elapsed).toBeLessThan(30_000);
+  });
+
+  it('falls back to the policy budget when the caller said nothing', async () => {
+    const elapsed = await ranFor({ phaseTimeoutMs: 1_000 });
+    expect(elapsed).toBeGreaterThan(100_000);
+  });
+});

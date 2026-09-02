@@ -79,6 +79,16 @@ export interface SetupInput {
   readonly devCommand?: string | undefined;
   /** The app is already served here, so nothing is started. */
   readonly suppliedUrl?: string | undefined;
+  /**
+   * The caller's own budget for the connect wait, when they named one.
+   *
+   * Absent, the shape's policy decides — a desktop shell genuinely needs longer than a browser tab.
+   * Present, it WINS, including when it is shorter: the deadline used to be
+   * `max(phaseTimeoutMs, policy)`, so `--timeout 3` could only ever lengthen the wait. A timeout the
+   * tool ignores is a lie, and it left every hostile-environment check killed by its own harness
+   * before setup could say what was wrong.
+   */
+  readonly connectBudgetMs?: number | undefined;
   readonly openBrowser: boolean;
   readonly drive: boolean;
   /** Web, Electron or Tauri. Desktop changes three things; see desktop-shape.ts. */
@@ -130,7 +140,10 @@ export async function runSetupPhases(input: SetupInput, fx: SetupEffects): Promi
   if (undefined === url) {
     if (undefined === input.devCommand) {
       note(
-        'No dev command: the project names no dev, start or serve script, and one is not invented.',
+        // "stop here rather than invent one" is the SKILL.md rule, and the words are the contract —
+        // inventing a dev command is how a setup script runs the wrong thing and reports success.
+        'No dev command: the project names no dev, start or serve script, and there is no --url. ' +
+          'Stopping here rather than invent one — pass --dev-cmd or --url to say what serves this app.',
       );
       return stop(input, SetupPhase.DEV_SERVER, {}, notes);
     }
@@ -162,7 +175,13 @@ export async function runSetupPhases(input: SetupInput, fx: SetupEffects): Promi
         return stop(input, SetupPhase.DEV_SERVER, {}, notes);
       }
       if (WaitVerdict.HUNG === verdict) {
-        note('The dev server stopped producing output without ever serving a page.');
+        // Says BOTH were checked. A server that prints nothing but IS listening is the CRA case and
+        // must not be failed, so a reader has to be able to tell "we looked at the log" from "we
+        // looked at the log AND the ports".
+        note(
+          'The dev server neither printed a URL nor bound a port, so setup has nothing to open. ' +
+            'Check its log, or pass --url with the address it serves.',
+        );
         return stop(input, SetupPhase.DEV_SERVER, {}, notes);
       }
       await fx.sleep(input.pollMs);
@@ -177,7 +196,8 @@ export async function runSetupPhases(input: SetupInput, fx: SetupEffects): Promi
   // Never for a desktop app: its own window is the client, and a browser tab would be a SECOND
   // session that is not the app.
   if (input.openBrowser && policy.openBrowser) await fx.openBrowser(url);
-  const deadline = fx.now() + Math.max(input.phaseTimeoutMs, policy.connectBudgetMs);
+  const deadline =
+    fx.now() + (input.connectBudgetMs ?? Math.max(input.phaseTimeoutMs, policy.connectBudgetMs));
   let session: CandidateSession | null = null;
   for (;;) {
     session = pickSession(await fx.listSessions(), url, before);
