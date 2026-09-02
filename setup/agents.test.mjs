@@ -44,7 +44,10 @@ is(
 is(
   'windows vscode goes to AppData',
   by(plan({}, 'win32'), 'vscode-user').file,
-  '/home/u/AppData/Roaming/Code/User/mcp.json',
+  // Backslashes, because a win32 row is a WINDOWS path. This expectation used to be the posix form,
+  // which was only ever produced by running the win32 planner on a mac: the join followed the host
+  // rather than the `os` argument beside it. See joinFor in agents.mjs.
+  '\\home\\u\\AppData\\Roaming\\Code\\User\\mcp.json',
 );
 is('linux zed follows XDG', by(plan({}, 'linux'), 'zed').file, '/home/u/.config/zed/settings.json');
 

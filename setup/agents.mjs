@@ -20,7 +20,18 @@
  */
 
 import { homedir, platform } from 'node:os';
-import { join } from 'node:path';
+import { posix, win32 } from 'node:path';
+
+/**
+ * Join the way the TARGET platform joins, not the way this machine does.
+ *
+ * Every planner here already takes an `os` and picks a per-platform path from it, then joined the
+ * pieces with the host's own separator. On a Windows machine that produced `C:\\Users\\me/Library/...`
+ * for the darwin rows, so the planners were only ever correct for the platform they ran on. The CLI
+ * had the identical defect and the identical fix; `agents.test.mjs` asserts every platform's rows
+ * from one host, so it fails on Windows and passes on macOS until the join follows the argument.
+ */
+const joinFor = (os) => ('win32' === os ? win32.join : posix.join);
 
 export const Confidence = { OFFICIAL: 'official', COMMUNITY: 'community' };
 
@@ -239,8 +250,8 @@ const p = (spec, os) => spec[os] ?? spec.linux;
  */
 export function planAgents({ home = homedir(), os = platform(), exists, readFile }) {
   return CLIENTS.map((c) => {
-    const file = join(home, p(c.paths, os));
-    const detected = exists(join(home, p(c.marker, os)));
+    const file = joinFor(os)(home, p(c.paths, os));
+    const detected = exists(joinFor(os)(home, p(c.marker, os)));
     // Writing a NEW yaml file is safe — there is nobody's formatting to destroy. Editing one is
     // not: `mcpServers` there is a list of named entries, and a naive rewrite loses comments,
     // anchors and ordering. So: create when absent, hand it to a human when present.
@@ -261,7 +272,8 @@ export function planAgents({ home = homedir(), os = platform(), exists, readFile
         why: 'no config yet, so a valid one can be written outright',
       };
     }
-    const layoutKnown = c.parentMarker !== undefined && exists(join(home, p(c.parentMarker, os)));
+    const layoutKnown =
+      c.parentMarker !== undefined && exists(joinFor(os)(home, p(c.parentMarker, os)));
     if (!detected && c.confidence === Confidence.COMMUNITY && !layoutKnown) {
       return {
         id: c.id,
@@ -398,12 +410,12 @@ export function applySkills(io, { home = homedir(), os = platform() } = {}) {
   const written = [];
   for (const c of CLIENTS) {
     if (c.skillDir === undefined) continue;
-    if (!io.exists(join(home, p(c.marker, os)))) continue; // never scaffold a skills tree for an absent agent
-    const dir = join(home, c.skillDir);
+    if (!io.exists(joinFor(os)(home, p(c.marker, os)))) continue; // never scaffold a skills tree for an absent agent
+    const dir = joinFor(os)(home, c.skillDir);
     try {
       io.mkdir(dir);
-      io.writeFile(join(dir, 'SKILL.md'), SKILL_BODY);
-      written.push({ id: c.id, file: join(dir, 'SKILL.md') });
+      io.writeFile(joinFor(os)(dir, 'SKILL.md'), SKILL_BODY);
+      written.push({ id: c.id, file: joinFor(os)(dir, 'SKILL.md') });
     } catch {
       /* an unwritable home directory is not a reason to fail an install */
     }

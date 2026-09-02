@@ -294,8 +294,15 @@ const SCENARIOS = [
     name: 'no-browser-to-open',
     why: 'the case a user named directly: Chromium/Chrome absent, or a headless box (CI, a container, SSH, WSL with no host browser). Nothing will ever dial in from a tab, and without saying so setup waits out the whole budget and blames the SDK wiring',
     build: () => app({ 'package.json': pkg({ dev: 'true' }) }),
-    // A shimmed npx whose `open` fails the way a missing browser fails. This is the ONE scenario
-    // that must NOT pass --no-open: the open path is the thing under test.
+    // A PATH with no browser LAUNCHER on it, which is how a headless box actually looks.
+    //
+    // This used to shim `npx` and refuse an `open` subcommand, from when setup opened a browser that
+    // way. The CLI spawns the platform launcher directly — `open` on darwin, `xdg-open` elsewhere —
+    // so the npx shim intercepted nothing, and on any machine that HAS a browser the launcher simply
+    // succeeded: the scenario could never fail on macOS, and never tested what it claims anywhere.
+    //
+    // Shimming the launcher itself works on both platforms and is the real condition. This is also
+    // the ONE scenario that must NOT pass --no-open: the open path is the thing under test.
     run: (dir) => {
       const bin = join(dir, 'nobrowser');
       mkdirSync(bin, { recursive: true });
@@ -303,6 +310,15 @@ const SCENARIOS = [
       // recursed until the timeout, which produced no output at all — a scenario that fails for a
       // reason having nothing to do with what it is testing.
       const realNpx = execFileSync('sh', ['-c', 'command -v npx'], { encoding: 'utf8' }).trim();
+      // The launcher the CLI will actually spawn, replaced by one that fails the way a missing
+      // browser fails: it starts fine and exits non-zero with nothing to open.
+      for (const launcher of ['open', 'xdg-open']) {
+        writeFileSync(
+          join(bin, launcher),
+          `#!/bin/sh\necho "Error: browser executable doesn't exist at /root/.cache/ms-playwright/chromium/chrome-linux/chrome" >&2\nexit 1\n`,
+        );
+        chmodSync(join(bin, launcher), 0o755);
+      }
       writeFileSync(
         join(bin, 'npx'),
         // Two interceptions, because setup now resolves the CLI binary once and calls it directly:
