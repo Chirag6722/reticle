@@ -135,11 +135,15 @@ interface StartPathSession {
 function currentPathOf(session: StartPathSession): string | undefined {
   const routes = session.eventsSince(0).filter((e) => e.type === EventType.ROUTE_CHANGE);
   const data = routes.at(-1)?.data ?? {};
+  // pathname + hash, because `startPath` is compared against this and must stay NAVIGABLE. Reading
+  // the pathname alone made both sides `/` on a hash router — always "same path", so the hint never
+  // fired however far the tab had drifted, on the router desktop renderers use by default.
   const observed = asString(data['pathname']) ?? asString(data['to']);
-  if (observed !== undefined) return observed;
+  if (observed !== undefined) return `${observed}${asString(data['hash']) ?? ''}`;
   if (session.url === undefined) return undefined;
   try {
-    return new URL(session.url).pathname;
+    const parsed = new URL(session.url);
+    return `${parsed.pathname}${parsed.hash}`;
   } catch {
     return undefined;
   }

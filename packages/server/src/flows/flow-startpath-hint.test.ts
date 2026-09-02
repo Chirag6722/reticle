@@ -58,3 +58,36 @@ describe('startPathMismatchHint — wrong-page drift becomes an actionable next 
     expect(startPathMismatchHint(flow('/login'), session)).toBeUndefined();
   });
 });
+
+/**
+ * On a hash router the document pathname is `/` on every page, and BOTH sides of this comparison
+ * read only the pathname — so `samePath('/', '/')` was always true and the hint never fired,
+ * whatever route the tab had drifted to. Symmetrically blind, so it produced no WRONG hint; it
+ * produced no hint at all, on the router a packaged Electron/Tauri renderer uses by default.
+ *
+ * `startPath` has to stay NAVIGABLE — the hint tells the caller to `reticle_navigate` to it — so the
+ * value is `pathname + hash`, not the bare router path.
+ */
+const onHashRoute = (hash: string): { eventsSince(c: number): ReticleEvent[] } => ({
+  eventsSince: () => [
+    { t: 1, type: EventType.ROUTE_CHANGE, sessionId: 's', data: { pathname: '/', hash } },
+  ],
+});
+
+describe('startPathMismatchHint sees a hash router', () => {
+  it('fires when the tab drifted to a different hash route', () => {
+    const hint = startPathMismatchHint(flow('/#/cart'), onHashRoute('#/home'));
+    expect(hint).toContain('/#/cart');
+    expect(hint).toContain('/#/home');
+  });
+
+  it('stays quiet when the tab is on the recorded hash route', () => {
+    expect(startPathMismatchHint(flow('/#/cart'), onHashRoute('#/cart'))).toBeUndefined();
+  });
+
+  // A path-routed app must behave exactly as before.
+  it('leaves a path-routed app alone', () => {
+    expect(startPathMismatchHint(flow('/cart'), onRoute('/home'))).toContain('/cart');
+    expect(startPathMismatchHint(flow('/cart'), onRoute('/cart'))).toBeUndefined();
+  });
+});
