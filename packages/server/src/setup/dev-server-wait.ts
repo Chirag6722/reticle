@@ -26,6 +26,14 @@ export interface WaitFacts {
   readonly quietForMs: number;
   /** Milliseconds since the wait began. */
   readonly elapsedMs: number;
+  /**
+   * How long silence may mean "still starting" on THIS machine. Defaults to QUIET_MEANS_HUNG_MS.
+   *
+   * Passed in rather than read from the platform here, so this stays a pure decision and exactly one
+   * caller owns the platform check. 45s is generous on a laptop and tight on a cold Windows runner,
+   * where a first `npm run dev` optimises dependencies before Vite prints a line.
+   */
+  readonly quietMeansHungMs?: number;
 }
 
 export const WaitVerdict = {
@@ -56,7 +64,9 @@ export function judgeWait(facts: WaitFacts): WaitVerdict {
   if (facts.launcherExited) return WaitVerdict.DEAD;
   if (facts.elapsedMs >= WAIT_CEILING_MS) return WaitVerdict.HUNG;
   // Output IS progress. Silence is what distinguishes a build from a wedge.
-  return facts.quietForMs >= QUIET_MEANS_HUNG_MS ? WaitVerdict.HUNG : WaitVerdict.WAITING;
+  return facts.quietForMs >= (facts.quietMeansHungMs ?? QUIET_MEANS_HUNG_MS)
+    ? WaitVerdict.HUNG
+    : WaitVerdict.WAITING;
 }
 
 /** A url the dev server announced, if it has announced one. Never composed, only read. */

@@ -12,7 +12,21 @@
  * and a real browser to find out what happens when neither works.
  */
 
-import { judgeWait, urlToWatch, WaitVerdict } from './dev-server-wait.js';
+import { judgeWait, QUIET_MEANS_HUNG_MS, urlToWatch, WaitVerdict } from './dev-server-wait.js';
+
+/**
+ * Windows gets longer to say something before silence counts as a wedge.
+ *
+ * A first `npm run dev` on a cold Windows runner optimises dependencies before the bundler prints a
+ * line, and 45s of quiet is inside that window. Measured on the install gate: the Vue scaffold was
+ * declared hung, `init` exited 1, and the gate then started the very same app and connected to it
+ * on the next line. Nothing was wrong with the app; the wait was too impatient for the platform.
+ *
+ * Only the QUIET budget moves. The ceiling is unchanged, and a launcher that exits is still dead
+ * immediately, so this buys patience for a starting server and never for a broken one.
+ */
+const WINDOWS_QUIET_MEANS_HUNG_MS = 3 * 60_000;
+const WINDOWS_QUIET_MEANS_HUNG_MS_APPLIES = 'win32' === process.platform;
 import { pickSession, type CandidateSession } from './session-pick.js';
 import { readPage, describePage, type PageProbe } from './page-probe.js';
 import { remainingSteps, type Progress } from './remaining-steps.js';
@@ -158,6 +172,9 @@ export async function runSetupPhases(input: SetupInput, fx: SetupEffects): Promi
         serving,
         quietForMs: fx.devServerQuietForMs(),
         elapsedMs: fx.now() - startedAt,
+        quietMeansHungMs: WINDOWS_QUIET_MEANS_HUNG_MS_APPLIES
+          ? WINDOWS_QUIET_MEANS_HUNG_MS
+          : QUIET_MEANS_HUNG_MS,
       });
       if (WaitVerdict.READY === verdict && undefined !== watching) {
         url = watching;

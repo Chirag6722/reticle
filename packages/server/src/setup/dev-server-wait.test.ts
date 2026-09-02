@@ -75,3 +75,46 @@ describe('which url to watch', () => {
     expect(urlToWatch('starting...', [])).toBeUndefined();
   });
 });
+
+/**
+ * How long silence is allowed to mean "still starting" is a property of the MACHINE, not the code.
+ *
+ * 45s of quiet is generous on a developer's laptop and tight on a cold Windows CI runner, where a
+ * first `npm run dev` optimises dependencies before Vite prints anything. Measured on the install
+ * gate: the Vue scaffold was declared hung, `init` exited 1, and the gate then started the same app
+ * and connected to it immediately. The app was fine; the patience was not.
+ *
+ * The budget is passed IN rather than read from the platform here, so this stays a pure decision and
+ * the caller owns the one platform check.
+ */
+describe('the quiet budget is the callers to set', () => {
+  const facts = (over: Partial<Parameters<typeof judgeWait>[0]> = {}) => ({
+    output: 'vite v5 starting...',
+    launcherExited: false,
+    serving: false,
+    quietForMs: 50_000,
+    elapsedMs: 60_000,
+    ...over,
+  });
+
+  it('still calls a long silence hung on the default budget', () => {
+    expect(judgeWait(facts())).toBe(WaitVerdict.HUNG);
+  });
+
+  it('keeps waiting when the caller allows a longer silence', () => {
+    expect(judgeWait(facts({ quietMeansHungMs: 180_000 }))).toBe(WaitVerdict.WAITING);
+  });
+
+  // The other verdicts must not soften: a launcher that exited is dead however patient we are.
+  it('does not let a longer budget hide a dead launcher', () => {
+    expect(judgeWait(facts({ quietMeansHungMs: 180_000, launcherExited: true }))).toBe(
+      WaitVerdict.DEAD,
+    );
+  });
+
+  it('does not let a longer budget outlast the ceiling', () => {
+    expect(judgeWait(facts({ quietMeansHungMs: 180_000, elapsedMs: WAIT_CEILING_MS }))).toBe(
+      WaitVerdict.HUNG,
+    );
+  });
+});
