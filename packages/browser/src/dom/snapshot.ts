@@ -162,8 +162,7 @@ function formatLine(
   // A testid stands in for the accessible name when there is none. Including a role-less control and
   // then printing it as a bare `- generic` is worse than leaving it out: it is visible and it cannot
   // be addressed. This is the name its author gave it.
-  const testid = el.getAttribute('data-testid') ?? '';
-  const label = name.length > 0 ? name : testid;
+  const label = name;
   const namePart = label.length > 0 ? ` "${label}"` : '';
   const refPart = INTERACTIVE.has(role) || label.length > 0 ? ` (ref=${refs.refFor(el)})` : '';
   const valuePart = value !== undefined && value.length > 0 ? ` [value="${value}"]` : '';
@@ -303,12 +302,7 @@ function visit(child: Element, depth: number, ctx: WalkCtx, inLive: boolean): vo
   // A testid still makes an element MEANINGFUL, so `full` keeps it and can name and address it. It
   // just is not evidence that the element is ACTIONABLE, which is the only question lean mode asks.
   const meaningful =
-    actionable ||
-    child.hasAttribute('data-testid') ||
-    role !== 'generic' ||
-    name.length > 0 ||
-    text.length > 0 ||
-    layout.length > 0;
+    actionable || role !== 'generic' || name.length > 0 || text.length > 0 || layout.length > 0;
   const include = lean ? actionable : meaningful;
   // Counted, not just skipped. An empty INTERACTIVE tree is indistinguishable from an empty page,
   // and on a real app the difference is everything: MarkText's block picker is 20+ live controls

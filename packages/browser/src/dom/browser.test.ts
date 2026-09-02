@@ -441,9 +441,14 @@ describe('interactive mode stays the actionable view', () => {
     expect(snap.tree).not.toContain('just text');
   });
 
+  // The count is what turns an empty tree into "look again in full mode", and it is the part of the
+  // MarkText fix that survives. It counts MEANINGFUL nodes only — a bare div with no name, role or
+  // layout is not meaningful in either mode, so a named one is the shape that exercises this.
   it('counts what it passed over, so an empty tree is not an empty page', () => {
-    document.body.innerHTML = `<div data-testid="kpi-deploys">40</div>`;
-    expect(buildSnapshot({ mode: SnapshotMode.INTERACTIVE }).leanSkipped).toBeGreaterThan(0);
+    document.body.innerHTML = `<div aria-label="block picker"><span>x</span></div>`;
+    const snap = buildSnapshot({ mode: SnapshotMode.INTERACTIVE });
+    expect(snap.tree.trim()).toBe('');
+    expect(snap.leanSkipped ?? 0).toBeGreaterThan(0);
   });
 
   it('keeps a real control with no role, when it has one', () => {
@@ -451,23 +456,31 @@ describe('interactive mode stays the actionable view', () => {
     expect(buildSnapshot({ mode: SnapshotMode.INTERACTIVE }).tree).toContain('Go');
   });
 
-  // The testid still earns its keep in `full`: it names an element that has no accessible name, and
-  // a named element gets a ref, which is what makes it addressable rather than merely visible.
-  it('names and addresses a testid container in full mode', () => {
+  // A testid does not put an element into `full` either, and does not name one there.
+  //
+  // Naming testid-bearing generics and minting a ref for them read well in isolation — a bare
+  // `- generic` is visible and unaddressable — but `full` is the DEFAULT mode and the price is paid
+  // on every snapshot. Measured A/B on the bench app's dashboard, same view, same build otherwise:
+  // 65 nodes and 622 tokens with it, 58 nodes and 540 without. +15% on the most-called read, for
+  // handles the caller almost always already knows.
+  //
+  // `reticle_query { by: "testid" }` addresses these directly and cost 31 tokens for one element,
+  // which is the right tool for a value you want to ASSERT on rather than drive.
+  it('does not add a testid-only container to full mode', () => {
     document.body.innerHTML = `<div data-testid="area-chart"><svg></svg></div>`;
-    const tree = buildSnapshot({ mode: SnapshotMode.FULL }).tree;
-    expect(tree).toContain('area-chart');
-    expect(tree).toMatch(/ref=/);
+    expect(buildSnapshot({ mode: SnapshotMode.FULL }).tree).not.toContain('area-chart');
   });
 
-  // Not every shape: a div whose only content is text collapses to that text, so the testid does not
-  // appear in either tree. Its content is still readable, and `reticle_query { by: "testid" }`
-  // addresses it directly — which is the right tool for a value you want to ASSERT on rather than
-  // drive. Written down because it is the one thing lost by keeping display elements out of the
-  // actionable view.
-  it('shows the text of a text-only testid div, without the handle', () => {
+  // Content is never lost: a div whose only content is text still shows that text.
+  it('still shows the text of a text-only testid div', () => {
     document.body.innerHTML = `<div data-testid="kpi-deploys">40</div>`;
     expect(buildSnapshot({ mode: SnapshotMode.FULL }).tree).toContain('40');
+  });
+
+  // An element with a real accessible name is untouched by any of this.
+  it('keeps a named generic in full mode', () => {
+    document.body.innerHTML = `<div aria-label="Reticle agent session"><span>x</span></div>`;
+    expect(buildSnapshot({ mode: SnapshotMode.FULL }).tree).toContain('Reticle agent session');
   });
 
   it('still excludes ordinary content, so the mode stays lean', () => {
