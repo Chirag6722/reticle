@@ -12,6 +12,12 @@ import type { InitResult } from '../init/run.js';
 import { confirmInstall, nodeConfirmDeps } from '../init/confirm.js';
 import { writeLicenseKey } from './license-key.js';
 import { registerOtherAgents, runSetupCommand } from './setup-command.js';
+import { bridgeOccupied } from './bridge-port.js';
+import { relaunchDecision } from './relaunch.js';
+import { claudeTranscriptExists, codexSessionFor } from './transcripts.js';
+import { probePresence } from '../daemon/port-presence.js';
+import { probeDaemon } from '../mcp/proxy-daemon-probe.js';
+import { fetchStatus } from '../cli/cli-launch.js';
 import { collectEnv, DEFAULT_DRIVE_BUDGET_USD, DEFAULT_PHASE_TIMEOUT_MS } from './setup-options.js';
 
 /** How often the runtime phases look again: fast enough not to be the wait, slow enough to be free. */
@@ -40,6 +46,8 @@ export interface InitRuntimeArgs {
   readonly env?: string[] | undefined;
   readonly url?: string | undefined;
   readonly timeoutSeconds?: number | undefined;
+  /** Restart the calling client so IT gets the tools — see relaunch.ts. */
+  readonly relaunch?: boolean | undefined;
   readonly driveModel?: string | undefined;
   readonly licenseKey?: string | undefined;
 }
@@ -66,7 +74,7 @@ const licenseIo = {
  * both keep the old ending. Everyone else gets the rest, because writing files was never the same
  * thing as an install working.
  */
-export function continueAfterInit(
+export async function continueAfterInit(
   parsed: InitRuntimeArgs,
   result: InitResult,
   io: RuntimePrintIo,
@@ -109,6 +117,36 @@ export function continueAfterInit(
   // The run still ends non-zero: the phase returns `ok: false` when no session appears, and a
   // session appearing means the manual step WAS done and the app really did connect — which is a
   // green worth reporting, not one to suppress.
+
+  // What a restart should do, decided and printed. Never performed: opening a terminal is not
+  // something a one-shot command should do behind a flag, and the half worth having is the refusal —
+  // `--resume` on an id with no transcript opens an EMPTY conversation that looks exactly like it
+  // worked. See relaunch.ts.
+  if (true === parsed.relaunch) {
+    io.print(
+      relaunchDecision({
+        ...(undefined === process.env['CLAUDE_CODE_SESSION_ID']
+          ? {}
+          : { claudeSessionId: process.env['CLAUDE_CODE_SESSION_ID'] }),
+        ...(undefined === codexSessionFor(cwd) ? {} : { codexSessionId: codexSessionFor(cwd) }),
+        transcriptExists: claudeTranscriptExists,
+        cwd,
+      }).message,
+    );
+    io.print('');
+  }
+
+  // Before the connect wait, never after: a bridge held by a stranger makes a session impossible,
+  // so going ahead spends the entire budget and then reports what reads as an instrumentation
+  // problem — the one place that is fine. See bridge-port.ts.
+  const refusal = bridgeOccupied(
+    await probePresence(port, { tcpOpen: probeDaemon, status: fetchStatus }),
+    port,
+  );
+  if (refusal !== undefined) {
+    io.print(refusal);
+    process.exit(1);
+  }
 
   return runSetupCommand(
     {

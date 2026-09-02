@@ -70,6 +70,7 @@ const INIT_DEFAULTS = {
   json: false,
   drive: true,
   open: true,
+  relaunch: false,
   agents: true,
   url: undefined,
   timeoutSeconds: undefined,

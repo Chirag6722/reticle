@@ -16,7 +16,8 @@
  */
 
 /** Script names a JS project uses to run itself, in the order we would pick them. */
-const CANDIDATES = ['dev', 'start', 'serve'] as const;
+export const DEV_SCRIPT_NAMES = ['dev', 'start', 'serve'] as const;
+const CANDIDATES = DEV_SCRIPT_NAMES;
 
 export const DevScriptChoice = {
   /** Something already answers on the port. Use it; never replace a server the user is running. */

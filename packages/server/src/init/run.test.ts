@@ -89,6 +89,8 @@ function memoryIo(
       written[key(p)] = c;
     },
     exists: (p) => key(p) in present || key(p) in written,
+    // The in-memory project is always writable; preflight has its own tests for when it is not.
+    canWrite: () => true,
     homeDir: () => HOME,
     cwd: () => '/project',
     rootFiles: () => {

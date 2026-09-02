@@ -1,4 +1,5 @@
 import type { InitIo } from './run.js';
+import { DEV_SCRIPT_NAMES } from './dev-script.js';
 
 /**
  * The file names that say what a directory IS, shared by everything that has to ask.
@@ -113,13 +114,36 @@ export function workspaceParents(sources: WorkspaceSources): string[] {
 /** Deps that mark a directory as a runnable web app even when it has no bundler config file. */
 const APP_DEPS = ['next', 'vite'] as const;
 
+function hasDevScript(pkgRaw: string): boolean {
+  try {
+    const parsed: unknown = JSON.parse(pkgRaw);
+    const scripts =
+      'object' === typeof parsed && parsed !== null
+        ? (parsed as { scripts?: unknown }).scripts
+        : undefined;
+    if ('object' !== typeof scripts || null === scripts) return false;
+    const named = scripts as Record<string, unknown>;
+    return DEV_SCRIPT_NAMES.some((n) => 'string' === typeof named[n] && '' !== named[n]);
+  } catch {
+    // A manifest that will not parse says nothing either way, and this is a filter, not a verdict.
+    return false;
+  }
+}
+
 function looksLikeApp(dir: string, io: Pick<InitIo, 'exists' | 'readFile'>): boolean {
   const pkgRaw = io.readFile(`${dir}/${PACKAGE_JSON}`);
   if (null === pkgRaw) return false;
   const configs = [...VITE_CONFIG_CANDIDATES, ...NEXT_CONFIG_CANDIDATES];
   if (configs.some((c) => io.exists(`${dir}/${c}`))) return true;
   // `next.config` is optional in Next, so the dependency list is the other half of the signal.
-  return APP_DEPS.some((d) => pkgRaw.includes(`"${d}"`));
+  if (APP_DEPS.some((d) => pkgRaw.includes(`"${d}"`))) return true;
+  // And the honest third: an app somebody can SERVE. Asking only for a bundler missed every app
+  // built on anything else — Remix, Astro, a plain node server — and in a monorepo missing it means
+  // init never redirects, wires the ROOT, and reports ✓ for files nothing compiles.
+  //
+  // A monorepo root has no dev script by design, and a package that can only be BUILT is not the app
+  // somebody is working in, so this stays a filter rather than matching every directory.
+  return hasDevScript(pkgRaw);
 }
 
 /**

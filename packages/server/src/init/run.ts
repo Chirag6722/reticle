@@ -6,6 +6,7 @@
 
 import { dirname, join } from 'node:path';
 import { CSP_FILES } from './csp-doctor.js';
+import { preflightRefusal } from './preflight.js';
 import { noPackageJsonMessage } from './non-js-project.js';
 import { devCommandFrom } from './dev-script.js';
 import { restartHint, FEEDBACK_HINT } from './closing-hint.js';
@@ -289,6 +290,8 @@ export interface InitIo {
   exec(command: string, args: readonly string[]): boolean;
   /** Runs a subprocess quietly (no stdio) for a yes/no check; returns true on exit code 0. */
   probe(command: string, args: readonly string[]): boolean;
+  /** Can this process write into the project root — see preflight.ts. */
+  canWrite(): boolean;
   print(line: string): void;
 }
 
@@ -846,6 +849,23 @@ function enterApp(options: InitOptions, io: InitIo, target: string, lead: string
 }
 
 export function runInit(options: InitOptions, io: InitIo): InitResult {
+  // Before anything is written. Both conditions make every later phase fail, and each one arrives
+  // far from its cause when it is not checked here — see preflight.ts. Skipped on the inner call of
+  // a monorepo redirect: the outer one already cleared the machine.
+  if (true !== options.redirected) {
+    const refusal = preflightRefusal({
+      cwd: () => io.cwd(),
+      canWrite: () => io.canWrite(),
+      exists: (name) => io.exists(name),
+      probe: (command, args) => io.probe(command, args),
+    });
+    if (refusal !== undefined) {
+      io.print(refusal);
+      io.print('');
+      io.print(FEEDBACK_HINT);
+      return { ok: false, applied: 0, manual: 1 };
+    }
+  }
   const result = runInitSteps(options, io);
   // The ask goes here, not in report(): report() is only the success-shaped path, and the exits that
   // matter most are the ones that never reach it — no package.json, an ambiguous workspace — where

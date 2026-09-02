@@ -11,6 +11,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { planAgentConfigs, type PlatformPaths } from './agent-configs.js';
 import { AppShape, readShape } from './desktop-shape.js';
+import { stopOnInterrupt } from './interrupt.js';
 import { applyAgentPlan, applyAgentSkills } from './agent-writer.js';
 import { ApprovalOutcome, grantAutoApproval } from './auto-approve.js';
 import { agentIo } from './agent-io.js';
@@ -236,6 +237,10 @@ export async function runSetupCommand(
     note: print,
   };
 
+  // A `finally` does not run on SIGINT, and this phase owns a detached dev server — see interrupt.ts.
+  const releaseSignals = stopOnInterrupt(() => {
+    server.stop();
+  }, process);
   try {
     const outcome = await runSetupPhases({ ...input, shape }, effects);
     // The app stays up only when there is something worth watching.
@@ -247,6 +252,7 @@ export async function runSetupCommand(
       ...(undefined === lastDrive?.costUsd ? {} : { driveCostUsd: lastDrive.costUsd }),
     };
   } finally {
+    releaseSignals();
     server.stop();
   }
 }

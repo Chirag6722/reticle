@@ -13,6 +13,7 @@ import {
   type Detection,
 } from './detect.js';
 import type { FoundStore } from './capabilities.js';
+import { installFailureHint } from './install-hint.js';
 import { claudeAddCommand, mcpManual, mcpWindowsNote } from './mcp.js';
 import { NodePlatform } from '../platform.js';
 import {
@@ -745,17 +746,6 @@ function unpinnedRetryNote(version: string | undefined, pm: PackageManager): str
     `the pinned install of ${wanted} failed, so the newest version the registry WOULD accept was ` +
     `installed instead. That may not match the daemon — if the agent reports protocol errors, check ` +
     `\`versionSkew\` in reticle_sessions.${remedy}`
-  );
-}
-
-function installFailureHint(pm: PackageManager): string {
-  if (pm !== PackageManager.PNPM) return 'If the version was refused, install the SDK yourself.';
-  return (
-    'If pnpm reported ERR_PNPM_NO_MATURE_MATCHING_VERSION, its minimumReleaseAge setting is holding ' +
-    'this release back. Either wait out the window, or allow these packages explicitly:\n' +
-    '  pnpm config set minimumReleaseAgeExclude "@reticlehq/*"\n' +
-    'Do NOT drop the version pin — unpinned, pnpm installs an older SDK against a newer daemon, and ' +
-    'that mismatch surfaces as a -32000 with nothing naming a version.'
   );
 }
 

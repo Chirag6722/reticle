@@ -942,3 +942,37 @@ describe('the generated Next component is valid JavaScript', () => {
     expect(src).not.toContain('globalThis');
   });
 });
+
+/**
+ * The install talks to a REGISTRY, and the fallback never said so.
+ *
+ * Offline, behind a proxy that blocks npmjs, or pointed at a corporate mirror that is down: the
+ * install fails and the hint talked about version pinning and pnpm's maturity window. Both are real
+ * causes and neither is this one, so the reader goes hunting through their own dependency versions
+ * for a problem that is entirely about reachability.
+ *
+ * The registry is worth naming for every package manager, because every one of them fetches.
+ */
+describe('a failed dependency install names the registry', () => {
+  const installFallback = (pm: PackageManager): string => {
+    const plan = buildPlan(
+      input({
+        detection: { ...detection(Framework.VITE), packageManager: pm },
+        // The fallback only exists on an APPLY step — a manual step prints the command instead.
+        options: { port: undefined, mcp: true, install: true },
+      }),
+    );
+    return plan.steps.find((s) => 'Install dependencies' === s.title)?.exec?.fallback ?? '';
+  };
+
+  it('names the registry whatever the package manager', () => {
+    for (const pm of [PackageManager.NPM, PackageManager.PNPM, PackageManager.YARN]) {
+      expect(installFallback(pm)).toContain('registry');
+    }
+  });
+
+  // Still says the pnpm-specific thing: the maturity hold is a real cause and this does not replace it.
+  it('keeps the pnpm maturity hint beside it', () => {
+    expect(installFallback(PackageManager.PNPM)).toContain('minimumReleaseAge');
+  });
+});

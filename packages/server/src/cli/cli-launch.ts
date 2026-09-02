@@ -222,16 +222,50 @@ export async function openInBrowser(
   return run(cmd, args);
 }
 
-/** null when the launcher started; the failure message when it could not be run at all. */
+/**
+ * What a finished launcher means, or null when nothing is wrong.
+ *
+ * Exported for its own tests: the headless case is the one that matters and it cannot be produced
+ * by spawning a real launcher on a developer machine.
+ */
+export function launcherFailure(code: number | null, signal: NodeJS.Signals | null): string | null {
+  if (null !== signal) return `the browser launcher was killed by ${signal}`;
+  // null code with no signal: it never reported an outcome in the window we waited. Some desktop
+  // launchers stay attached rather than handing off, and inventing a failure there would be worse
+  // than the silence — it would send someone to fix a browser that opened.
+  if (null === code || 0 === code) return null;
+  return (
+    `the browser launcher exited ${String(code)} — on a machine with no browser (CI, a container, ` +
+    'an SSH session, WSL with no host browser) it starts fine and then has nothing to open'
+  );
+}
+
+/** How long to wait for the launcher to hand off before assuming it did. */
+const LAUNCHER_EXIT_MS = 2_000;
+
+/** null when the launcher opened something; the failure message when it did not. */
 function defaultRun(cmd: string, args: string[]): Promise<string | null> {
   return new Promise((resolve) => {
     const child = spawn(cmd, args, { detached: true, stdio: 'ignore' });
+    let settled = false;
+    const finish = (value: string | null): void => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
     // An unhandled 'error' on a ChildProcess throws — and ENOENT on the launcher is exactly the case
     // this function exists to report, so it must be listened for either way.
-    child.on('error', (err: Error) => resolve(err.message));
-    child.on('spawn', () => {
+    child.on('error', (err: Error) => finish(err.message));
+    // The EXIT, not the spawn. Answering "did the command begin" reported success on every headless
+    // box, where the launcher begins perfectly well and then finds nothing to open — see
+    // launcherFailure. Every launcher we use hands off and exits immediately, so this costs nothing
+    // on the path where it works.
+    child.on('exit', (code, signal) => finish(launcherFailure(code, signal)));
+    // ...and a launcher that stays attached must not hold up the install.
+    const timer = setTimeout(() => {
       child.unref();
-      resolve(null);
-    });
+      finish(null);
+    }, LAUNCHER_EXIT_MS);
+    timer.unref?.();
   });
 }

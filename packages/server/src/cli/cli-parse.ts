@@ -219,6 +219,15 @@ const JSON_FLAG = '--json';
 const NO_DRIVE_FLAG = '--no-drive';
 const NO_OPEN_FLAG = '--no-open';
 const NO_AGENTS_FLAG = '--no-agents';
+/**
+ * Restart the calling client so IT gets the tools.
+ *
+ * The flag was accepted by the prototype and not by `init`, so passing it printed the whole usage
+ * text. `init` decides what a restart should do — including refusing an id with no transcript, which
+ * is the case that looks exactly like success — and prints it; performing the restart is the
+ * caller's, because opening a terminal is not something a one-shot command should do behind a flag.
+ */
+const RELAUNCH_FLAG = '--relaunch';
 const URL_FLAG = '--url';
 const TIMEOUT_FLAG_INIT = '--timeout';
 const DRIVE_MODEL_FLAG = '--drive-model';
@@ -252,6 +261,7 @@ export type CliResult =
       captureBodies: boolean;
       json: boolean;
       drive: boolean;
+      relaunch: boolean;
       open: boolean;
       agents: boolean;
       url: string | undefined;
@@ -562,6 +572,7 @@ type InitFlags =
       captureBodies: boolean;
       json: boolean;
       drive: boolean;
+      relaunch: boolean;
       open: boolean;
       agents: boolean;
       url: string | undefined;
@@ -585,6 +596,7 @@ function parseInitFlags(args: string[]): InitFlags {
   let json = false;
   let drive = true;
   let open = true;
+  let relaunch = false;
   let agents = true;
   let url: string | undefined;
   let timeoutSeconds: number | undefined;
@@ -628,6 +640,8 @@ function parseInitFlags(args: string[]): InitFlags {
       drive = false;
     } else if (arg === NO_OPEN_FLAG) {
       open = false;
+    } else if (arg === RELAUNCH_FLAG) {
+      relaunch = true;
     } else if (arg === NO_AGENTS_FLAG) {
       agents = false;
     } else if (arg === URL_FLAG) {
@@ -679,6 +693,7 @@ function parseInitFlags(args: string[]): InitFlags {
     json,
     drive,
     open,
+    relaunch,
     agents,
     url,
     timeoutSeconds,
@@ -766,6 +781,7 @@ export function parseCliArgs(
         json: r.json,
         drive: r.drive,
         open: r.open,
+        relaunch: r.relaunch,
         agents: r.agents,
         url: r.url,
         timeoutSeconds: r.timeoutSeconds,
