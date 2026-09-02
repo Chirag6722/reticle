@@ -4,6 +4,12 @@ All notable changes to the **`@reticlehq/*`** packages are documented here (each
 
 ## [Unreleased]
 
+## [2.13.1] — 2026-09-02
+
+### Fixed
+
+- **`@reticlehq/server` — `init` no longer gives up on a cold Windows dev server that is still starting.** Silence from the dev server means it is wedged, and the budget for that was a flat 45 seconds. On Windows that is inside the window a first `npm run dev` spends optimising dependencies before the bundler prints its first line, so `init` reported "the dev server neither printed a URL nor bound a port", exited 1, and left an install failed on an app that was perfectly healthy — found by the install gate, which started the same scaffold immediately afterwards and connected to it. Windows now allows three minutes of quiet; every other platform is unchanged. Only the quiet budget moved: the overall ceiling is untouched, and a launcher that exits is still dead immediately, so this buys patience for a server that is starting and none at all for one that is broken.
+
 ## [2.13.0] — 2026-09-02
 
 ### Added
