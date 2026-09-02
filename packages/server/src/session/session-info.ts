@@ -17,6 +17,15 @@ export interface SessionInfo {
   title?: string;
   adapters: string[];
   hasCapabilities: boolean;
+  /**
+   * Which shell answered: `web`, `electron` or `tauri`.
+   *
+   * Absent — never defaulted to `web` — on an SDK too old to report one, because the guess is wrong
+   * on exactly the machines this exists to tell apart. Two windows on the same url are otherwise
+   * indistinguishable, and a browser tab is not a desktop app: it has none of its IPC, and it does
+   * not render like it.
+   */
+  runtime?: string;
   /** Present only when the page's SDK version differs from the daemon's — see version-skew.ts. */
   versionSkew?: string;
   /** ms since the SDK last reported anything (silence ⇒ likely throttled). */
@@ -61,6 +70,7 @@ interface SessionView {
   title: string;
   adapters: string[];
   hasCapabilities: boolean;
+  runtime: string | undefined;
   versionSkew: string | undefined;
   hidden: boolean;
   health: () => SessionHealth;
@@ -88,6 +98,8 @@ export function buildSessionInfo(session: SessionView): SessionInfo {
     ...('' === session.title.trim() ? {} : { title: session.title }),
     adapters: session.adapters,
     hasCapabilities: session.hasCapabilities,
+    // Omitted when the page never said, so absence stays readable as "unknown" rather than "web".
+    ...(session.runtime === undefined ? {} : { runtime: session.runtime }),
     // On every listing, not buried in a log — skew explains failures that read as app bugs.
     ...(session.versionSkew === undefined ? {} : { versionSkew: session.versionSkew }),
     hidden: session.hidden,

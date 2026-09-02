@@ -200,7 +200,14 @@ export async function runSetupPhases(input: SetupInput, fx: SetupEffects): Promi
     fx.now() + (input.connectBudgetMs ?? Math.max(input.phaseTimeoutMs, policy.connectBudgetMs));
   let session: CandidateSession | null = null;
   for (;;) {
-    session = pickSession(await fx.listSessions(), url, before);
+    // On a desktop app, only the desktop window counts. AppShape and the runtime a page reports use
+    // the same three names, so the shape IS the requirement — see session-pick.
+    session = pickSession(
+      await fx.listSessions(),
+      url,
+      before,
+      isDesktop(input.shape) ? input.shape : undefined,
+    );
     if (null !== session) break;
     if (deadline <= fx.now()) break;
     await fx.sleep(input.pollMs);

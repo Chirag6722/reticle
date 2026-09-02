@@ -316,3 +316,44 @@ describe('the connect wait honours an explicit budget', () => {
     expect(elapsed).toBeGreaterThan(100_000);
   });
 });
+
+/**
+ * The requirement has to REACH pickSession, which is the half a unit test of pickSession cannot see.
+ *
+ * A desktop shell serves its renderer from an ordinary dev server, so a browser tab left open on the
+ * same origin looks like the app here — live, on the url, SDK present — while having none of its IPC.
+ */
+describe('a desktop setup is only satisfied by the desktop window', () => {
+  const onUrl = (sessionId: string, runtime?: string): CandidateSession => ({
+    sessionId,
+    url: 'http://localhost:5173',
+    ...(runtime === undefined ? {} : { runtime }),
+  });
+
+  it('does not accept a browser tab as an electron app', async () => {
+    const outcome = await runSetupPhases(
+      { ...INPUT, shape: AppShape.ELECTRON, drive: false },
+      world({ listSessions: () => Promise.resolve([onUrl('tab', 'web')]) }),
+    );
+    expect(outcome.ok).toBe(false);
+    expect(outcome.reachedPhase).toBe(SetupPhase.CONNECT);
+  });
+
+  it('accepts the electron window', async () => {
+    const outcome = await runSetupPhases(
+      { ...INPUT, shape: AppShape.ELECTRON, drive: false },
+      world({ listSessions: () => Promise.resolve([onUrl('shell', 'electron')]) }),
+    );
+    expect(outcome.ok).toBe(true);
+    expect(outcome.sessionId).toBe('shell');
+  });
+
+  // Web is unchanged: the runtime is not a distinction there.
+  it('still accepts a browser tab for a web app', async () => {
+    const outcome = await runSetupPhases(
+      { ...INPUT, shape: AppShape.WEB, drive: false },
+      world({ listSessions: () => Promise.resolve([onUrl('tab', 'web')]) }),
+    );
+    expect(outcome.ok).toBe(true);
+  });
+});

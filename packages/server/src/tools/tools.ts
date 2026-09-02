@@ -73,6 +73,12 @@ export const RAW_TOOLS: ToolDef[] = [
             title: z.string().optional(),
             adapters: z.array(z.string()),
             hasCapabilities: z.boolean(),
+            runtime: z
+              .string()
+              .optional()
+              .describe(
+                "Which shell answered: web, electron or tauri. Absent on an SDK too old to report one — never defaulted, because a browser tab and a desktop window on the same url are otherwise indistinguishable and only one of them has the app's IPC.",
+              ),
             versionSkew: z
               .string()
               .optional()

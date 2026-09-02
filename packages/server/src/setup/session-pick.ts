@@ -20,6 +20,8 @@ export interface CandidateSession {
   readonly lastSeenMs?: number;
   /** False when the capabilities file init scaffolded was never completed. */
   readonly hasCapabilities?: boolean;
+  /** Which shell answered. Absent on an SDK too old to report one — see requiredRuntime below. */
+  readonly runtime?: string;
 }
 
 /** Sorts a hidden tab after a visible one; among equals, the least stale first. */
@@ -41,9 +43,28 @@ export function pickSession(
   sessions: readonly CandidateSession[],
   url: string,
   before: ReadonlySet<string> = new Set(),
+  /**
+   * The runtime this project's app RUNS as, when it is a desktop one.
+   *
+   * A desktop shell serves its renderer from an ordinary dev server, so its window and a browser tab
+   * open on the same origin are indistinguishable by url. Driving the tab passes every check here —
+   * live, on the url, SDK present — while having none of the app's IPC and none of its commands, so
+   * the verdict describes a different program that happens to share an address.
+   *
+   * Undefined for a web project, where the runtime is not a distinction worth making.
+   */
+  requiredRuntime?: string,
 ): CandidateSession | null {
   const wanted = String(url).replace(/\/$/, '');
-  const onUrl = sessions.filter((s) => (s?.url ?? '').startsWith(wanted));
+  const onUrl = sessions
+    .filter((s) => (s?.url ?? '').startsWith(wanted))
+    // An SDK too old to report a runtime is ACCEPTED rather than excluded: re-running init is the
+    // only upgrade path an existing user has, and refusing them their own install to enforce a
+    // field their SDK cannot send would break the one route out.
+    .filter(
+      (s) =>
+        undefined === requiredRuntime || undefined === s.runtime || requiredRuntime === s.runtime,
+    );
   if (0 === onUrl.length) return null;
   const fresh = onUrl.filter((s) => !before.has(s.sessionId));
   const pool = 0 < fresh.length ? fresh : onUrl;

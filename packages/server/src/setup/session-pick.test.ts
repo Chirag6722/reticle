@@ -81,3 +81,56 @@ describe('choosing the session to drive', () => {
     expect(picked?.sessionId).toBe('recent');
   });
 });
+
+/**
+ * A browser tab is not a desktop app.
+ *
+ * The filter was url alone, and a desktop shell serves its renderer from an ordinary dev server — so
+ * an Electron window and a browser tab open on the same origin are indistinguishable here. Driving
+ * the tab passes: it is live, it is on the url, it has the SDK. It has none of the app's IPC, none
+ * of its commands, and it does not render like it, so every verdict from it is about a different
+ * program that happens to share a URL. That is the false green this module exists to prevent, in the
+ * one shape it could not see.
+ *
+ * Only ever a REQUIREMENT for desktop. On the web the runtime carries no such distinction, and an
+ * SDK too old to report one must not be excluded from its own install.
+ */
+const URL = 'http://localhost:5173/';
+
+describe('a desktop install is verified by the desktop window', () => {
+  const tab = { sessionId: 'browser', url: URL, runtime: 'web' };
+  const app = { sessionId: 'shell', url: URL, runtime: 'electron' };
+
+  it('picks the desktop window over a browser tab on the same url', () => {
+    expect(pickSession([tab, app], URL, new Set(), 'electron')?.sessionId).toBe('shell');
+  });
+
+  it('refuses a browser tab when the desktop window has not appeared', () => {
+    expect(pickSession([tab], URL, new Set(), 'electron')).toBeNull();
+  });
+
+  it('does not confuse one desktop runtime for the other', () => {
+    expect(pickSession([app], URL, new Set(), 'tauri')).toBeNull();
+  });
+
+  // An SDK too old to report a runtime must still be able to install. Excluding it would refuse the
+  // upgrade path — the only route an existing user has.
+  it('accepts a session that reports no runtime at all', () => {
+    const older = { sessionId: 'old', url: URL };
+    expect(pickSession([older], URL, new Set(), 'electron')?.sessionId).toBe('old');
+  });
+
+  // Unchanged on the web: the runtime is not a distinction there, and a desktop window pointed at a
+  // web project is still that project's app.
+  it('requires nothing when the project is a web app', () => {
+    expect(pickSession([tab], URL, new Set(), undefined)?.sessionId).toBe('browser');
+    expect(pickSession([app], URL, new Set(), undefined)?.sessionId).toBe('shell');
+  });
+
+  // The existing preferences still decide among the sessions that qualify.
+  it('still prefers a live window over a throttled one', () => {
+    const sleeping = { sessionId: 'bg', url: URL, runtime: 'electron', throttled: true };
+    const awake = { sessionId: 'fg', url: URL, runtime: 'electron' };
+    expect(pickSession([sleeping, awake], URL, new Set(), 'electron')?.sessionId).toBe('fg');
+  });
+});

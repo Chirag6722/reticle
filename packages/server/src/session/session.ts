@@ -298,6 +298,7 @@ export class Session {
       title: this.title,
       adapters: this.adapters,
       hasCapabilities: this.hasCapabilities,
+      runtime: this.#runtime,
       versionSkew: this.versionSkew,
       hidden: this.#hidden,
       health: () => this.health(),
