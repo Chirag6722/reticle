@@ -244,10 +244,28 @@ async function startLocalRegistry() {
   const log = [];
   proc.stdout.on('data', (d) => log.push(String(d)));
   proc.stderr.on('data', (d) => log.push(String(d)));
+  // A dead registry and a slow one produced the SAME message — "did not start", 90 seconds later,
+  // with an empty log — because nothing watched the process itself. That happened on Windows and cost
+  // a whole run's coverage to a cause nobody could name. `error` catches a spawn that never began
+  // (a .cmd resolved wrong, a missing binary); `exit` catches one that began and died.
+  let spawnError;
+  let exited;
+  proc.on('error', (err) => {
+    spawnError = err;
+  });
+  proc.on('exit', (code, signal) => {
+    exited = `exit ${String(code)}${signal === null ? '' : ` (${signal})`}`;
+  });
 
-  const deadline = Date.now() + 90_000;
+  // `npx --yes verdaccio@latest` resolves and can cold-download the package before it serves
+  // anything, and Windows runners are markedly slower at that file IO. 90s is generous for a healthy
+  // start and tight for a cold install, which is the shape of the failure seen here. Raised on
+  // Windows only, so a genuine hang on the other platforms still surfaces at the same speed.
+  const deadline = Date.now() + (WIN ? 240_000 : 90_000);
   let up = false;
-  while (Date.now() < deadline) {
+  // Stop the moment the process is gone: waiting out 90 seconds for something that already died
+  // buys nothing and hides why.
+  while (Date.now() < deadline && spawnError === undefined && exited === undefined) {
     if (await reachable(`${REGISTRY}/-/ping`)) {
       up = true;
       break;
@@ -256,7 +274,18 @@ async function startLocalRegistry() {
   }
   if (!up) {
     killTree(proc.pid);
-    throw new Error(`verdaccio did not start on ${REGISTRY}: ${log.join('').slice(-400)}`);
+    const cause =
+      spawnError !== undefined
+        ? `spawn failed: ${spawnError.message}`
+        : exited !== undefined
+          ? `the process ${exited} before the registry answered`
+          : `timed out after ${String(WIN ? 240 : 90)}s with the process still alive`;
+    const tail = log.join('').trim();
+    throw new Error(
+      `verdaccio did not start on ${REGISTRY} — ${cause}. ` +
+        `command: ${verdaccio.cmd} ${verdaccio.args.join(' ')}. ` +
+        `output: ${0 === tail.length ? '(nothing on stdout or stderr)' : tail.slice(-400)}`,
+    );
   }
 
   // From here on the registry is RUNNING, and every remaining step can throw. Left unguarded, one
