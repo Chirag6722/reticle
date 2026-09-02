@@ -670,6 +670,9 @@ importers:
       '@types/ws':
         specifier: ^8.5.13
         version: 8.18.1
+      yaml:
+        specifier: ^2.9.0
+        version: 2.9.0
     optionalDependencies:
       pixelmatch:
         specifier: ^7.2.0
