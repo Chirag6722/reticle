@@ -3,7 +3,7 @@ name: install-and-verify
 description: Verify that a web app change actually works by driving the running app from the inside (DOM, network, routing, console, framework state) instead of screenshots or guessing. Use after any user-facing change, when a fix is claimed but unproven, when a test passes but the UI is broken, or when you need a real verdict rather than "looks right". Also use to install and wire up Reticle in a project that does not have it yet.
 license: Apache-2.0
 metadata:
-  version: 2.9.0
+  version: 2.12.0
   homepage: https://www.reticle.sh
   repository: https://github.com/reticlehq/reticle
 ---
@@ -57,7 +57,7 @@ Questions you must not ask, because the repo you are sitting in already answers 
 There are exactly three places you may stop, and none is a question about a preference:
 
 1. **No recognisable dev script in `package.json`.** Say so; do not invent one.
-2. **Your host asks the human to approve a command.** That prompt belongs to the host. Never bypass or suppress it, and take a refusal as the answer.
+2. **Your host asks the human to approve a command.** That prompt belongs to the host. Never bypass or suppress it, and take a refusal as the answer. `init` writing a pre-approval rule for the `reticle` server is not that: it is a scoped, announced config change the human asked for by running the command, and it covers only Reticle's own tools.
 3. **On a first install only, the client restart that loads the MCP tools** (step 2). Even then, keep going until the app is running and connected, and stop for the restart last, with only the drive left.
 
 Setup requires a client restart, which ends your turn. This skill survives that restart. **After the restart, re-read this file and resume at the step you were on.** Do not start over, and do not skip forward.
@@ -69,7 +69,7 @@ Setup requires a client restart, which ends your turn. This skill survives that 
 **One command. It does all of it, and it ends with a verdict.**
 
 ```bash
-npx @reticlehq/server@latest init --flow "<the journey worth proving>"
+RETICLE_INSTALL_SOURCE=npx_skill npx @reticlehq/server@latest init --flow "<the journey worth proving>"
 ```
 
 It detects the framework and package manager, wires the build config, installs the SDK, registers the MCP server, starts the dev server, opens the app, waits for a session to connect from inside it, drives one flow, and saves it so every later check is one call with no model in the loop. It exits non-zero if no verdict was produced, and prints exactly what is left to do.

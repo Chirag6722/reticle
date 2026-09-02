@@ -35,6 +35,10 @@ jobs:
       # are joined and compared, and a separator mismatch would silently match nothing — i.e. refuse
       # every codex restart on the platform, quietly, which reads as "the feature does not work".
       - run: node setup/codex-session.test.mjs
+      # Which agent clients get an MCP entry, on which platform, and which are left for a human. It
+      # passes and always did — it simply had no runner, so nothing would have noticed if it stopped.
+      # A test nobody runs is not coverage; it is a file that looks like coverage.
+      - run: node setup/agents.test.mjs
 
   # The gates that need no network and no browser, on every OS — including the Node-version refusal,
   # which is the one guard that has to work on a machine too old to run the rest of the script.

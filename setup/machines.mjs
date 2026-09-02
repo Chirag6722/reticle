@@ -30,6 +30,25 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+/**
+ * What SHIPS, not the prototype beside it.
+ *
+ * These profiles were written against setup/reticle.sh, whose runtime phase has since been ported
+ * into the CLI as `init`. Pointing them at the launcher measured a superseded entry point: green
+ * there says nothing about the command users actually run. break-matrix.mjs made the same move for
+ * the same reason, and this file is its companion — it breaks WHOLE MACHINES rather than one fault
+ * at a time, so it has to be aimed at the same target or the pair disagree about what is under test.
+ */
+const CLI = join(HERE, '..', 'packages', 'server', 'dist', 'cli.js');
+/**
+ * The shell entry point, for the profiles that judge ITS guards rather than the install.
+ *
+ * `noob` shims `node` to report v16 and expects the version refusal — a guard that lives in the
+ * launcher, because a Node too old to parse reticle.mjs never reaches anything inside it. Running
+ * that through `process.execPath` is not a weaker test, it is a MEANINGLESS one: execPath is an
+ * absolute path, so it ignores the PATH the profile just built and finds a healthy Node every time.
+ * break-matrix.mjs keeps two scenarios on the launcher for exactly this reason.
+ */
 const LAUNCHER = join(HERE, 'reticle.sh');
 /** A real, small, never-instrumented app. Scaffolded once and cloned per profile. */
 const BASE = '/tmp/aha/app';
@@ -67,14 +86,16 @@ function pathWith(dir, tools) {
   return `${bin}:/usr/bin:/bin:/usr/sbin:/sbin`;
 }
 
-function run(dir, env, extra = []) {
+function run(dir, env, extra = [], viaLauncher = false) {
+  // The launcher when the profile is about the launcher's own guards, the shipped CLI otherwise.
+  const [file, head] = viaLauncher ? ['/bin/sh', [LAUNCHER]] : [process.execPath, [CLI, 'init']];
   try {
     return {
       code: 0,
       out: execFileSync(
-        '/bin/sh',
+        file,
         [
-          LAUNCHER,
+          ...head,
           '--json',
           '--timeout',
           '25',
@@ -107,7 +128,11 @@ const MACHINES = [
       }),
     env: (dir) => ({ PATH: pathWith(dir, ['node', 'npx', 'pnpm', 'npm', 'claude', 'git']) }),
     // pnpm named by the lockfile and present: it must be used, and the run must reach the app.
-    expect: (out) => out.includes('"packageManager": "pnpm"'),
+    // `packageManager` was a field of the PROTOTYPE's json and the CLI has no equivalent, so the
+    // claim has to be made from what `init --json` can actually show: it got past install and boot
+    // to the connect gate. On this machine — everything present, pnpm named and installed — an
+    // install that chose a manager it could not run never reaches that phase at all.
+    expect: (out) => /"reachedPhase":\s*"(connect|drive|done)"/.test(out),
   },
   {
     name: 'vibe-coder',
@@ -122,6 +147,8 @@ const MACHINES = [
   },
   {
     name: 'noob',
+    // The launcher's OWN Node-version guard — see LAUNCHER. Through the CLI this cannot fail.
+    launcher: true,
     who: 'first week: Node 16 from a tutorial, no pnpm, no agent CLI, project on the Desktop. Nothing here can produce a verdict, so the only acceptable outcome is a refusal naming what to fix.',
     build: () => project('Desktop/my-first-app'),
     env: (dir) => ({
@@ -185,7 +212,7 @@ for (const m of selected) {
   let out = '';
   let code;
   try {
-    ({ out, code } = run(dir, m.env(dir)));
+    ({ out, code } = run(dir, m.env(dir), [], true === m.launcher));
   } finally {
     if (!keep) rmSync(root, { recursive: true, force: true });
   }
@@ -194,8 +221,20 @@ for (const m of selected) {
     failures.push('leaked a stack trace or raw runtime error');
   if (!m.expect(out)) failures.push('did not do the thing this machine is about');
   // Every machine must end with something a person can act on, whether it worked or not.
-  if (!out.includes('"agentTodo"') && !out.includes('"ok": true'))
-    failures.push('produced no machine-readable result at all');
+  //
+  // The shape is the CLI's SetupOutcome, not the prototype's: `agentTodo` was reticle.mjs's field and
+  // does not exist in `init --json`, which answers { ok, reachedPhase, notes, fallback, ... }. A
+  // machine that could not work is a fine outcome; one that ends with no object, or an object naming
+  // nothing to do, is not — that is the failure this whole file exists to catch.
+  // Two entry points, two object shapes: the launcher's reticle.mjs answers `agentTodo`, and the
+  // CLI answers SetupOutcome { ok, reachedPhase, notes, fallback }. Requiring the CLI's shape of a
+  // launcher profile failed `noob` for having done exactly the right thing.
+  const hasOutcome = /"ok":\s*(true|false)/.test(out) || out.includes('"agentTodo"');
+  const saysWhatNext =
+    out.includes('"ok": true') ||
+    out.includes('"agentTodo"') ||
+    /"(fallback|notes)":\s*\[\s*"/.test(out);
+  if (!hasOutcome || !saysWhatNext) failures.push('produced no machine-readable result at all');
   rows.push({
     name: m.name,
     ok: failures.length === 0,

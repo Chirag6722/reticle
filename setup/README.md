@@ -1,12 +1,26 @@
-# setup — onboarding in one call
+# setup — the onboarding prototype, and the harness that judges it
 
-`reticle.sh` installs Reticle into a project and does not stop until the user has **watched their own app being driven to a verdict**. That last part is the product; everything before it is plumbing.
+**This directory is not how users install Reticle.** They run:
 
 ```bash
-./setup/reticle.sh                  # in the target project's root
-setup\reticle.cmd                   # the same thing, on Windows
-node setup/reticle.mjs              # same thing, and the only form that works on Windows
+npx @reticlehq/server@latest init --flow "<the journey worth proving>"
 ```
+
+That is the first line of `SKILL.md`, it is what `break-matrix.mjs` measures, and it is the only install path that ships: `setup/` is absent from every published package (`packages/server` ships `dist`, `README.md`, `LICENSE-ENTERPRISE`, `SKILL.md`, `docs`), the root package is `private: true`, and nothing anywhere fetches these files over the network. They exist only in a checkout.
+
+What lives here is the PROTOTYPE the CLI's runtime phase was ported from, plus the negative control that keeps `init` honest:
+
+```bash
+./setup/reticle.sh                  # the prototype, in the target project's root
+setup\reticle.cmd                   # the same, on Windows
+node setup/reticle.mjs              # the implementation both launchers hand over to
+
+node setup/break-matrix.mjs         # 26 hostile environments, run against `init` — not against the above
+```
+
+`break-matrix.mjs` says why the distinction matters, in its own words: the scenarios "were written against setup/reticle.sh, which has since been ported into the CLI as `init`'s runtime phase. Pointing them at dist/cli.js is the only way they keep testing the thing users actually run."
+
+Keep reading for what the prototype established — the numbers below are why `init` works the way it does, and they were measured here first.
 
 `reticle.sh` and `reticle.cmd` are launchers; `reticle.mjs` is the implementation, and there is exactly one of it. A `.sh` cannot run on a stock Windows box (no `sh` without Git Bash or WSL) and Windows is most of Reticle's users, so the choice was never "one launcher or two" — it was "two launchers, or tell most users to type a different command than every doc shows". What must not be duplicated is the LOGIC, and it is not: each launcher checks for Node, checks the version (a Node too old to parse `reticle.mjs` never reaches the guard inside it), and hands over. Node is not an extra dependency to justify — it is the runtime every user of a JS SDK already has.
 
