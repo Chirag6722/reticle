@@ -15,6 +15,12 @@ export const Framework = {
   NUXT: 'nuxt',
   VITE: 'vite',
   /**
+   * electron-vite is Vite-based but its config holds three build configs (main/preload/renderer)
+   * and only the renderer has a DOM. The generic Vite path patches the FIRST plugins array, which
+   * is main's — wiring the SDK where there is no document, and reporting success.
+   */
+  ELECTRON_VITE: 'electron-vite',
+  /**
    * React Router in FRAMEWORK mode (v7's `@react-router/dev`, the successor to Remix).
    *
    * Vite-based, and it renders HTML through its own request handler — so the Vite plugin's
@@ -105,6 +111,12 @@ export interface Detection {
 
 const NEXT_CONFIGS = ['next.config.js', 'next.config.mjs', 'next.config.ts', 'next.config.cjs'];
 const VITE_CONFIGS = ['vite.config.js', 'vite.config.ts', 'vite.config.mjs', 'vite.config.mts'];
+const ELECTRON_VITE_CONFIGS = [
+  'electron.vite.config.ts',
+  'electron.vite.config.js',
+  'electron.vite.config.mjs',
+  'electron.vite.config.mts',
+];
 const SVELTE_CONFIGS = ['svelte.config.js', 'svelte.config.ts', 'svelte.config.mjs'];
 const REACT_ROUTER_CONFIGS = [
   'react-router.config.ts',
@@ -198,6 +210,15 @@ function detectFramework(input: DetectInput): Framework {
   // connect instructions for a bundler it does not have. Check BEFORE the generic Vite branch.
   if (depVersion(pkg, 'astro') !== undefined || hasAnyConfig(configFiles, ASTRO_CONFIGS)) {
     return Framework.ASTRO;
+  }
+  // electron-vite is Vite-based but its config holds three build configs (main/preload/renderer)
+  // and only the renderer has a DOM. The generic Vite path patches the FIRST plugins array, which
+  // is main's — wiring the SDK where there is no document, and reporting success. Check BEFORE Vite.
+  if (
+    depVersion(pkg, 'electron-vite') !== undefined ||
+    hasAnyConfig(configFiles, ELECTRON_VITE_CONFIGS)
+  ) {
+    return Framework.ELECTRON_VITE;
   }
   // React Router framework mode before Vite, for the reason SvelteKit and Astro are: it renders
   // HTML through its own request handler, so the plugin's index.html injection never fires. Keyed on
