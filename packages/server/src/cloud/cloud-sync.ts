@@ -382,15 +382,32 @@ export function createProgressReporter(
   flush: () => Promise<void>;
   stop: () => void;
 } {
-  let buffer: VerifyProgressEvent[] = [];
+  /*
+   * The WHOLE window, re-sent each flush — not the events since the last one.
+   *
+   * The receiver REPLACES the row it keeps for a project rather than appending, because one row per
+   * project is what stops narration accumulating into a second, ungraded history of the run. A
+   * client that sent deltas against that would destroy its own story: each flush would overwrite the
+   * row with only the handful of events since the previous one, and a finished run would be
+   * represented by whatever its last two seconds happened to contain.
+   *
+   * Found by running a real verification and watching the dashboard freeze on flow 2 of 3.
+   *
+   * Re-sending is cheap and idempotent: the window is bounded, the events are tiny, and a replace is
+   * the same operation however many times it arrives. `dirty` keeps an unchanged window off the
+   * wire, so a run that has gone quiet stops posting rather than resending forever.
+   */
+  /* Named `accumulated`, not `window`: this is Node, and shadowing the global reads badly. */
+  const accumulated: VerifyProgressEvent[] = [];
+  let dirty = false;
   let timer: ReturnType<typeof setInterval> | null = null;
 
   const flush = async (): Promise<void> => {
-    if (0 === buffer.length) return;
-    const batch = buffer;
-    // Cleared BEFORE the await: a slow flush must not let the next tick send the same events twice.
-    buffer = [];
-    await syncProgressToCloud(runId, batch, config, fetchImpl).catch(() => undefined);
+    if (!dirty || 0 === accumulated.length) return;
+    // Cleared BEFORE the await so a slow flush does not let the next tick send the same window
+    // again; a genuinely new event during the send re-sets it and the next tick picks it up.
+    dirty = false;
+    await syncProgressToCloud(runId, [...accumulated], config, fetchImpl).catch(() => undefined);
   };
 
   const start = (): void => {
@@ -402,9 +419,10 @@ export function createProgressReporter(
   return {
     onProgress: (event: VerifyProgressEvent): void => {
       if (null === config) return; // not logged in: nothing is buffered and nothing is sent
-      // Bounded, because a run with thousands of flows must not grow this without limit.
-      if (buffer.length >= VERIFY_PROGRESS_MAX_EVENTS) buffer.shift();
-      buffer.push(event);
+      // Bounded, keeping the NEWEST: they are the ones somebody is waiting on.
+      if (accumulated.length >= VERIFY_PROGRESS_MAX_EVENTS) accumulated.shift();
+      accumulated.push(event);
+      dirty = true;
       start();
     },
     flush,

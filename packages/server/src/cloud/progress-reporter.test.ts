@@ -113,12 +113,33 @@ describe('the buffering reporter', () => {
     expect(sent).toHaveLength(1);
   });
 
-  it('does not re-send events it has already shipped', async () => {
+  /*
+   * The receiver REPLACES the row, so a client that sent deltas would overwrite its own story: each
+   * flush would leave only the events since the last one, and a finished run would be whatever its
+   * final two seconds contained. Found by running a real verification and watching the dashboard
+   * freeze on flow 2 of 3.
+   */
+  it('re-sends the whole window, because the receiver replaces rather than appends', async () => {
+    const { fetchImpl, sent } = recorder();
+    const r = createProgressReporter('s1', CONFIG, fetchImpl, 1_000);
+    r.onProgress(event(VerifyPhase.FLOWS_FOUND, 1));
+    await vi.advanceTimersByTimeAsync(1_000);
+    r.onProgress(event(VerifyPhase.FLOW_STARTED, 2));
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(sent).toHaveLength(2);
+    const second = JSON.parse(String(sent[1]?.init.body)) as { events: Array<{ at: number }> };
+    // The SECOND batch carries the first event too — not just what arrived since.
+    expect(second.events.map((e) => e.at)).toEqual([1, 2]);
+    r.stop();
+  });
+
+  it('stops posting once a run has gone quiet, rather than resending forever', async () => {
     const { fetchImpl, sent } = recorder();
     const r = createProgressReporter('s1', CONFIG, fetchImpl, 1_000);
     r.onProgress(event(VerifyPhase.GRADING));
     await vi.advanceTimersByTimeAsync(1_000);
-    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(3_000);
     expect(sent).toHaveLength(1);
     r.stop();
   });
