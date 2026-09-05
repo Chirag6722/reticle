@@ -25,6 +25,7 @@ import { IntentStore } from '../intent/intent-store.js';
 import type { CompiledProgram, RecordedStep } from './recordings.js';
 import type { FileSystemPort } from '../project/fs-port.js';
 import { flowDir, flowPath, reticleDirPaths, isValidFlowName } from '../project/reticle-dir.js';
+import { parseFlowFileText } from './flow-expect-grammar.js';
 
 /**
  * A projectId only scopes storage when it's a safe single path segment (it's stamped from the
@@ -40,7 +41,8 @@ export interface Clock {
 }
 
 /** Discriminated result so callers never branch on free strings. */
-export type FlowResult<T> = { ok: true; value: T } | { ok: false; code: FlowErrorCode };
+export type FlowResult<T> =
+  { ok: true; value: T } | { ok: false; code: FlowErrorCode; detail?: string };
 
 /**
  * The anchor for a DEGRADED step (no resolvable testid). A volatile eXX ref is NEVER persisted —
@@ -911,15 +913,7 @@ export class FlowStore {
       };
     }
 
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      return { ok: false, code: FlowErrorCode.PARSE_FAILED };
-    }
-    const result = FlowFileSchema.safeParse(parsed);
-    if (!result.success) return { ok: false, code: FlowErrorCode.PARSE_FAILED };
-    return { ok: true, value: result.data };
+    return parseFlowFileText(text);
   }
 
   /**
