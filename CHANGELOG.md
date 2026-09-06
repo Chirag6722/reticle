@@ -4,6 +4,10 @@ All notable changes to the **`@reticlehq/*`** packages are documented here (each
 
 ## [Unreleased]
 
+### Changed
+
+- **`@reticlehq/server` — a `ROUTE_CHANGE` is read through one helper (`routeOfEvent`).** Six call sites (and the journey consequence line) each picked `pathname` / `to` / `hash` out of the event by hand, so a seventh hash-router miss was a field choice away: the document pathname is `/` on every HashRouter page, the default for a packaged Electron/Tauri renderer. The helper returns both the router path and the navigable `docPath + hash`; call sites pick, they do not re-index. Closes [#727](https://github.com/reticlehq/reticle/issues/727).
+
 ### Fixed
 
 - **server:** A `{net}` assertion whose named request is still in flight is `unknown`, not `no` — the window closed early, the request had not finished (`#669`).
