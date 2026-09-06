@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { AppRuntime, EventType, type ReticleEvent } from '@reticlehq/core';
 import {
   BlindSpotKind,
+  absenceBlindSpotNote,
   buildCoverageStatement,
   blindSpotsFromEvents,
   spotsForRuntime,
@@ -110,5 +111,94 @@ describe('blindSpotsFromEvents', () => {
     const spots = blindSpotsFromEvents([ev(EventType.NET_REQUEST, {})]);
     expect(spots).toEqual([]);
     expect(buildCoverageStatement(spots).coverage).toBe('full');
+  });
+});
+
+describe('absenceBlindSpotNote reads both spellings of an absence claim', () => {
+  const shadow = [{ kind: BlindSpotKind.CLOSED_SHADOW_ROOT, count: 2 }];
+
+  it('fires on a `not`-wrapped element, the other spelling of `absent: true`', () => {
+    // The defect: `not` and `absent: true` are the same claim, and only one of them carried the
+    // caveat. `restsOnCompleteWindow` already treats `not` as an absence claim, so the two honesty
+    // checks sitting beside each other disagreed about the same predicate — and the one that stayed
+    // quiet was the one guarding the DOM the walk could not enter.
+    const note = absenceBlindSpotNote(
+      { kind: 'not', predicate: { kind: 'element', query: {} } },
+      shadow,
+    );
+    expect(note).toContain('cannot prove absence');
+    expect(note).toContain('2 closed shadow roots');
+  });
+
+  it('says the same thing for both spellings, so neither reads as the weaker claim', () => {
+    const wrapped = absenceBlindSpotNote(
+      { kind: 'not', predicate: { kind: 'element', query: {} } },
+      shadow,
+    );
+    const flagged = absenceBlindSpotNote({ kind: 'element', absent: true, query: {} }, shadow);
+    expect(wrapped).toBe(flagged);
+  });
+
+  it('stays silent on a double negative — `not` over `absent` is a PRESENCE claim', () => {
+    // Polarity, not spelling, decides this. `not(absent)` asserts the element IS there, and a
+    // positive assertion that passed found its evidence; an unobservable region cannot unmake it.
+    expect(
+      absenceBlindSpotNote(
+        { kind: 'not', predicate: { kind: 'element', absent: true, query: {} } },
+        shadow,
+      ),
+    ).toBeUndefined();
+  });
+
+  it('reads `query.scope` off the negated predicate, where the caller wrote it', () => {
+    // The scope lives on the INNER predicate; a wrapper-only read would find nothing and drop the
+    // cross-origin branch on exactly the predicates that name a frame.
+    const spots = [{ kind: BlindSpotKind.CROSS_ORIGIN_IFRAME, count: 1 }];
+    expect(
+      absenceBlindSpotNote(
+        { kind: 'not', predicate: { kind: 'element', query: { scope: '#checkout-frame' } } },
+        spots,
+      ),
+    ).toContain('1 cross-origin frame');
+    // Unscoped, the frame is not the region being asserted about, and the note must not fire —
+    // the same rule the `absent: true` path already applies.
+    expect(
+      absenceBlindSpotNote({ kind: 'not', predicate: { kind: 'element', query: {} } }, spots),
+    ).toBeUndefined();
+  });
+
+  it('leaves a plain presence assertion alone', () => {
+    expect(absenceBlindSpotNote({ kind: 'element', query: {} }, shadow)).toBeUndefined();
+  });
+
+  it('stays out of `not` over a non-element kind, which asserts nothing about the DOM', () => {
+    // A network or console claim is not answered by the DOM walk, so the DOM coverage note would be
+    // a caveat about the wrong channel.
+    expect(
+      absenceBlindSpotNote({ kind: 'not', predicate: { kind: 'net' } }, shadow),
+    ).toBeUndefined();
+  });
+
+  it('unwraps one level only, which is where the claim stops being an absence claim anyway', () => {
+    // `not(not(element))` is a double negative — a PRESENCE claim — so silence is the correct
+    // answer here, not a limitation being tolerated. Deeper nesting than this is not a shape a
+    // caller writes, and guessing how deep to recurse is not a call this fix makes.
+    expect(
+      absenceBlindSpotNote(
+        { kind: 'not', predicate: { kind: 'not', predicate: { kind: 'element', query: {} } } },
+        shadow,
+      ),
+    ).toBeUndefined();
+  });
+
+  it('is silent when the page has no blind spots at all, on either spelling', () => {
+    expect(
+      absenceBlindSpotNote({ kind: 'not', predicate: { kind: 'element', query: {} } }, []),
+    ).toBeUndefined();
+    expect(
+      absenceBlindSpotNote({ kind: 'not', predicate: { kind: 'element', query: {} } }, [
+        { kind: BlindSpotKind.CLOSED_SHADOW_ROOT, count: 0 },
+      ]),
+    ).toBeUndefined();
   });
 });

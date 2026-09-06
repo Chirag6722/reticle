@@ -219,12 +219,47 @@ interface AbsencePredicate {
   kind: string;
   absent?: boolean;
   query?: { scope?: unknown };
+  /** The negated child, carried only by `not` — the second spelling of an absence claim. */
+  predicate?: AbsencePredicate;
+}
+
+/**
+ * The element predicate an absence claim is actually ABOUT, or undefined when the predicate is not
+ * an absence claim about the DOM.
+ *
+ * There are two spellings of one claim — `{ kind: "element", absent: true }` and
+ * `{ kind: "not", predicate: { kind: "element" } }` — and only the first carried this caveat, while
+ * `restsOnCompleteWindow` below already read `not` as an absence claim. So the two honesty checks
+ * sitting beside each other disagreed about the same predicate, and the one that stayed quiet was
+ * the one guarding the DOM the walk could not enter.
+ *
+ * POLARITY decides this, not spelling. `not` FLIPS the claim, so `not(element absent)` is a double
+ * negative asserting the element IS there — a positive finding, which an unobservable region cannot
+ * unmake, and the same reason a plain presence assertion is left alone. Returning the negated
+ * predicate is also what lands the CROSS_ORIGIN_IFRAME branch: the `query.scope` naming the frame
+ * lives on the inner predicate, so a wrapper-only read would find no scope on exactly the
+ * assertions that name one.
+ *
+ * One level, deliberately. `not(not(element))` is itself a presence claim, so silence there is the
+ * correct answer rather than a gap left open, and the third level that would actually need
+ * recursion is not a shape a caller writes.
+ */
+function absenceTarget(predicate: AbsencePredicate): AbsencePredicate | undefined {
+  if (PredicateKind.NOT === predicate.kind) {
+    const negated = predicate.predicate;
+    if (undefined === negated || PredicateKind.ELEMENT !== negated.kind) return undefined;
+    return true === negated.absent ? undefined : negated;
+  }
+  if (PredicateKind.ELEMENT !== predicate.kind) return undefined;
+  return true === predicate.absent ? predicate : undefined;
 }
 
 /**
  * When an absence assertion targets a page with regions Reticle cannot observe, "the element is
  * absent" means only "it is absent in what I CAN see". Returns a note when that distinction
  * matters, undefined otherwise.
+ *
+ * Reads BOTH spellings of the claim — see `absenceTarget`, which also decides the polarity.
  *
  * Fires on three blind-spot kinds:
  *   - CROSS_ORIGIN_IFRAME (only when the predicate is scoped to a frame region)
@@ -235,13 +270,14 @@ export function absenceBlindSpotNote(
   predicate: AbsencePredicate,
   spots: readonly BlindSpot[],
 ): string | undefined {
-  if ('element' !== predicate.kind || true !== predicate.absent) return undefined;
+  const target = absenceTarget(predicate);
+  if (undefined === target) return undefined;
 
   const relevant = spots.filter(
     (spot) =>
       spot.count > 0 &&
       (spot.kind === BlindSpotKind.CROSS_ORIGIN_IFRAME
-        ? undefined !== predicate.query?.scope
+        ? undefined !== target.query?.scope
         : spot.kind === BlindSpotKind.VIRTUALIZED_UNMOUNTED ||
           spot.kind === BlindSpotKind.CLOSED_SHADOW_ROOT),
   );
