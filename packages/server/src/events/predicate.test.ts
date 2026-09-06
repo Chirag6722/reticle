@@ -1137,7 +1137,6 @@ describe('net count is exact, not "at least" — the double-submit must not pass
 
   it('still passes when exactly one really did fire, without burning the timeout', async () => {
     const session = new LiveSession();
-    const started = Date.now();
     const verdict = waitForPredicate(
       session,
       { kind: 'net', method: 'POST', urlContains: '/refund', count: 1 },
@@ -1148,9 +1147,8 @@ describe('net count is exact, not "at least" — the double-submit must not pass
 
     expect(r.pass).toBe(true);
     // An honest "exactly one" costs one short hold, not 10s of dead wall-clock on the agent's
-    // most-used verdict path.
-    expect(Date.now() - started).toBeLessThan(3000);
-  });
+    // most-used verdict path — enforced by the per-test timeout, not by measuring the clock.
+  }, 3_000);
 
   it('leaves a presence-only net predicate resolving on the first match', async () => {
     // No `count` means "at least one", which IS satisfiable early. Holding those back would make
@@ -1287,7 +1285,6 @@ describe('signal count is exact, not "at least" — the double-fire must not pas
 
   it('still passes when the signal really did fire once, without burning the timeout', async () => {
     const session = new LiveSession();
-    const started = Date.now();
     const verdict = waitForPredicate(
       session,
       { kind: 'signal', name: 'order:placed', count: 1 },
@@ -1297,8 +1294,10 @@ describe('signal count is exact, not "at least" — the double-fire must not pas
     const r = await verdict;
 
     expect(r.pass).toBe(true);
-    expect(Date.now() - started).toBeLessThan(3000);
-  });
+    // "Costs one short hold, not the whole 10s window" is enforced by the PER-TEST timeout below,
+    // not by an assertion on elapsed time: `Date.now() - t < N` is a statement about the machine
+    // and fails only under parallel load, which is to say only in CI.
+  }, 3_000);
 
   it('leaves a presence-only signal predicate resolving on the first match', async () => {
     // No `count` means "at least one", which IS satisfiable early. Holding those back would make
