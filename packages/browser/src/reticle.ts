@@ -362,6 +362,9 @@ export class Reticle {
     const emit = this.#emit;
     this.#teardowns = installAllObservers(emit, {
       captureBodies: true === options.captureNetworkBodies,
+      ...(options.captureErrorBodies === undefined
+        ? {}
+        : { captureErrorBodies: options.captureErrorBodies }),
     });
 
     if (true === options.overlay) {

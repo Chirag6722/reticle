@@ -193,6 +193,14 @@ export interface ReticleVitePluginOptions {
    */
   captureNetworkBodies?: boolean;
   /**
+   * Retain a FAILED request's response body even with `captureNetworkBodies` off. Default true.
+   *
+   * Reachable here for the reason `captureNetworkBodies` is: the plugin is the only `connect()`
+   * most apps ever have. Also settable as `VITE_RETICLE_NO_ERROR_BODIES=1`, which turns it OFF --
+   * the inverse of the other env vars, because this is the one that defaults on (#800).
+   */
+  captureErrorBodies?: boolean;
+  /**
    * Make Reticle's OWN presenter visible to snapshots and queries. CONTRIBUTORS ONLY.
    *
    * Reachable here for the same reason `captureNetworkBodies` is: the plugin is the only `connect()`
@@ -442,6 +450,11 @@ function connectArgs(options: ReticleVitePluginOptions): string {
   // model with it.
   if (true === options.captureNetworkBodies || '1' === process.env['VITE_RETICLE_CAPTURE_BODIES']) {
     args['captureNetworkBodies'] = true;
+  }
+  // The one option that defaults ON, so the env var and the config flag both DISABLE rather than
+  // enable. Emitted only when switched off; the default stays implicit in the SDK.
+  if (false === options.captureErrorBodies || '1' === process.env['VITE_RETICLE_NO_ERROR_BODIES']) {
+    args['captureErrorBodies'] = false;
   }
   // Same shape, same reason. Off unless asked for, in a config or for one session.
   if (true === options.exposePresenter || '1' === process.env['VITE_RETICLE_EXPOSE_PRESENTER']) {
