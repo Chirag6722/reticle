@@ -18,6 +18,7 @@ import {
 } from '@reticlehq/core';
 import { ReticleTool } from '../tools/tool-names.js';
 import { replayActionArgs } from './replay.js';
+import { anchorFieldName } from './flow-secret-field.js';
 import type { FlowReplaySession, Sleep } from './flow-replay.js';
 import {
   anchorLabel,
@@ -133,7 +134,7 @@ async function actOnResolvedRef(
     act = await session.command(ReticleCommand.ACT, {
       ref,
       action: step.action ?? '',
-      args: replayActionArgs(step.args, confirmDangerous),
+      args: replayActionArgs(step.args, confirmDangerous, anchorFieldName(step.anchor)),
     });
   } finally {
     session.finishAction?.();
@@ -177,7 +178,7 @@ export async function runComponentStep(
     act = await session.command(ReticleCommand.ACT, {
       ref,
       action: step.action ?? '',
-      args: replayActionArgs(step.args, confirmDangerous),
+      args: replayActionArgs(step.args, confirmDangerous, anchorFieldName(anchor)),
     });
   } finally {
     // Close on every exit so a throwing step cannot leak the window onto the next step's events.
@@ -290,7 +291,7 @@ export async function runSequenceStep(
     live.push({
       ref,
       action: sub.action ?? '',
-      args: replayActionArgs(sub.args, confirmDangerous),
+      args: replayActionArgs(sub.args, confirmDangerous, anchorFieldName(sub.anchor)),
     });
   }
   session.beginAction?.(ReticleTool.FLOW_REPLAY, { steps: live.length });

@@ -1,5 +1,18 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import {
+  ActionType,
+  AnchorKind,
+  FLOW_FILE_VERSION,
+  ReticleCommand,
+  asRef,
+  type CommandResult,
+  type FlowFile,
+  type FlowStep,
+} from '@reticlehq/core';
+import { ReticleTool } from '../tools/tool-names.js';
+import { asRecord, asString } from '../tools/tools-helpers.js';
 import { REDACTED_FILL } from './flows.js';
+import { replayFlow, type FlowReplaySession } from './flow-replay.js';
 import { replayActionArgs } from './replay.js';
 
 /**
@@ -15,9 +28,12 @@ import { replayActionArgs } from './replay.js';
  */
 
 const KEY = 'RETICLE_SECRET_AUTH_PASSWORD';
+const ROLE_KEY = 'RETICLE_SECRET_PASSWORD';
 
 afterEach(() => {
   delete process.env[KEY];
+  delete process.env[ROLE_KEY];
+  delete process.env['RETICLE_SECRET_API_KEY'];
 });
 
 describe('a redacted fill at replay time', () => {
@@ -49,5 +65,139 @@ describe('a redacted fill at replay time', () => {
     process.env['RETICLE_SECRET_API_KEY'] = 'rk_live_x';
     const args = replayActionArgs({ value: REDACTED_FILL }, false, 'api-key');
     expect(args['value']).toBe('rk_live_x');
+  });
+});
+
+/**
+ * Substitution used to fire on the testid runner only. A role-anchored fill, and every sub-step
+ * of an act_sequence, called `replayActionArgs` without the field name, so a login recorded against
+ * role+name typed the literal placeholder and the app answered 401.
+ */
+class CapturingSession implements FlowReplaySession {
+  readonly fills: unknown[] = [];
+
+  command(name: string, args: Record<string, unknown> = {}): Promise<CommandResult> {
+    if (ReticleCommand.QUERY === name) {
+      return Promise.resolve({
+        kind: 'command_result',
+        id: 'q',
+        ok: true,
+        result: {
+          elements: [
+            {
+              ref: asRef('e1'),
+              role: asString(args['value']) ?? 'textbox',
+              name: asString(args['name']) ?? 'Password',
+              states: [],
+              visible: true,
+            },
+          ],
+        },
+      });
+    }
+    if (ReticleCommand.ACT === name) {
+      this.fills.push(asRecord(args['args'])['value']);
+      return Promise.resolve({ kind: 'command_result', id: 'a', ok: true, result: {} });
+    }
+    if (ReticleCommand.ACT_SEQUENCE === name) {
+      const steps = Array.isArray(args['steps']) ? args['steps'] : [];
+      for (const step of steps) {
+        this.fills.push(asRecord(asRecord(step)['args'])['value']);
+      }
+      return Promise.resolve({ kind: 'command_result', id: 's', ok: true, result: {} });
+    }
+    return Promise.resolve({ kind: 'command_result', id: 'x', ok: true, result: {} });
+  }
+
+  eventsSince(): never[] {
+    return [];
+  }
+
+  onEvent(): () => void {
+    return () => undefined;
+  }
+
+  elapsed(): number {
+    return 0;
+  }
+}
+
+function wait(): Promise<{ pass: boolean }> {
+  return Promise.resolve({ pass: true });
+}
+
+function file(steps: FlowStep[]): FlowFile {
+  return { version: FLOW_FILE_VERSION, name: 'sign-in', createdAt: 0, steps };
+}
+
+describe('every replay path supplies a redacted fill from the environment', () => {
+  it('a role-anchored fill is substituted, not typed as the placeholder', async () => {
+    process.env[ROLE_KEY] = 'the-real-password';
+    const session = new CapturingSession();
+    await replayFlow(
+      session,
+      file([
+        {
+          tool: ReticleTool.ACT,
+          anchor: { kind: AnchorKind.ROLE, role: 'textbox', name: 'Password' },
+          action: ActionType.FILL,
+          args: { value: REDACTED_FILL },
+        },
+      ]),
+      wait,
+      60,
+    );
+    expect(session.fills).toEqual(['the-real-password']);
+  });
+
+  it('a testid-anchored fill still substitutes (the path that already worked)', async () => {
+    process.env[KEY] = 'the-real-password';
+    const session = new CapturingSession();
+    await replayFlow(
+      session,
+      file([
+        {
+          tool: ReticleTool.ACT,
+          anchor: { kind: AnchorKind.TESTID, value: 'auth-password' },
+          action: ActionType.FILL,
+          args: { value: REDACTED_FILL },
+        },
+      ]),
+      wait,
+      60,
+    );
+    expect(session.fills).toEqual(['the-real-password']);
+  });
+
+  it('each act_sequence sub-step is substituted from its own anchor', async () => {
+    process.env[ROLE_KEY] = 'the-real-password';
+    process.env[KEY] = 'the-real-password';
+    const session = new CapturingSession();
+    await replayFlow(
+      session,
+      file([
+        {
+          tool: ReticleTool.ACT_SEQUENCE,
+          anchor: { kind: AnchorKind.ROLE, role: 'form', name: 'login' },
+          steps: [
+            {
+              tool: ReticleTool.ACT,
+              anchor: { kind: AnchorKind.ROLE, role: 'textbox', name: 'Password' },
+              action: ActionType.FILL,
+              args: { value: REDACTED_FILL },
+            },
+            {
+              tool: ReticleTool.ACT,
+              anchor: { kind: AnchorKind.TESTID, value: 'auth-password' },
+              action: ActionType.FILL,
+              args: { value: REDACTED_FILL },
+            },
+          ],
+        },
+      ]),
+      wait,
+      60,
+    );
+    expect(session.fills).toEqual(['the-real-password', 'the-real-password']);
   });
 });
