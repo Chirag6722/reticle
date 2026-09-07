@@ -31,6 +31,19 @@ export const Framework = {
    * path.
    */
   REACT_ROUTER: 'react-router',
+  /**
+   * TanStack Start SSRs `<html>` from `src/routes/__root.tsx` and never sends Vite's index.html, so
+   * the plugin's `transformIndexHtml` injection never fires. It used to fall through to
+   * `Framework.VITE`, where `init` wired the plugin, reported every step green ("also injects
+   * connect()"), and produced zero sessions — confirmed in the field as ~13 minutes of "still
+   * verifying" against a daemon showing none (#773).
+   *
+   * Keyed on `@tanstack/react-start` or the older `@tanstack/start`, never on
+   * `@tanstack/react-query` or `@tanstack/react-router` alone — those are libraries on a Vite SPA
+   * whose index.html the plugin does reach. Not `@tanstack/solid-start` either: that would install
+   * the React kit into a Solid app.
+   */
+  TANSTACK_START: 'tanstack-start',
   SVELTEKIT: 'sveltekit',
   ASTRO: 'astro',
   /** Create React App. No config file exists, so `react-scripts` in the dependencies is the signal. */
@@ -208,6 +221,16 @@ function detectFramework(input: DetectInput): Framework {
     hasAnyConfig(configFiles, REACT_ROUTER_CONFIGS)
   ) {
     return Framework.REACT_ROUTER;
+  }
+  // TanStack Start before Vite, for the reason SvelteKit, Astro and React Router framework mode
+  // are: it SSRs its own HTML, so the plugin's index.html injection never fires. Vite is always a
+  // dependency of Start, so this has to win. Keyed on the Start packages, never on Query or Router
+  // alone — those stay on the Vite path.
+  if (
+    depVersion(pkg, '@tanstack/react-start') !== undefined ||
+    depVersion(pkg, '@tanstack/start') !== undefined
+  ) {
+    return Framework.TANSTACK_START;
   }
   if (depVersion(pkg, 'vite') !== undefined || hasAnyConfig(configFiles, VITE_CONFIGS)) {
     return Framework.VITE;

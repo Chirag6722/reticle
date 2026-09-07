@@ -23,6 +23,7 @@ const CONNECT_STEP_TITLES: ReadonlySet<string> = new Set([
   'Connect snippet (Astro)',
   'Connect snippet (Nuxt)',
   'Connect snippet (React Router)',
+  'Connect snippet (TanStack Start)',
   'Reticle client hook',
   'Reticle connect module',
   'ReticleDev component',

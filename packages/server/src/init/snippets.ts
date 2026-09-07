@@ -115,8 +115,13 @@ function frameworkPluginExample(uiLibrary: UiLibrary): string {
 export function viteManual(
   port: number | undefined,
   uiLibrary: UiLibrary = UiLibrary.UNKNOWN,
+  inject = true,
 ): string {
-  const call = port === undefined ? 'reticle()' : `reticle({ port: ${String(port)} })`;
+  const options = [
+    ...(port === undefined ? [] : [`port: ${String(port)}`]),
+    ...(false === inject ? ['inject: false'] : []),
+  ];
+  const call = 0 === options.length ? 'reticle()' : `reticle({ ${options.join(', ')} })`;
   return `Add the Reticle plugin to your Vite config:
 
   import { reticle } from '@reticlehq/vite-plugin';
@@ -536,6 +541,9 @@ export function unverifiedUiLibraryNote(library: string): string {
 export const UNVERIFIED_FRAMEWORK_NOTE =
   'Reticle has no SvelteKit app and no CI gate for one, so this wiring is untested — it may work, but nothing proves it and nothing will tell us if it breaks. Supported and gated today: Vite + React, Next.js, Remix and Astro. If the hook does not register a session, please open an issue.';
 
+export const UNVERIFIED_TANSTACK_START_NOTE =
+  'Reticle has no TanStack Start app and no CI gate for one, so this wiring is untested — it may work, but nothing proves it and nothing will tell us if it breaks. Supported and gated today: Vite + React, Next.js, Remix and Astro. If the client effect does not register a session, please open an issue.';
+
 /**
  * Dev-only client hook that connects Reticle in a SvelteKit app. SvelteKit renders through app.html and
  * never triggers Vite's index.html injection (verified), so the standard plugin can't auto-connect —
@@ -679,6 +687,60 @@ export function reactRouterManual(
 
   Check it against your React Router version's documented default entry before saving — this is the
   v7 shape, and it is the half that must be right whether or not Reticle is in it.`;
+}
+
+/** TanStack Start's document module — the file that SSRs `<html>`. */
+export const TANSTACK_START_ROOT_PATH = 'src/routes/__root.tsx';
+
+/**
+ * The TanStack Start recipe, printed rather than written.
+ *
+ * `__root.tsx` is the document. A static import of the SDK on that module SSRs and 500s, so `init`
+ * does not write one. The connect has to be a client-only dynamic import inside `useEffect`, with
+ * the pairing token the plugin inlines as `__RETICLE_TOKEN__`. Same judgement React Router already
+ * makes about `app/entry.client.tsx`: a half-written document is worse than a documented manual step.
+ */
+export function tanstackStartManual(
+  port: number | undefined,
+  projectId?: string,
+  rootPath: string = TANSTACK_START_ROOT_PATH,
+): string {
+  const sdk = sdkImport(UiLibrary.REACT);
+  const base = connectArg(port, projectId);
+  const fields = '' === base ? '' : `${base.slice(1, -1).trim()}, `;
+  const installLine = sdk.usesInstall
+    ? '        install();'
+    : '        // No React adapter here: the sensor has no install() to call.';
+  const imports = sdk.usesInstall ? 'reticle, install' : 'reticle';
+  return `TanStack Start SSRs <html> from ${rootPath} (HeadContent / Scripts) and never sends Vite's
+  index.html, so the plugin's connect injection never fires. Keep the plugin anyway, with
+  reticle({ inject: false }): only the injection half is inapplicable, and the stamping half is
+  what puts data-reticle-source on the JSX. Dropping the plugin because one of its two jobs did
+  not apply is how Remix lost file:line.
+
+  Connect from a CLIENT-ONLY effect in ${rootPath}. A static SDK import on that module SSRs and
+  500s. Do not guard on window.location.hostname === 'localhost' — import.meta.env.DEV is the
+  correct guard, and it does not care what host you develop on.
+
+  Add this useEffect to the App component (import useEffect from react if it is not already there):
+
+      useEffect(() => {
+        if (import.meta.env.DEV) {
+          const token = typeof __RETICLE_TOKEN__ !== 'undefined' ? __RETICLE_TOKEN__ : '';
+          void import('${sdk.specifier}').then(({ ${imports} }) => {
+${installLine}
+            reticle.connect({
+              ${fields}...(token.length > 0 ? { token } : {}),
+            });
+          });
+        }
+      }, []);
+
+  The plugin inlines __RETICLE_TOKEN__ when Vite resolves its config. Start the daemon BEFORE the
+  dev server so that file exists; a server that started first froze an empty token and the page
+  looks like it "won't dial". Restart after init, and after the daemon is up.
+
+  ${UNVERIFIED_TANSTACK_START_NOTE}`;
 }
 
 /** Where a Nuxt dev-only client plugin belongs. `.client` keeps it out of SSR; Nuxt auto-registers it. */
