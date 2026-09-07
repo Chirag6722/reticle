@@ -96,11 +96,16 @@ describe('pickDocumentSuccessor', () => {
     ).toBeUndefined();
   });
 
-  it('does not let a matching id carry a lease claim into a tab that never made it', () => {
-    // The case mayInherit was written for, reached past it on the same-id path: a leased context is
-    // one an agent owns and no human can see, and the developer's own tab at that origin is a
-    // different trust and visibility domain. Succeeding one to the other redirects the next call
-    // into somebody's real browser.
+  it('still follows a same-id reload that dropped the session param from the url', () => {
+    // `mayInherit` must NOT gate the same-id path, and this is the case that proves it. A driven or
+    // leased tab carries `__reticle_session` in its URL, but `navigate { url, reload: true }`
+    // reloads the BARE address, so the reconnecting document has no param. Demanding the claim
+    // again refuses the ordinary reload this whole mechanism exists for — caught by the benchmark
+    // gate, as a per-run cost rise, when an earlier version of this fix applied that gate here.
+    //
+    // The id is the identity on this path: it survived in sessionStorage, which a leased context
+    // does not share with anybody's real browser tab. A human's tab could only carry the id by
+    // carrying the param, which satisfies `mayInherit` anyway.
     expect(
       pickDocumentSuccessor(
         [{ id: 'lease-7', url: 'http://localhost:3000/orders', projectId: 'shop' }],
@@ -109,28 +114,24 @@ describe('pickDocumentSuccessor', () => {
           url: 'http://localhost:3000/orders?__reticle_session=lease-7',
           projectId: 'shop',
         },
-      ),
-    ).toBeUndefined();
+      )?.id,
+    ).toBe('lease-7');
   });
 
-  it('still picks a same-id reconnect that claims the same lease identity', () => {
-    // The ordinary leased reload, which must keep working: same claim on both sides.
+  it('still refuses a DIFFERENT id that never made the claim', () => {
+    // The guard `mayInherit` was actually written for is untouched: another session inheriting a
+    // claimed identity is the case where an expired lease redirected the next call into somebody's
+    // real browser tab.
     expect(
       pickDocumentSuccessor(
-        [
-          {
-            id: 'lease-7',
-            url: 'http://localhost:3000/orders/42?__reticle_session=lease-7',
-            projectId: 'shop',
-          },
-        ],
+        [{ id: 'human-tab', url: 'http://localhost:3000/orders', projectId: 'shop' }],
         {
           id: 'lease-7',
           url: 'http://localhost:3000/orders?__reticle_session=lease-7',
           projectId: 'shop',
         },
-      )?.id,
-    ).toBe('lease-7');
+      ),
+    ).toBeUndefined();
   });
 
   it('with no projectId, origin alone is the match', () => {
