@@ -67,6 +67,72 @@ describe('pickDocumentSuccessor', () => {
     ).toBeUndefined();
   });
 
+  it('does not pick a different project even when the id matches', () => {
+    // The guard above exists and is tested — but its test uses a DIFFERENT id, and the same-id
+    // branch returned before the guard ran. Reachable exactly as reported: `sessionStorage` is
+    // scoped to the ORIGIN, not the app, so recycling a port (stop app A on :3000, start app B,
+    // reload the same tab) has app B read app A's id out of storage and register under it with its
+    // own projectId. `resolve()` then answers an explicit sessionId with a different product.
+    expect(
+      pickDocumentSuccessor(
+        [{ id: 'old', url: 'http://localhost:3000/admin', projectId: 'admin' }],
+        departed,
+      ),
+    ).toBeUndefined();
+  });
+
+  it('refuses rather than falling through to another candidate when the id matches but is not eligible', () => {
+    // Refusal, not a second guess. An exact id match that is ineligible is the strongest evidence
+    // available that the caller's id is stale, and picking some other session on the origin would
+    // be the silent redirect this whole function exists to prevent.
+    expect(
+      pickDocumentSuccessor(
+        [
+          { id: 'old', url: 'http://localhost:3000/admin', projectId: 'admin' },
+          { id: 'fresh', url: 'http://localhost:3000/orders/42', projectId: 'shop' },
+        ],
+        departed,
+      ),
+    ).toBeUndefined();
+  });
+
+  it('does not let a matching id carry a lease claim into a tab that never made it', () => {
+    // The case mayInherit was written for, reached past it on the same-id path: a leased context is
+    // one an agent owns and no human can see, and the developer's own tab at that origin is a
+    // different trust and visibility domain. Succeeding one to the other redirects the next call
+    // into somebody's real browser.
+    expect(
+      pickDocumentSuccessor(
+        [{ id: 'lease-7', url: 'http://localhost:3000/orders', projectId: 'shop' }],
+        {
+          id: 'lease-7',
+          url: 'http://localhost:3000/orders?__reticle_session=lease-7',
+          projectId: 'shop',
+        },
+      ),
+    ).toBeUndefined();
+  });
+
+  it('still picks a same-id reconnect that claims the same lease identity', () => {
+    // The ordinary leased reload, which must keep working: same claim on both sides.
+    expect(
+      pickDocumentSuccessor(
+        [
+          {
+            id: 'lease-7',
+            url: 'http://localhost:3000/orders/42?__reticle_session=lease-7',
+            projectId: 'shop',
+          },
+        ],
+        {
+          id: 'lease-7',
+          url: 'http://localhost:3000/orders?__reticle_session=lease-7',
+          projectId: 'shop',
+        },
+      )?.id,
+    ).toBe('lease-7');
+  });
+
   it('with no projectId, origin alone is the match', () => {
     expect(
       pickDocumentSuccessor([{ id: 'new', url: 'http://localhost:3000/done' }], {

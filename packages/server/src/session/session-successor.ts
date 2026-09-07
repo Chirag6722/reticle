@@ -92,15 +92,22 @@ export function pickDocumentSuccessor(
 ): SessionIdentity | undefined {
   const origin = originOf(departed.url);
   if (origin === undefined) return undefined;
+  // The two gates every candidate must pass, same-id or not. They used to live only on the search
+  // below, so a matching id skipped both: `sessionStorage` is scoped to the ORIGIN rather than the
+  // app, and recycling a port (stop app A on :3000, start app B, reload the tab) has app B read
+  // app A's id out of storage and register under it with its own projectId. An explicit sessionId
+  // was then answered by a different product, and a claimed lease identity crossed into a tab that
+  // never made the claim — the case `mayInherit` exists for, reached past it (#785).
+  const eligible = (s: SessionIdentity): boolean =>
+    (departed.projectId === undefined || s.projectId === departed.projectId) &&
+    mayInherit(departed, s);
   const atOrigin = live.filter((s) => originOf(s.url) === origin);
   const sameId = atOrigin.find((s) => s.id === departed.id);
-  if (sameId !== undefined) return sameId;
-  const others = atOrigin.filter(
-    (s) =>
-      s.id !== departed.id &&
-      (departed.projectId === undefined || s.projectId === departed.projectId) &&
-      mayInherit(departed, s),
-  );
+  // Refusal, not a second guess. An exact id match that is ineligible is the strongest evidence
+  // there is that the caller's id is stale, so falling through to whatever else sits on the origin
+  // would be the silent redirect this function exists to prevent.
+  if (sameId !== undefined) return eligible(sameId) ? sameId : undefined;
+  const others = atOrigin.filter((s) => s.id !== departed.id && eligible(s));
   if (1 !== others.length) return undefined;
   return others[0];
 }
