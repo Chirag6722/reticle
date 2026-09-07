@@ -4,6 +4,7 @@ import {
   Verified,
   VerifiedReason,
   isAbsenceDerived,
+  isAdvisory,
 } from '@reticlehq/core';
 import { HonestyGrade, type HonestyBlock } from './honesty.js';
 import { unsettledBecause, type UnsettledWindow } from './unsettled.js';
@@ -223,7 +224,11 @@ export function decideVerified(inputs: VerifiedInputs): VerifiedVerdict {
   // every `no` verdict in the field. See ABSENCE_DERIVED_CONTRADICTIONS for why a false negative
   // costs more than it looks: it makes an agent redo work that succeeded, or stop believing the
   // verdict channel, which is the product.
-  const observed = contradictions.filter((c) => !isAbsenceDerived(c.kind));
+  // Advisory findings are dropped from the decision entirely, at both tiers below. They are true and
+  // they ride out in `contradictions`; what they are not is evidence about the consequence the
+  // caller declared, because they concern traffic the assertion never named (#673).
+  const deciding = contradictions.filter((c) => !isAdvisory(c.kind));
+  const observed = deciding.filter((c) => !isAbsenceDerived(c.kind));
   if (observed.length > 0) {
     const kinds = observed.map((c) => c.kind).join(', ');
     return {
@@ -253,7 +258,7 @@ export function decideVerified(inputs: VerifiedInputs): VerifiedVerdict {
     declaredHeld &&
     inputs.unsettled !== undefined &&
     !openWrite &&
-    contradictions.every((c) => c.kind === ContradictionKind.REQUEST_NEVER_SETTLED);
+    deciding.every((c) => c.kind === ContradictionKind.REQUEST_NEVER_SETTLED);
   // `signal-without-consequence` gets its own sentence, because the generic one is FALSE for it.
   //
   // That sentence says the window "closed before the app finished" and then explains that a poll or
@@ -263,8 +268,8 @@ export function decideVerified(inputs: VerifiedInputs): VerifiedVerdict {
   // was that the app announced a consequence it did not deliver. A right verdict with a wrong reason
   // sends an agent to the wrong place, which costs as much as the wrong verdict did.
   const signalOnly =
-    contradictions.length > 0 &&
-    contradictions.every((c) => c.kind === ContradictionKind.SIGNAL_WITHOUT_CONSEQUENCE);
+    deciding.length > 0 &&
+    deciding.every((c) => c.kind === ContradictionKind.SIGNAL_WITHOUT_CONSEQUENCE);
   if (signalOnly) {
     return {
       verified: Verified.UNKNOWN,
@@ -277,8 +282,8 @@ export function decideVerified(inputs: VerifiedInputs): VerifiedVerdict {
         'the store holds) before trusting it',
     };
   }
-  if (contradictions.length > 0 && !settlementOnly) {
-    const kinds = contradictions.map((c) => c.kind).join(', ');
+  if (deciding.length > 0 && !settlementOnly) {
+    const kinds = deciding.map((c) => c.kind).join(', ');
     return {
       verified: Verified.UNKNOWN,
       // NOT `unsettled`: this clause fires whether or not the page went idle, and naming it after
