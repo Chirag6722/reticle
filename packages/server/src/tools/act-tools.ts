@@ -753,7 +753,9 @@ export const ACT_TOOLS: ToolDef[] = [
           // Nor must one nobody could OBSERVE. This is the act path, so it is the one that produced
           // the measured false red: a reload mid-wait, graded assertion_failed at the clicked
           // component's own file and line.
-          ...(true === verdict.observationLost ? { observationLost: true } : {}),
+          ...(true === verdict.observationLost
+            ? { observationLost: true, lastUrl: session.url }
+            : {}),
           ...(absenceBlindSpot === undefined ? {} : { absenceBlindSpot }),
           honesty,
           contradictions,

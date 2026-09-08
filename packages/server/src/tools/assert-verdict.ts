@@ -140,7 +140,7 @@ export async function assertVerdict(
     declaredConsequence: predicate.kind !== PredicateKind.SETTLED,
     ...(declaresBodyIndependentChannel(predicate) ? { independentOfBody: true } : {}),
     ...(inconclusive === undefined ? {} : { inconclusive }),
-    ...(true === observationLost ? { observationLost: true } : {}),
+    ...(true === observationLost ? { observationLost: true, lastUrl: session.url } : {}),
     ...(absenceBlindSpot === undefined ? {} : { absenceBlindSpot }),
     ...(namedNetIsInFlight(predicate, stillInFlight) ? { namedRequestInFlight: true } : {}),
     honesty: buildHonestyBlock({

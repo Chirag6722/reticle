@@ -180,6 +180,19 @@ describe('a lost connection is not a failed assertion', () => {
     expect(v.because).not.toMatch(/did not hold/);
   });
 
+  it('names the last URL when the page was torn down mid-wait', () => {
+    const v = decideVerified({
+      pass: false,
+      observationLost: true,
+      lastUrl: 'http://localhost:3000/orders/explode',
+      honesty: clean(),
+      settled: true,
+    });
+    expect(v.because).toMatch(/torn down while on/);
+    expect(v.because).toContain('http://localhost:3000/orders/explode');
+    expect(v.because).not.toMatch(/did not hold/);
+  });
+
   it('leaves a GENUINE failure alone — the flag is the only difference', () => {
     // Identical inputs but for `observationLost`. If this ever goes UNKNOWN, the fix has swallowed
     // real failures, which is far worse than the bug it replaced.
