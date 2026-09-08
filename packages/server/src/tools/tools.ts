@@ -297,7 +297,7 @@ export const RAW_TOOLS: ToolDef[] = [
   {
     name: ReticleTool.QUERY,
     example: { by: 'testid', value: 'todo-list' },
-    description: `Find elements by Testing-Library semantics, INCLUDING open shadow roots — \`count_only:true\` gives just the count (~30x smaller); \`limit\` caps descriptors. Pass \`by\` (${QUERY_BY_LIST}) and \`value\` (the query string). Returns matching refs + descriptors + visibility. Pass \`attrs:["href"]\` to project attributes (link/image URLs) onto each match. Pass \`limit\` to cap descriptors (broad role queries can be large) or \`count_only:true\` for just the match count — both cut tokens. On zero matches, also returns hint:{ route, presentRegions[], knownEmptyState } so you can distinguish an empty state from a missing element WITHOUT taking a snapshot. ASKING SEVERAL QUESTIONS ABOUT THE PAGE? One reticle_snapshot answers them all at once — a run of queries costs a round trip each and returns what the snapshot already held.`,
+    description: `Find elements by Testing-Library semantics, INCLUDING open shadow roots — \`count_only:true\` gives just the count (~30x smaller); \`limit\` caps descriptors. Pass \`by\` (${QUERY_BY_LIST}) and \`value\` (the query string). Returns matching refs + descriptors + visibility. Pass \`attrs:["href"]\` to project attributes (link/image URLs) onto each match. Pass \`limit\` to cap descriptors (broad role queries can be large) or \`count_only:true\` for just the match count — both cut tokens. On zero matches, also returns hint:{ route, presentRegions[], knownEmptyState, nameNearMiss[] } so you can distinguish an empty state from a missing element WITHOUT taking a snapshot — nameNearMiss carries the labels that role really has when an exact role+name query just missed. ASKING SEVERAL QUESTIONS ABOUT THE PAGE? One reticle_snapshot answers them all at once — a run of queries costs a round trip each and returns what the snapshot already held.`,
     inputSchema: {
       // Constrained to the enum, NOT z.string(). A free string let `by:'css'` through to the
       // browser's `default: return []`, so an unsupported strategy answered "0 matches" — which
@@ -435,6 +435,14 @@ export const RAW_TOOLS: ToolDef[] = [
             .optional()
             .describe(
               "Present when a TEXT search missed but the string IS on the page, split across this container's children. Retry as { scope: <ref>, self: true } — no text query can match a string no single element owns.",
+            ),
+          // Declared here for the same reason presentRegions had to be: the browser emits it, and an
+          // undeclared field is stripped from structuredContent without a word.
+          nameNearMiss: z
+            .array(z.string())
+            .optional()
+            .describe(
+              'Present when a ROLE+NAME search missed and that role DOES carry a nearly-matching name — role+name is exact, so "Mesh" does not find "2 Mesh". Retry with one of these spellings; no snapshot needed.',
             ),
         })
         .optional()
