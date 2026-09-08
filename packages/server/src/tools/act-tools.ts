@@ -802,6 +802,9 @@ export const ACT_TOOLS: ToolDef[] = [
           stateUnwatched,
           // What the app DECLARED, so an under-instrumented one is told without having to be asked.
           hasCapabilities: session.hasCapabilities,
+          // Whether the build TURNED the source stamp off, so a red with no file:line prescribes the
+          // right fix. `false` from the page is the only value that means anything; absent is unknown.
+          ...(false === session.sourceMapping ? { sourceMappingDisabled: true } : {}),
           // What the run still owes. A green that leaves this above zero is not the same as done.
           // MINUS the one this verdict is about to discharge.
           //
