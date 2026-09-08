@@ -35,6 +35,7 @@ import {
   cursorRuleFile,
   AgentRuleStatus,
   CLAUDE_MD_PATH,
+  markedBlock,
   AGENTS_MD_PATH,
   RETICLE_MD_PATH,
   CURSOR_RULE_PATH,
@@ -536,6 +537,31 @@ function cursorCommandStep(input: PlanInput): Step | null {
 
 const AGENT_RULE_TITLE = 'Agent verification rule';
 const AGENT_RULE_DETAIL = 'teach the agent to verify features with Reticle after building them';
+
+/**
+ * What this step is about to do to a file somebody else already writes in.
+ *
+ * Creating an instruction file and APPENDING to an existing one are different acts, and the plan
+ * said the same sentence for both. Reported from the field on a monorepo audit: `init` appended 68
+ * lines to `CLAUDE.md` — the repo's binding agent contract, the file every agent there reads first —
+ * described only as "teach the agent to verify features with Reticle after building them". The
+ * reporter reverted the whole install.
+ *
+ * `--dry-run` already exists, so the consent mechanism was never missing; what was missing was the
+ * plan telling the truth loudly enough to act on. A reader deciding whether to allow this needs the
+ * SIZE and the fact that the file is already theirs — both of which are known here and were being
+ * withheld. The markers are named too, because a reversible edit and an irreversible one are also
+ * different acts, and this one is reversible.
+ */
+function ruleWriteDetail(existing: string | null | undefined, file: string): string {
+  const hasContent = existing !== null && existing !== undefined && existing.trim().length > 0;
+  if (!hasContent) return `${AGENT_RULE_DETAIL} — creates ${file}`;
+  const added = markedBlock().split('\n').length - 1;
+  return (
+    `${AGENT_RULE_DETAIL} — APPENDS ${String(added)} lines to your existing ${file}, ` +
+    'inside `reticle:begin`/`reticle:end` markers; delete the marked block to undo'
+  );
+}
 const RETICLE_MD_TITLE = 'Full agent rules';
 const RETICLE_MD_DETAIL =
   'the reference the always-loaded rule points at (when NOT to verify, recovery, feedback)';
@@ -556,7 +582,7 @@ function claudeRuleStep(input: PlanInput): Step | null {
     title: AGENT_RULE_TITLE,
     target: path,
     status: StepStatus.APPLY,
-    detail: AGENT_RULE_DETAIL,
+    detail: ruleWriteDetail(input.claudeMdContent, CLAUDE_MD_PATH),
     write: { path, content: r.content },
   };
 }
@@ -674,7 +700,7 @@ function agentsMdStep(input: PlanInput): Step {
     title: AGENT_RULE_TITLE,
     target: path,
     status: StepStatus.APPLY,
-    detail: AGENT_RULE_DETAIL,
+    detail: ruleWriteDetail(input.agentsMdContent, AGENTS_MD_PATH),
     write: { path, content: r.content },
   };
 }
