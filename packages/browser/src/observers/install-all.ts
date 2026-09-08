@@ -22,6 +22,7 @@ import { installNetwork } from './network.js';
 import { installIpc, ipcNetOverrides, isReticleOwnIpc } from './ipc.js';
 import { installPerf } from './perf.js';
 import { installRoute } from './route.js';
+import { installNavigation } from './navigation.js';
 import { installConsole } from './console.js';
 import { installDialogs } from './dialogs.js';
 import { installAnimation } from './animation.js';
@@ -63,6 +64,9 @@ export function installAllObservers(emit: Emit, options: InstallOptions): Teardo
     ),
     guard(emit, SdkSite.ANIMATION_OBSERVER, () => installPerf(emit)),
     guard(emit, SdkSite.ROUTER_OBSERVER, () => installRoute(emit)),
+    // The request that fetched THIS document, which no in-page patch could have seen: it was made
+    // by the browser before this document, and therefore this SDK, existed. See installNavigation.
+    guard(emit, SdkSite.NETWORK_OBSERVER, () => installNavigation(emit)),
     guard(emit, SdkSite.CONSOLE_OBSERVER, () => installConsole(emit)),
     // A native dialog behind a driven click wedges the tab permanently — the main thread stops and
     // the SDK's own pump is on it, so nothing inside the session can recover. Answered, never

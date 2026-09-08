@@ -13,6 +13,23 @@ export const NetInitiator = {
   XHR: 'xhr',
   BEACON: 'beacon',
   IPC: 'ipc',
+  /**
+   * The request that fetched the DOCUMENT itself, read once from `PerformanceNavigationTiming`.
+   *
+   * A server-rendered app answers a click with a full document load: the old document is torn down
+   * with the SDK inside it, and the SDK comes back up in a page whose defining request happened
+   * before it existed. No patched transport could have seen it, so the net channel had no record of
+   * it at all — a Django MPA click was verified on route and heading while the `net` clause naming
+   * the destination MISSED, and the verdict came back `unknown`.
+   *
+   * DISTINCT FROM the document-INITIATED subresource initiators (`link`, `css`, `img`, `script`,
+   * `manifest`, `other`) that the resource-timing observer stamps. Those prove that observer is
+   * alive on this page and gate a downgrade in `predicate-eval`; this one does not, because the
+   * navigation entry exists on every page with Navigation Timing including ones where
+   * `PerformanceObserver` never fired. Conflating them would turn an honest "cannot tell" into a
+   * false red over favicons and fonts.
+   */
+  DOCUMENT: 'document',
 } as const;
 export type NetInitiator = (typeof NetInitiator)[keyof typeof NetInitiator];
 
