@@ -28,7 +28,18 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
-const CHANGELOG = 'CHANGELOG.md';
+
+/**
+ * The two places a release note can live, and both satisfy freshness.
+ *
+ * `CHANGELOG.md` is the assembled document. `.changes/` is where an entry is WRITTEN — one file per
+ * entry, spliced in at release time by `pnpm changelog:assemble`. That split exists because the
+ * single file was the largest merge-conflict source in the repo, and this guard has to follow it:
+ * measured against `CHANGELOG.md` alone, the new mechanism working perfectly — every PR adding its
+ * entry file, nobody touching the assembled document between releases — reads as a changelog nobody
+ * has opened in a month, and the guard reddens on exactly the behaviour it is meant to reward.
+ */
+const NOTES = ['CHANGELOG.md', '.changes'];
 
 /**
  * Source of the packages we publish. Everything else — apps, bench harnesses, docs, CI — is either a
@@ -60,7 +71,7 @@ function git(...args: string[]): string | null {
 
 /** Subjects of the user-facing commits landed since the changelog was last touched. */
 function undocumented(): string[] | null {
-  const last = git('log', '-1', '--format=%H', '--', CHANGELOG);
+  const last = git('log', '-1', '--format=%H', '--', ...NOTES);
   if (null === last || 0 === last.length) return null;
   const subjects = git('log', '--no-merges', '--format=%s', `${last}..HEAD`, '--', SHIPPED_SOURCE);
   if (null === subjects) return null;
@@ -73,7 +84,7 @@ function undocumented(): string[] | null {
 describe('the changelog is not far behind the code', () => {
   it('git history is readable, or this guard says so instead of passing quietly', ({ skip }) => {
     if (null === git('rev-parse', '--git-dir')) skip();
-    expect(git('log', '-1', '--format=%H', '--', CHANGELOG)).toMatch(/^[0-9a-f]{7,40}$/);
+    expect(git('log', '-1', '--format=%H', '--', ...NOTES)).toMatch(/^[0-9a-f]{7,40}$/);
   });
 
   it(`at most ${String(MAX_UNDOCUMENTED_COMMITS)} user-facing commits since the changelog was last touched`, ({
@@ -84,8 +95,8 @@ describe('the changelog is not far behind the code', () => {
     expect(
       behind?.length ?? 0,
       `${String(behind?.length ?? 0)} user-facing commits have landed in ${SHIPPED_SOURCE} since ` +
-        `anyone edited ${CHANGELOG}. Add the bullets — batching is fine, forgetting is what this ` +
-        `catches:\n${(behind ?? []).slice(0, 20).join('\n')}`,
+        `anyone touched ${NOTES.join(' or ')}. Add an entry file under .changes/ — batching is ` +
+        `fine, forgetting is what this catches:\n${(behind ?? []).slice(0, 20).join('\n')}`,
     ).toBeLessThanOrEqual(MAX_UNDOCUMENTED_COMMITS);
   });
 });

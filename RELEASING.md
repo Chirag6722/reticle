@@ -24,7 +24,19 @@ The date is not the commitment; the shipped-and-green build is. A quiet month me
 
 ## Changelog entries
 
-Any user-facing change adds its entry to the `[Unreleased]` section of [CHANGELOG.md](CHANGELOG.md) **in the same PR** — that's what makes cutting a release a 10-minute job instead of an archaeology session. Write it for someone who hits the bug, not for someone reading the diff: what was wrong, what it cost them, what it does now.
+Any user-facing change adds its entry **in the same PR** — that's what makes cutting a release a 10-minute job instead of an archaeology session. Write it for someone who hits the bug, not for someone reading the diff: what was wrong, what it cost them, what it does now.
+
+The entry goes in a **new file under [`.changes/`](.changes/README.md)**, not into `CHANGELOG.md`:
+
+```md
+<!-- .changes/856-navigate-timeout.md -->
+
+### Fixed
+
+- **`@reticlehq/server` — `reticle_navigate` gave up at 5s and called it a failed navigation.** …
+```
+
+Same policy, different mechanism. `CHANGELOG.md` was the largest merge-conflict source in the repo — 23 of 42 open PRs edited it and 11 of those were conflicting, every one of them two branches appending to `[Unreleased]` in the same place. Two PRs adding two files never conflict. The files are assembled into `CHANGELOG.md` at release time by `pnpm changelog:assemble`; the format and the rest of the rules are in [`.changes/README.md`](.changes/README.md).
 
 ## Cutting a release
 
@@ -65,12 +77,12 @@ Two limits worth knowing before trusting a green run.
 
 **None of it checks the deployed site.** The guards read this repository. `docs.reticle.sh` is a separate Mintlify deployment, and it has served pages several commits behind before, so a page being correct here is not evidence that it is correct in front of a user. Check the live page after a release, not only the source.
 
-4. Move `[Unreleased]` in `CHANGELOG.md` under a `## [2.3.0] — YYYY-MM-DD` heading; leave a fresh empty `[Unreleased]`.
+4. `pnpm changelog:assemble` — splices every `.changes/*.md` entry into `[Unreleased]` and deletes the consumed files (`--dry-run` prints the result and touches nothing). Then move `[Unreleased]` under a `## [2.3.0] — YYYY-MM-DD` heading; leave a fresh empty `[Unreleased]`.
 
    **First, check what landed behind it:**
 
    ```bash
-   git log --oneline "$(git log -1 --format=%H -- CHANGELOG.md)"..HEAD
+   git log --oneline "$(git log -1 --format=%H -- CHANGELOG.md .changes)"..HEAD
    ```
 
    A release section is written once and then commits keep arriving, so the entry you are about to publish describes the release as it was on the day somebody opened the section. That has now happened twice in one release: the first time thirty-three commits had landed behind it including both headline fixes, the second time eighteen more. Both were found by running exactly the command above, and nothing else would have found either.
