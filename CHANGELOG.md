@@ -4,6 +4,10 @@ All notable changes to the **`@reticlehq/*`** packages are documented here (each
 
 ## [Unreleased]
 
+### Changed
+
+- **`@reticlehq/server` — an ambiguous target refusal ranks its candidates.** The refusal itself is unchanged (an action still must not guess), but the listed refs are ordered in-viewport then by role, and each entry says whether it is in-viewport, off-screen, visible, or hidden. A header CTA and an empty-state CTA sharing one name no longer cost a snapshot turn to pick between. Multi-match `QUERY` results stamp `inViewport` onto the described prefix so the ranker has the fact. Closes [#886](https://github.com/reticlehq/reticle/issues/886).
+
 ### Added
 
 - **`@reticlehq/server` — `reticle_navigate` takes a `timeout_ms`, and an unconfirmed result says what the wait ended on.** The arrival window was a fixed, unstated 5s: `navigate-arrival.ts` hard-coded it and the tool exposed nothing, so unlike `assert` / `wait_for` / `act_and_wait`, which all spend the caller's budget, nobody could tell navigate to wait longer. A Nuxt SPA reattaching under HMR was measured at 30–60s, so every navigation to it gave up while the app was still coming back and answered `confirmed: false`, which reads as a failed navigation rather than as Reticle having stopped waiting; the only escape was the blind `reticle_sessions` poll that `#612` removed everywhere else. `timeout_ms` now reaches the wait (default 5000, so nothing gets slower by accident; `0` looks once; the same bounds as the other tools), and applies to `{ reload: true }` too, since the page coming back is the same wait. `confirmed: false` carries `waitedMs`, the budget that expired, and its note names `timeout_ms` as the way to wait longer. Closes [#856](https://github.com/reticlehq/reticle/issues/856).

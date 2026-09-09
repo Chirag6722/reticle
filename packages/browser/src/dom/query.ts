@@ -470,8 +470,15 @@ export function matchQuery(
     state === undefined ? elements : elements.filter((el) => inState(el, state, visMemo));
   const attrs = query.attrs;
   const described = filtered.slice(0, Math.max(0, Math.min(limit, MAX_DESCRIBED)));
+  // When more than one match is described, stamp `inViewport` onto those that sit in the window.
+  // Target resolution (#886) ranks ambiguity refusals by that fact; it is omitted from single-match
+  // and snapshot-wide describes because it would bloat every element on every look (#398).
+  const stampViewport = described.length > 1;
   const descriptors: ElementDescriptor[] = described.map((el) => {
-    const base = describe(el, visMemo);
+    let base = describe(el, visMemo);
+    if (stampViewport && isInViewport(el, visMemo) && !base.states.includes(ElementState.IN_VIEWPORT)) {
+      base = { ...base, states: [...base.states, ElementState.IN_VIEWPORT] };
+    }
     if (attrs === undefined || 0 === attrs.length) return base;
     const projected = projectAttrs(el, attrs);
     return projected === undefined ? base : { ...base, attrs: projected };
