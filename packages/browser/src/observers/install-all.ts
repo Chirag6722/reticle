@@ -44,6 +44,24 @@ function guard(emit: Emit, site: SdkSite, install: () => Teardown): Teardown {
   }
 }
 
+/**
+ * Undo every install, guarded — the mirror of `guard()`, and for the same reason.
+ *
+ * This loop ran bare in `disconnect()`. One throwing disposer took every LATER one with it, so a
+ * page the SDK had been told to leave kept `fetch`, XHR, `Storage.prototype.*`, `console` and the
+ * native dialogs patched for the rest of its life, silently. A teardown that cannot finish is
+ * strictly worse than one that never ran: the app keeps the wrapper and loses the observer.
+ */
+export function runTeardowns(emit: Emit, teardowns: readonly Teardown[]): void {
+  for (const teardown of teardowns) {
+    try {
+      teardown();
+    } catch (error) {
+      reportSdkFailure(emit, SdkSite.TEARDOWN, error);
+    }
+  }
+}
+
 export function installAllObservers(emit: Emit, options: InstallOptions): Teardown[] {
   return [
     // Composition happens HERE, not inside the network observer: the network observer knows

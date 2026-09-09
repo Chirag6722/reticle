@@ -41,7 +41,7 @@ import {
   hasCapabilities,
   type CapabilitiesInput,
 } from './registry/capabilities.js';
-import { installAllObservers } from './observers/install-all.js';
+import { installAllObservers, runTeardowns } from './observers/install-all.js';
 import { installOverlay, type OverlayHandle } from './presenter/overlay.js';
 import {
   Presenter,
@@ -472,7 +472,7 @@ export class Reticle {
 
   disconnect(): void {
     if (!this.#connected) return;
-    for (const teardown of this.#teardowns) teardown();
+    runTeardowns(this.#emit, this.#teardowns);
     this.#teardowns = [];
     this.#transport?.close();
     this.#transport = undefined;

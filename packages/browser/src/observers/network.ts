@@ -6,7 +6,7 @@ import {
   StreamDirection,
 } from '@reticlehq/core';
 import { captureMethod } from '../patching/capture-method.js';
-import type { Emit, Teardown } from './types.js';
+import { observeSafely, observeValue, type Emit, type Teardown } from './types.js';
 import { isCapturableType, projectBody, withBodyDeadline } from './network-body.js';
 import { redactUrl, netUrlFields } from './network-redact.js';
 import { watchStreamedBody } from './network-stream.js';
@@ -299,41 +299,51 @@ export function installNetwork(emit: Emit, opts: NetworkOptions = {}): Teardown 
     const method = methodOf(input, init);
     const urlFields = netUrlFields(rawUrl);
     const url = urlFields.url;
-    const initiatorStack = initiatorFrame();
+    const initiatorStack = observeValue(() => initiatorFrame());
     const initiatorFields = initiatorStack === undefined ? {} : { initiatorStack };
-    emit(EventType.NET_PENDING, {
-      id,
-      method,
-      ...urlFields,
-      initiator: 'fetch',
-      ...initiatorFields,
+    // Guarded: redaction runs over a URL the app supplied, and this is the LAST thing between the
+    // caller and their request. A throw here used to mean the fetch was never made at all.
+    observeSafely(() => {
+      emit(EventType.NET_PENDING, {
+        id,
+        method,
+        ...urlFields,
+        initiator: 'fetch',
+        ...initiatorFields,
+      });
     });
     try {
       const res = await callFetch(input, init);
       // The app's fetch resolves HERE — at headers — like a native fetch. durationMs is measured to
       // headers-received, so it stays honest whether or not we read the body.
       const headersAt = performance.now();
-      const contentType = res.headers.get('content-type');
+      const contentType = observeValue(() => res.headers.get('content-type')) ?? null;
       // The request is done; the BODY may not be. Watch it so settle cannot pass mid-stream.
-      watchStreamedBody(emit, res, id, url, contentType, res.headers.get('content-length'));
+      observeSafely(() => {
+        watchStreamedBody(emit, res, id, url, contentType, res.headers.get('content-length'));
+      });
       reportedNetUrls.add(rawUrl);
       const emitRequest = (responseBodyFields: Record<string, unknown>): void => {
-        emit(EventType.NET_REQUEST, {
-          id,
-          method,
-          ...urlFields,
-          status: res.status,
-          ok: statusIsOk(res.status),
-          durationMs: Math.round(headersAt - start),
-          initiator: 'fetch',
-          ...initiatorFields,
-          ...resourceTiming(rawUrl),
-          ...netResponseMeta(res.statusText, contentType, res.headers.get('content-length')),
-          ...projectRequestBody(init?.body, captureBodies),
-          ...responseBodyFields,
-          // Applied LAST so a reinterpreted verdict wins over the transport's own fields — a Tauri
-          // command that returned Err still travelled down a fetch that answered HTTP 200.
-          ...(reinterpret?.(url, (name) => res.headers.get(name)) ?? {}),
+        // The app's response has already arrived. Nothing this builds — body projection, redaction,
+        // a reinterpreting header read — may turn a resolved fetch into a rejected one.
+        observeSafely(() => {
+          emit(EventType.NET_REQUEST, {
+            id,
+            method,
+            ...urlFields,
+            status: res.status,
+            ok: statusIsOk(res.status),
+            durationMs: Math.round(headersAt - start),
+            initiator: 'fetch',
+            ...initiatorFields,
+            ...resourceTiming(rawUrl),
+            ...netResponseMeta(res.statusText, contentType, res.headers.get('content-length')),
+            ...projectRequestBody(init?.body, captureBodies),
+            ...responseBodyFields,
+            // Applied LAST so a reinterpreted verdict wins over the transport's own fields — a Tauri
+            // command that returned Err still travelled down a fetch that answered HTTP 200.
+            ...(reinterpret?.(url, (name) => res.headers.get(name)) ?? {}),
+          });
         });
       };
       if (captureBodies && isCapturableType(contentType)) {
@@ -383,16 +393,20 @@ export function installNetwork(emit: Emit, opts: NetworkOptions = {}): Teardown 
       }
       return res;
     } catch (error) {
-      emit(EventType.NET_REQUEST, {
-        id,
-        method,
-        url,
-        status: 0,
-        ok: false,
-        error: error instanceof Error ? error.message : String(error),
-        durationMs: Math.round(performance.now() - start),
-        initiator: 'fetch',
-        ...initiatorFields,
+      // The app's own error must reach the app, not ours: an unguarded emit here replaced the real
+      // network failure with an SDK exception the developer could make no sense of.
+      observeSafely(() => {
+        emit(EventType.NET_REQUEST, {
+          id,
+          method,
+          url,
+          status: 0,
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+          durationMs: Math.round(performance.now() - start),
+          initiator: 'fetch',
+          ...initiatorFields,
+        });
       });
       throw error;
     }
@@ -414,12 +428,14 @@ export function installNetwork(emit: Emit, opts: NetworkOptions = {}): Teardown 
     url: string | URL,
     ...rest: unknown[]
   ): void {
-    meta.set(this, {
-      id: nextId(),
-      method: method.toUpperCase(),
-      url: redactUrl(String(url)),
-      rawUrl: String(url),
-      start: 0,
+    observeSafely(() => {
+      meta.set(this, {
+        id: nextId(),
+        method: method.toUpperCase(),
+        url: redactUrl(String(url)),
+        rawUrl: String(url),
+        start: 0,
+      });
     });
     callOpen.call(this, method, url, ...rest);
   };
@@ -433,61 +449,69 @@ export function installNetwork(emit: Emit, opts: NetworkOptions = {}): Teardown 
     this: XMLHttpRequest,
     body?: Document | XMLHttpRequestBodyInit | null,
   ): void {
-    const m = meta.get(this);
-    if (m !== undefined) {
-      m.start = performance.now();
-      m.reqBody = body ?? null;
-      m.initiatorStack = initiatorFrame(); // the app's xhr.send call site
-      const initiatorFields =
-        m.initiatorStack === undefined ? {} : { initiatorStack: m.initiatorStack };
-      emit(EventType.NET_PENDING, {
-        id: m.id,
-        method: m.method,
-        ...netUrlFields(m.rawUrl),
-        initiator: 'xhr',
-        ...initiatorFields,
-      });
-      if (!listenerAttached.has(this)) {
-        listenerAttached.add(this);
-        this.addEventListener('loadend', () => {
-          const cur = meta.get(this);
-          if (cur === undefined) return;
-          reportedNetUrls.add(cur.rawUrl);
-          const xhrContentType = this.getResponseHeader('content-type');
-          let responseBodyFields: Record<string, unknown> = {};
-          // responseText throws unless responseType is '' or 'text' — guard before reading.
-          const textReadable = '' === this.responseType || 'text' === this.responseType;
-          if (captureBodies && textReadable && isCapturableType(xhrContentType)) {
-            try {
-              const { body: rb, truncated } = projectBody(this.responseText, xhrContentType);
-              responseBodyFields = truncated
-                ? { responseBody: rb, responseBodyTruncated: true }
-                : { responseBody: rb };
-            } catch {
-              /* unreadable body — skip */
-            }
-          }
-          emit(EventType.NET_REQUEST, {
-            id: cur.id,
-            method: cur.method,
-            ...netUrlFields(cur.rawUrl),
-            status: this.status,
-            ok: statusIsOk(this.status),
-            durationMs: Math.round(performance.now() - cur.start),
-            initiator: 'xhr',
-            ...(cur.initiatorStack === undefined ? {} : { initiatorStack: cur.initiatorStack }),
-            ...resourceTiming(cur.rawUrl),
-            ...netResponseMeta(
-              this.statusText,
-              xhrContentType,
-              this.getResponseHeader('content-length'),
-            ),
-            ...projectRequestBody(cur.reqBody, captureBodies),
-            ...responseBodyFields,
-          });
+    // Guarded WHOLE, and it has to run before the send rather than after: the `loadend` listener
+    // must be attached before a synchronous XHR blocks in `send`, and `start` must be read before the
+    // request leaves. So the minimum is captured here — inside the guard — and the app's send is
+    // reached whatever happens in it.
+    observeSafely(() => {
+      const m = meta.get(this);
+      if (m !== undefined) {
+        m.start = performance.now();
+        m.reqBody = body ?? null;
+        m.initiatorStack = initiatorFrame(); // the app's xhr.send call site
+        const initiatorFields =
+          m.initiatorStack === undefined ? {} : { initiatorStack: m.initiatorStack };
+        emit(EventType.NET_PENDING, {
+          id: m.id,
+          method: m.method,
+          ...netUrlFields(m.rawUrl),
+          initiator: 'xhr',
+          ...initiatorFields,
         });
+        if (!listenerAttached.has(this)) {
+          listenerAttached.add(this);
+          this.addEventListener('loadend', () => {
+            observeSafely(() => {
+              const cur = meta.get(this);
+              if (cur === undefined) return;
+              reportedNetUrls.add(cur.rawUrl);
+              const xhrContentType = this.getResponseHeader('content-type');
+              let responseBodyFields: Record<string, unknown> = {};
+              // responseText throws unless responseType is '' or 'text' — guard before reading.
+              const textReadable = '' === this.responseType || 'text' === this.responseType;
+              if (captureBodies && textReadable && isCapturableType(xhrContentType)) {
+                try {
+                  const { body: rb, truncated } = projectBody(this.responseText, xhrContentType);
+                  responseBodyFields = truncated
+                    ? { responseBody: rb, responseBodyTruncated: true }
+                    : { responseBody: rb };
+                } catch {
+                  /* unreadable body — skip */
+                }
+              }
+              emit(EventType.NET_REQUEST, {
+                id: cur.id,
+                method: cur.method,
+                ...netUrlFields(cur.rawUrl),
+                status: this.status,
+                ok: statusIsOk(this.status),
+                durationMs: Math.round(performance.now() - cur.start),
+                initiator: 'xhr',
+                ...(cur.initiatorStack === undefined ? {} : { initiatorStack: cur.initiatorStack }),
+                ...resourceTiming(cur.rawUrl),
+                ...netResponseMeta(
+                  this.statusText,
+                  xhrContentType,
+                  this.getResponseHeader('content-length'),
+                ),
+                ...projectRequestBody(cur.reqBody, captureBodies),
+                ...responseBodyFields,
+              });
+            });
+          });
+        }
       }
-    }
+    });
     origSend.call(this, body ?? null);
   };
   const patchedSend = captureMethod(proto, 'send');
@@ -502,18 +526,23 @@ export function installNetwork(emit: Emit, opts: NetworkOptions = {}): Teardown 
     window.EventSource = class extends origEventSource {
       constructor(u: string | URL, init?: EventSourceInit) {
         super(u, init);
-        const urlFields = netUrlFields(String(u));
-        emit(EventType.NET_STREAM, {
-          transport: StreamTransport.SSE,
-          direction: StreamDirection.OPEN,
-          ...urlFields,
-        });
-        this.addEventListener('message', (ev: MessageEvent) => {
+        // `new EventSource(...)` is the app's constructor call — observation may not make it throw.
+        observeSafely(() => {
+          const urlFields = netUrlFields(String(u));
           emit(EventType.NET_STREAM, {
             transport: StreamTransport.SSE,
-            direction: StreamDirection.IN,
+            direction: StreamDirection.OPEN,
             ...urlFields,
-            ...frameFields(ev.data, captureBodies),
+          });
+          this.addEventListener('message', (ev: MessageEvent) => {
+            observeSafely(() => {
+              emit(EventType.NET_STREAM, {
+                transport: StreamTransport.SSE,
+                direction: StreamDirection.IN,
+                ...urlFields,
+                ...frameFields(ev.data, captureBodies),
+              });
+            });
           });
         });
       }
@@ -528,18 +557,23 @@ export function installNetwork(emit: Emit, opts: NetworkOptions = {}): Teardown 
         super(u, protocols);
         this.#isBridge = isBridgeSocket(String(u));
         if (this.#isBridge) return;
-        const urlFields = netUrlFields(String(u));
-        emit(EventType.NET_STREAM, {
-          transport: StreamTransport.WS,
-          direction: StreamDirection.OPEN,
-          ...urlFields,
-        });
-        this.addEventListener('message', (ev: MessageEvent) => {
+        // `new WebSocket(...)` is the app's constructor call — observation may not make it throw.
+        observeSafely(() => {
+          const urlFields = netUrlFields(String(u));
           emit(EventType.NET_STREAM, {
             transport: StreamTransport.WS,
-            direction: StreamDirection.IN,
+            direction: StreamDirection.OPEN,
             ...urlFields,
-            ...frameFields(ev.data, captureBodies),
+          });
+          this.addEventListener('message', (ev: MessageEvent) => {
+            observeSafely(() => {
+              emit(EventType.NET_STREAM, {
+                transport: StreamTransport.WS,
+                direction: StreamDirection.IN,
+                ...urlFields,
+                ...frameFields(ev.data, captureBodies),
+              });
+            });
           });
         });
       }
@@ -552,13 +586,18 @@ export function installNetwork(emit: Emit, opts: NetworkOptions = {}): Teardown 
           super.send(data);
           return;
         }
-        emit(EventType.NET_STREAM, {
-          transport: StreamTransport.WS,
-          direction: StreamDirection.OUT,
-          ...netUrlFields(this.url),
-          ...frameFields(data, captureBodies),
-        });
+        // The app's frame goes FIRST and outside the guard — storage.ts's ordering. Building the
+        // OUT payload (redacting the frame, projecting a Blob/ArrayBuffer) used to run before the
+        // send, so one throw meant the customer's message was never transmitted at all.
         super.send(data);
+        observeSafely(() => {
+          emit(EventType.NET_STREAM, {
+            transport: StreamTransport.WS,
+            direction: StreamDirection.OUT,
+            ...netUrlFields(this.url),
+            ...frameFields(data, captureBodies),
+          });
+        });
       }
     };
     patchedWebSocket = window.WebSocket;
@@ -578,22 +617,24 @@ export function installNetwork(emit: Emit, opts: NetworkOptions = {}): Teardown 
   if (navProto !== null && origBeacon !== undefined) {
     patchedBeacon = function (this: Navigator, url: string | URL, data?: BodyInit | null): boolean {
       const id = nextId();
-      const urlFields = netUrlFields(String(url));
-      const initiatorStack = initiatorFrame();
+      const urlFields = observeValue(() => netUrlFields(String(url)));
+      const initiatorStack = observeValue(() => initiatorFrame());
       const sent = origBeacon.call(this, url, data);
       // sendBeacon returns whether the payload was QUEUED, not an HTTP result — the response never
       // surfaces to JS. Fabricating status 200 lied to an agent asserting on status. Report status 0
       // (no HTTP response observed) and carry the real signal in `queued`.
-      emit(EventType.NET_REQUEST, {
-        id,
-        method: 'POST',
-        ...urlFields,
-        status: 0,
-        ok: sent,
-        queued: sent,
-        durationMs: 0,
-        initiator: 'beacon',
-        ...(initiatorStack === undefined ? {} : { initiatorStack }),
+      observeSafely(() => {
+        emit(EventType.NET_REQUEST, {
+          id,
+          method: 'POST',
+          ...urlFields,
+          status: 0,
+          ok: sent,
+          queued: sent,
+          durationMs: 0,
+          initiator: 'beacon',
+          ...(initiatorStack === undefined ? {} : { initiatorStack }),
+        });
       });
       return sent;
     };
