@@ -1,0 +1,30 @@
+{
+  "$comment": "Third-party false-green corpus rows (#130 item 1). A row's ground truth is SOMEBODY ELSE'S: an upstream commit that fixed a bug and shipped the regression test for it. The oracle is that test, run against the broken source. Refs are immutable, so upstream cannot move a row under the measurement. Candidates are found with find-candidate-rows.mjs; a candidate becomes a row ONLY after the fail/pass below is measured, because an unverified row makes the scorecard read stronger than it is.",
+  "rows": [
+    {
+      "id": "nuclear-queue-double-click",
+      "upstream": "https://github.com/nukeop/nuclear.git",
+      "fixedRef": "db61d554436",
+      "brokenRef": "db61d554436~1",
+      "subject": "Fix queue item double click",
+      "oracle": {
+        "kind": "upstream-test",
+        "package": "packages/player",
+        "install": "pnpm install --filter @nuclearplayer/player... --ignore-scripts",
+        "command": "npx vitest --run src/stores/queueStore.test.ts",
+        "brokenSource": ["packages/player/src/stores/queueStore.ts"]
+      },
+      "verified": {
+        "at": "2026-09-09",
+        "fixedRef": "34 passed",
+        "brokenRef": "2 failed, 32 passed",
+        "failing": [
+          "goToIndex to the current index does not stop playback",
+          "goToId with the current item id does not stop playback"
+        ],
+        "note": "Exactly the two tests the fix shipped fail, and the other 32 still pass. The oracle discriminates this defect specifically rather than reporting the build broken."
+      },
+      "whyItIsAFalseGreen": "Double-clicking the queue item that is already playing silently STOPS playback. The item is selected, the queue renders correctly, and nothing on screen says anything is wrong — the failure is a state change nobody asked for. A presence-only check of the queue UI passes here, which is exactly the shape this corpus exists to measure."
+    }
+  ]
+}
