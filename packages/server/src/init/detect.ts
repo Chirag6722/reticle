@@ -202,7 +202,19 @@ function detectFramework(input: DetectInput): Framework {
   }
   // SvelteKit is Vite-based but renders through app.html, so the Vite plugin's index.html injection
   // never fires (verified) — it needs a manual client connect. Check BEFORE the generic Vite branch.
-  if (depVersion(pkg, '@sveltejs/kit') !== undefined || hasAnyConfig(configFiles, SVELTE_CONFIGS)) {
+  //
+  // `svelte.config.js` alone is NOT sufficient: a plain Svelte + Vite SPA ships one too, for
+  // `@sveltejs/vite-plugin-svelte`'s own preprocessor options, with no `kit` block in it. That
+  // config-file-alone read misclassified a real project (#883) — `init` wrote a SvelteKit-only
+  // `src/hooks.client.ts` bootstrap that nothing on that project could ever import. SvelteKit itself
+  // never ships a root `index.html` (it renders through `src/app.html` instead), where a plain Vite
+  // SPA — Svelte or otherwise — always has one; that absence is what the config-file fallback needs
+  // alongside the file, since the presence of `@sveltejs/kit` in package.json is checked first and is
+  // conclusive on its own whether or not a root `index.html` exists.
+  if (
+    depVersion(pkg, '@sveltejs/kit') !== undefined ||
+    (hasAnyConfig(configFiles, SVELTE_CONFIGS) && !configFiles.has('index.html'))
+  ) {
     return Framework.SVELTEKIT;
   }
   // Astro is Vite-based but SSRs its own HTML, so the plugin's index.html injection never fires and

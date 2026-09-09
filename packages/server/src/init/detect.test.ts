@@ -72,6 +72,34 @@ describe('detect framework', () => {
       ).framework,
     ).toBe(Framework.SVELTEKIT);
   });
+  /**
+   * #883: a plain Svelte + Vite SPA also ships a `svelte.config.js` — for the Svelte preprocessor
+   * (`@sveltejs/vite-plugin-svelte`'s own config), unrelated to SvelteKit — so bare file presence
+   * alone (the previous test) is not sufficient to tell the two apart. The discriminator this uses is
+   * the one the issue itself names: SvelteKit renders through `src/app.html` and ships no root
+   * `index.html`; a plain Vite SPA (Svelte or otherwise) always has one. Without this, `init` wrote a
+   * SvelteKit-only `src/hooks.client.ts` bootstrap into a project where nothing imports it.
+   */
+  it('does NOT detect SvelteKit from svelte.config.js alone when a root index.html exists', () => {
+    expect(
+      detect(
+        input({
+          pkg: { devDependencies: { vite: '^5', svelte: '^5' } },
+          configFiles: new Set(['svelte.config.js', 'vite.config.ts', 'index.html']),
+        }),
+      ).framework,
+    ).toBe(Framework.VITE);
+  });
+  it('still detects SvelteKit from svelte.config.js when @sveltejs/kit IS present, index.html or not', () => {
+    expect(
+      detect(
+        input({
+          pkg: { devDependencies: { '@sveltejs/kit': '^2', vite: '^5' } },
+          configFiles: new Set(['svelte.config.js', 'vite.config.ts', 'index.html']),
+        }),
+      ).framework,
+    ).toBe(Framework.SVELTEKIT);
+  });
 });
 
 describe('detect source mapping need', () => {
