@@ -31,15 +31,17 @@
         "command": "npx vite --port {port} --strictPort",
         "port": 4399,
         "url": "http://localhost:4399/",
-        "renders": false,
-        "rendersNote": "The renderer invokes its Tauri backend at startup, so a bare `vite` serves HTTP 200 and mounts nothing. A Reticle session connects and reports nodes: 0. Driving this row needs either the Tauri backend or a stub for the commands it calls at boot.",
-        "measured": "2026-09-09: HTTP 200 in 1.5s; Reticle session connected; snapshot nodes: 0."
+        "renders": true,
+        "rendersNote": "CORRECTED. An earlier note here said the renderer needed its Tauri backend and rendered nothing. That was wrong and came from snapshotting immediately after the session dialled, before React had mounted: the reading was a timing artifact, not a property of the app. Measured directly, document.getElementById('root').innerHTML is 1867 characters under a bare vite.",
+        "measured": "2026-09-09: HTTP 200 in 1.5s; root innerHTML 1867 chars; Reticle session connects with the CDN snippet in index.html; reticle_assert {kind:text} returned verified:\"yes\" reason:\"proved\". reticle_snapshot reported nodes: 0 in the same run, which is a separate question and is recorded on the row rather than smoothed over."
       },
       "drive": {
         "$comment": "What Reticle must catch. The defect is a state change nobody asked for: activating the ALREADY-PLAYING queue item stops playback. Declared as the consequence an agent would asserting on it, so a miss here is a false green in the exact sense this corpus measures.",
         "defect": "activating the already-current queue item stops playback",
         "observableVia": "state",
-        "note": "Requires the app to reach a playing queue, which needs its own setup on this fixture. Not yet automated; see verify-rows.mjs --drive."
+        "note": "Reaching a PLAYING queue, which the declared defect needs, is still app-specific setup and is not automated.",
+        "status": "reachable \u2014 a Reticle verdict was taken against this app at this ref",
+        "openQuestion": "reticle_snapshot reported nodes: 0 while reticle_assert PROVED text on the same page in the same run. One of those is wrong about this app and it is worth knowing which before scoring against it; a snapshot that under-reports would make every presence-grade row look uncatchable."
       }
     }
   ]

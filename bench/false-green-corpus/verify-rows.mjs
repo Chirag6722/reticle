@@ -122,28 +122,28 @@ for (const row of CORPUS.rows) {
     if (served) {
       // SERVING IS NOT RENDERING, and the difference is the whole point of this corpus.
       //
-      // Measured on this row: nuclear's renderer answers HTTP 200 from vite and then renders
-      // NOTHING, because it invokes its Tauri backend at startup and there is no backend behind a
-      // bare `vite`. A Reticle session connected to it perfectly happily and reported `nodes: 0`.
-      // A boot check that stopped at the status code would have called that row drivable and the
-      // score would have been taken against an empty page — a false green in the instrument built
-      // to measure false greens.
-      const html = await fetch(row.boot.url)
-        .then((r) => r.text())
-        .catch(() => '');
-      const root = /<div id="root">([\s\S]*?)<\/div>/.exec(html)?.[1] ?? '';
-      // A Vite dev server ships an empty root and fills it from JS, so the served HTML cannot
-      // settle this on its own; the honest signal is whether the app MOUNTED, which only a browser
-      // can answer. Reported rather than asserted, so a row says what is known about it.
-      console.log(
-        `   ✅ boot: serves at ${row.boot.url} on the broken ref` +
-          (root.trim().length === 0 ? ' (root is empty in the served HTML — see `renders`)' : ''),
-      );
-      if (row.boot.renders === false) {
+      // Measured on this row, and the correction is the lesson. A boot check that stops at the
+      // status code would call a row drivable on the strength of a server answering, and a score
+      // taken against a page that never mounted is a false green inside the instrument built to
+      // measure false greens. But the first version of this comment asserted the opposite error:
+      // it recorded that nuclear renders NOTHING without its Tauri backend, on the strength of a
+      // `nodes: 0` snapshot taken before React had mounted. The app renders 1867 characters.
+      // Serving, rendering and being-ready-to-drive are three properties, and each needs measuring
+      // rather than inferring from the one next to it.
+      // Whether the app MOUNTS is a browser question, and the served HTML cannot answer it: a Vite
+      // dev server always ships an empty `#root` and fills it from JS. Inferring "renders nothing"
+      // from an empty root is exactly the overclaim this probe made once — it recorded
+      // `renders: false` for an app that renders 1867 characters, because the reading was taken
+      // before React mounted. `renders` on the row carries the browser measurement instead.
+      console.log(`   ✅ boot: serves at ${row.boot.url} on the broken ref`);
+      if (row.boot.renders === true) {
+        console.log('   ✅ renders: measured in a browser');
+      } else if (row.boot.renders === false) {
         console.log(
-          '   ⚠  renders: NO — this row can verify its oracle but cannot yet be DRIVEN. ' +
-            (row.boot.rendersNote ?? ''),
+          `   ⚠  renders: NO — oracle verifiable, not drivable. ${row.boot.rendersNote ?? ''}`,
         );
+      } else {
+        console.log('   ⚠  renders: UNMEASURED — do not score this row until it is');
       }
     } else {
       console.log(`   ❌ boot: never served at ${row.boot.url} — nothing to drive Reticle against`);
