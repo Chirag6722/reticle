@@ -15,7 +15,10 @@ import { ReticleTool } from './tool-names.js';
 
 const snapshot = TOOLS.find((t) => t.name === ReticleTool.SNAPSHOT);
 
-const noteFor = async (raw: Record<string, unknown>, mode = SnapshotMode.FULL): Promise<string> => {
+const noteFor = async (
+  raw: Record<string, unknown>,
+  mode: SnapshotMode = SnapshotMode.FULL,
+): Promise<string> => {
   const deps = {
     sessions: {
       resolve: () => ({
