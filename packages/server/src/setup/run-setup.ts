@@ -176,7 +176,11 @@ export async function runSetupPhases(input: SetupInput, fx: SetupEffects): Promi
         note(progress);
         spokeAtMs = waitedMs;
       }
-      const serving = undefined === watching ? false : (await fx.probePage(watching)).served;
+      const probe =
+        undefined === watching
+          ? { served: false as const, sdkInPage: false as const }
+          : await fx.probePage(watching);
+      const serving = probe.served;
       const verdict = judgeWait({
         output: fx.devServerOutput(),
         launcherExited: fx.devServerExited(),
@@ -188,7 +192,8 @@ export async function runSetupPhases(input: SetupInput, fx: SetupEffects): Promi
           : QUIET_MEANS_HUNG_MS,
       });
       if (WaitVerdict.READY === verdict && undefined !== watching) {
-        url = watching;
+        // Prefer the URL that answered when the announcement was the wrong family (#884).
+        url = probe.reachedUrl ?? watching;
         break;
       }
       // A desktop shell serves its webview from inside the app, so there is no port to answer and
