@@ -271,6 +271,12 @@ export const RAW_TOOLS: ToolDef[] = [
         .describe(
           'True when a scope was given but resolved to nothing — the tree is EMPTY on purpose, not because the page is empty. Do not read an absent element as absent from the page; re-check the scope.',
         ),
+      growthWarning: z
+        .string()
+        .optional()
+        .describe(
+          'Present when this same scope was smaller moments ago — content likely arrived after your last look, and a presence/absence conclusion drawn from that earlier snapshot may have been taken mid-load. Re-check rather than trusting the earlier read.',
+        ),
     },
     // async so a synchronous resolve() failure (no session connected) surfaces as a REJECTED promise —
     // the handler contract every caller relies on — not a throw that escapes a direct invocation.
