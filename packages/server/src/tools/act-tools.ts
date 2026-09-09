@@ -153,7 +153,6 @@ export async function actCommand(
  * one layer earlier, before any session is resolved or any work is done.
  */
 const ACTION_TYPE_VALUES = Object.values(ActionType);
-const ACTION_TYPE_LIST = ACTION_TYPE_VALUES.join(' | ');
 const actionTypeEnum = z.enum(ACTION_TYPE_VALUES as [string, ...string[]]);
 
 export const ACT_TOOLS: ToolDef[] = [
@@ -175,7 +174,7 @@ export const ACT_TOOLS: ToolDef[] = [
         .describe(
           'Find the element and act on it in ONE call, instead of a reticle_query round trip first: { testid } | { text } | { role, name } | { label }. Refuses if it matches more than one, rather than guessing.',
         ),
-      action: actionTypeEnum.describe(`Action to perform: ${ACTION_TYPE_LIST}`),
+      action: actionTypeEnum.describe('Action to perform.'),
       args: z
         .record(z.unknown())
         .optional()
@@ -330,7 +329,7 @@ export const ACT_TOOLS: ToolDef[] = [
         .describe(
           'Find the element and act on it in ONE call, instead of a reticle_query round trip first: { testid } | { text } | { role, name } | { label }. Refuses if it matches more than one, rather than guessing.',
         ),
-      action: actionTypeEnum.describe(`Action to perform: ${ACTION_TYPE_LIST}`),
+      action: actionTypeEnum.describe('Action to perform.'),
       args: z
         .record(z.unknown())
         .optional()

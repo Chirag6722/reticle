@@ -267,7 +267,7 @@ A verdict of `verified: "unknown"` is not a pass. It means Reticle drove the app
 
 Then report what you drove, what it produced, and the `file:line` for anything broken.
 
-The surface is deliberately small: `default` 18, `all` 30. Editors budget tools across every MCP server you have connected (Cursor allows 40 in total), so the count is capped rather than allowed to grow. `reticle_tools` loads the argument grammar for the rest on demand, and `reticle_run` invokes any of them by name. Nothing is unreachable; the cold tail just costs one discovery hop.
+The surface is deliberately small: `default` 19, `all` 30. Editors budget tools across every MCP server you have connected (Cursor allows 40 in total), so the count is capped rather than allowed to grow. `reticle_tools` loads the argument grammar for the rest on demand, and `reticle_run` invokes any of them by name. Nothing is unreachable; the cold tail just costs one discovery hop.
 
 - Batching, regression suites, reading a verdict: `https://docs.reticle.sh/agent-cheatsheet.md`
 - Every predicate and action: `https://docs.reticle.sh/predicates.md`, `https://docs.reticle.sh/actions.md`

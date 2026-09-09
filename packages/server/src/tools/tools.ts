@@ -18,6 +18,9 @@ import { paginateQueryResult } from './query-paginate.js';
  */
 const QUERY_BY_VALUES = Object.values(QueryBy);
 const QUERY_BY_LIST = QUERY_BY_VALUES.join(' | ');
+
+/** Every `by`/`value` shorthand says the same thing; the parameter name carries the rest. */
+const QUERY_ALIAS = 'Predicate spelling of by/value.';
 const queryByEnum = z.enum(QUERY_BY_VALUES as [string, ...string[]]);
 import { CONTRACT_TOOLS } from './contract-tools.js';
 import { DOMAIN_TOOLS } from '../domain/domain-tools.js';
@@ -326,7 +329,7 @@ export const RAW_TOOLS: ToolDef[] = [
       // browser's `default: return []`, so an unsupported strategy answered "0 matches" — which
       // reads as "the element is not on the page". Measured on a live page: by:'css' value:'body'
       // returned count 0. A false negative is the one answer this product must never invent.
-      by: queryByEnum.optional().describe(`Query strategy: ${QUERY_BY_LIST}`),
+      by: queryByEnum.optional().describe('Query strategy.'),
       value: z
         .string()
         .optional()
@@ -368,12 +371,15 @@ export const RAW_TOOLS: ToolDef[] = [
         ),
       // The predicate's spelling, accepted as an alias for by/value so the shape an agent learns from
       // act_and_wait/assert also works here. See query-shape.ts.
-      testid: z.string().optional().describe('Alias for by="testid" value=… (predicate spelling).'),
-      text: z.string().optional().describe('Alias for by="text" value=… (predicate spelling).'),
-      role: z.string().optional().describe('Alias for by="role" value=… (predicate spelling).'),
-      label: z.string().optional().describe('Alias for by="label" value=… (predicate spelling).'),
-      placeholder: z.string().optional().describe('Alias for by="placeholder" value=… .'),
-      alt: z.string().optional().describe('Alias for by="alt" value=… (predicate spelling).'),
+      // Six copies of one sentence, re-sent every turn. The parameter NAME already says which
+      // strategy it selects, and they sit in a block together, so each only has to say it is the
+      // predicate spelling of by/value.
+      testid: z.string().optional().describe(QUERY_ALIAS),
+      text: z.string().optional().describe(QUERY_ALIAS),
+      role: z.string().optional().describe(QUERY_ALIAS),
+      label: z.string().optional().describe(QUERY_ALIAS),
+      placeholder: z.string().optional().describe(QUERY_ALIAS),
+      alt: z.string().optional().describe(QUERY_ALIAS),
       ...sessionIdShape,
     },
     outputSchema: {
