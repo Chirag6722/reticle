@@ -14,6 +14,7 @@ Atlas exists to be genuinely hard, on the axes that make verification hard in pr
 | **State** | a store, a state machine for the shipment lifecycle, and context for permissions — three sources that can disagree | "Which one is the truth" has no single answer; divergence between them is the bug class. |
 | **Flow** | multi-step dispatch wizard with branching, autosave, undo/redo, an offline queue that replays | Correctness spans many actions. A per-action verdict cannot see a flow-level violation. |
 | **Scale** | ~10 routes, thousands of nodes, sustained event rate | Where truncation, buffer eviction and rate caps actually bite. |
+| **Slow endpoint** | `apps/bench-app` saved-items takes a `?serverDelay=<ms>` knob, threaded to the API's existing `?delay=` | A consequence that legitimately outlives a fixed replay wait. Two field flows — a 5.5s login and a ~22s import — drifted at ~4020ms and were reported as regressions of working features. |
 | **Storage churn** | an opt-in control that rewrites one localStorage key with byte-identical content, 200 writes every 50ms | The field shape that starved the event buffer and made a verdict report `net.total: 0` as a fact while the request carrying the root cause was on the wire. Absence of evidence must not be typed as evidence of absence. |
 
 ## The rule about defects
