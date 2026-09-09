@@ -29,7 +29,10 @@
       "dependsOn": ["^build"],
       "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/packages/tauri/src/**"]
     },
-    "@reticlehq/server#test:unit": {
+    "test:guards": {
+      "dependsOn": ["^build"]
+    },
+    "@reticlehq/server#test:guards": {
       "dependsOn": ["^build"],
       "inputs": [
         "$TURBO_DEFAULT$",
@@ -49,6 +52,14 @@
         "$TURBO_ROOT$/CHANGELOG.md",
         "$TURBO_ROOT$/CONTRIBUTING.md",
         "$TURBO_ROOT$/turbo.json"
+      ]
+    },
+    "@reticlehq/server#test:unit": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/packages/*/src/**",
+        "$TURBO_ROOT$/scripts/guard-tests.mjs"
       ]
     }
   }

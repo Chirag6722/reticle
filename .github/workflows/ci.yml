@@ -45,6 +45,23 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Turbo cached NOTHING in CI. `pnpm build` ran cold in nine jobs on every PR, and every
+      # `test:unit` / `lint` / `typecheck` behind it recomputed a result another job on the same
+      # commit had already produced. `grep -rn 'TURBO_TOKEN|actions/cache' .github/` returned nothing
+      # at all before this — there was no remote cache and no local one either, so turbo's whole
+      # reason for being here was switched off.
+      #
+      # Keyed on the SHA so a job that runs later in the same commit reads what the earlier one wrote,
+      # with a lockfile-scoped restore-key so a new commit still starts from the previous one's cache
+      # instead of from nothing. The lockfile is in the key because a dependency change is the one
+      # thing that legitimately invalidates most of the tree.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v4
+        with:
+          path: .turbo
+          key: turbo-linux-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            turbo-linux-${{ hashFiles('pnpm-lock.yaml') }}-
+            turbo-linux-
       # Prove the boundary guard itself works (catches a synthetic bad graph) before trusting it.
       - name: Dependency-boundary guard self-test
         run: node scripts/check-boundaries.mjs --self-test
@@ -102,6 +119,13 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v4
+        with:
+          path: .turbo
+          key: turbo-windows-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            turbo-windows-${{ hashFiles('pnpm-lock.yaml') }}-
+            turbo-windows-
       # Through ci-run.mjs on this platform only. Windows runners intermittently refuse to START a
       # process — exit -1073741502 (0xC0000142, STATUS_DLL_INIT_FAILED), no output, sometimes 0.02s
       # in — and that red is indistinguishable from a real failure until somebody recognises an NT
@@ -127,13 +151,28 @@ jobs:
         env:
           RETICLE_TELEMETRY: '0'
 
-  # macOS ran NO JavaScript at all — no build, no unit tests, nothing. `rust-macos` below compiles the
-  # Tauri crate and that was the entire extent of macOS coverage, so the only reason we knew the
-  # product worked there was that it is the development machine. That is not a gate, it is a habit.
-  # Same shape as the Windows gap above and the same issue. (#248)
+  # macOS runs what LINUX CANNOT SEE, and nothing else.
   #
-  # Deliberately the cheap tier: build + typecheck + unit. The full battery passes on macOS but costs
-  # a browser and three servers, and the question worth answering first is "does this run here".
+  # It began as the answer to "macOS ran NO JavaScript at all" (#248) — `rust-macos` compiled the
+  # Tauri crate and that was the whole of macOS coverage, so the only reason we knew the product
+  # worked here was that it is the development machine. That is a habit, not a gate.
+  #
+  # The answer was too big. Measured over the last 167 CI runs (53 of them failing): this job failed
+  # 10 times and EVERY ONE co-occurred with `verify` failing on Linux. Zero unique catches. It is
+  # billed at a 10x multiplier, so re-running build + typecheck + the full unit suite here was ~37%
+  # of a PR's bill for 0% of its signal — the same tests, on the same source, told twice.
+  #
+  # So the duplicated tier is gone and the macOS-SHAPED risk is what stays. What is genuinely
+  # different here is not "does TypeScript compile", it is path handling, `lsof`, spawn semantics,
+  # temp/state directories and a case-insensitive filesystem — precisely the surface the old job did
+  # NOT cover, because `test:unit` on Linux already covers everything else it ran. The vitest
+  # selection below is that surface (`platform.ts`, `temp-dir.ts`, `cli/`, `daemon/`, the daemon
+  # state/spawn/port tests, the `lsof` callers, the temp-dir-backed project store): 64 files, 661
+  # tests, ~5s. `pnpm build` stays because the two runtime specs need `dist`, and because a macOS
+  # build failure is the one compile answer Linux cannot give.
+  #
+  # `pnpm typecheck` is deliberately NOT here. Types are platform-independent; `verify` already
+  # answers it and answered it every one of those 10 times.
   macos:
     runs-on: macos-latest
     timeout-minutes: 30
@@ -145,9 +184,25 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v4
+        with:
+          path: .turbo
+          key: turbo-macos-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            turbo-macos-${{ hashFiles('pnpm-lock.yaml') }}-
+            turbo-macos-
       - run: pnpm build
-      - run: pnpm typecheck
-      - run: pnpm test:unit
+      # The POSIX-but-not-Linux surface: paths, spawn, `lsof`, temp/state dirs, port resolution.
+      # Named as directories and files rather than a pattern so that adding a test here is a
+      # deliberate act — a glob would silently re-grow this job back into the Linux tier.
+      - name: Platform surface (paths, spawn, lsof, temp/state dirs)
+        run: |
+          pnpm --filter @reticlehq/server exec vitest run --passWithNoTests \
+            src/cli src/daemon src/project \
+            src/daemon-spawn.test.ts src/daemon-state-home.test.ts src/daemon-reclaim.test.ts \
+            src/multi-project.test.ts src/library-path-boundary.test.ts \
+            src/setup/listeners.test.ts src/setup/node-effects.test.ts \
+            src/tools/harness-kills-only-listeners.test.ts src/tools/upload-path-rewrite.test.ts
       - name: Daemon runtime (no app, no browser)
         run: |
           node apps/e2e/specs/daemon-lifecycle-test.mjs
@@ -203,8 +258,16 @@ jobs:
   # macOS gets its own runner rather than a cross-check: `capture/macos.rs` talks to WKWebView
   # through objc2, and the interesting failures there (a missing feature flag on an objc2 crate, a
   # renamed selector) are exactly what a native build catches.
+  #
+  # PATH-ROUTED as of this commit. Over the last 167 CI runs this job failed ZERO times, and it is a
+  # macOS runner, so it was billed at 10x on every PR — docs-only ones included — to compile a crate
+  # the PR had not touched. It is still the only thing that builds the WKWebView path natively, so it
+  # is not deleted; it now runs when Rust (or the workflow that runs it) changes. `gate` accepts a
+  # skip, so an unrelated PR goes green without this ever starting.
   rust-macos:
     runs-on: macos-latest
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -346,6 +409,7 @@ jobs:
       install: ${{ steps.filter.outputs.install }}
       bench: ${{ steps.filter.outputs.bench }}
       desktop: ${{ steps.filter.outputs.desktop }}
+      rust: ${{ steps.filter.outputs.rust }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -370,7 +434,8 @@ jobs:
             echo "cannot resolve $BASE — running every tier"
             echo "install=true" >> "$GITHUB_OUTPUT"
             echo "desktop=true" >> "$GITHUB_OUTPUT"
-            echo "bench=true" >> "$GITHUB_OUTPUT"; exit 0
+            echo "bench=true" >> "$GITHUB_OUTPUT"
+            echo "rust=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
           CHANGED="$(git diff --name-only "$BASE"...HEAD || true)"
           # Still fails OPEN. A base that resolves but produces nothing — a force-push, an empty
@@ -380,7 +445,8 @@ jobs:
             echo "no diff against $BASE — running every tier"
             echo "install=true" >> "$GITHUB_OUTPUT"
             echo "desktop=true" >> "$GITHUB_OUTPUT"
-            echo "bench=true" >> "$GITHUB_OUTPUT"; exit 0
+            echo "bench=true" >> "$GITHUB_OUTPUT"
+            echo "rust=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
           echo "changed files:"; echo "$CHANGED" | sed 's/^/  /'
           # Anything a user runs BEFORE their first session, plus the gate itself and the dependency
@@ -416,6 +482,15 @@ jobs:
             echo "bench=true" >> "$GITHUB_OUTPUT"
           else
             echo "bench=false" >> "$GITHUB_OUTPUT"
+          fi
+          # Only `rust-macos` reads this. The Linux `rust` job stays unconditional: it is an ubuntu
+          # runner at 1x, it cross-checks the Windows capture path, and it is the ONLY thing in CI
+          # that compiles packages/tauri at all — a skip there is a real hole, a skip on the second
+          # macOS opinion of the same crate is not.
+          if echo "$CHANGED" | grep -qE '^(packages/tauri/|apps/tauri-smoke/src-tauri/|\.github/workflows/ci\.yml)'; then
+            echo "rust=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "rust=false" >> "$GITHUB_OUTPUT"
           fi
 
   # The bot half of the client-matrix flow. A submitted record is EVIDENCE, and evidence that
@@ -518,6 +593,13 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v4
+        with:
+          path: .turbo
+          key: turbo-linux-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            turbo-linux-${{ hashFiles('pnpm-lock.yaml') }}-
+            turbo-linux-
       - run: pnpm build
       - run: pnpm --filter @reticlehq/e2e --fail-if-no-match exec playwright install --with-deps chromium
       # The negative control FIRST. It mis-wires each scaffold's port so no session can appear and
@@ -552,6 +634,13 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v4
+        with:
+          path: .turbo
+          key: turbo-linux-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            turbo-linux-${{ hashFiles('pnpm-lock.yaml') }}-
+            turbo-linux-
       - run: pnpm build
       # The negative control FIRST, same rule as install-gate: resolve ports the way the product did
       # before per-project daemons and require the simulation to redden. A simulation that cannot fail
@@ -573,6 +662,13 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v4
+        with:
+          path: .turbo
+          key: turbo-linux-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            turbo-linux-${{ hashFiles('pnpm-lock.yaml') }}-
+            turbo-linux-
       - run: pnpm build
       - run: pnpm --filter @reticlehq/e2e --fail-if-no-match exec playwright install --with-deps chromium
       # Headless Chromium + a multi-service boot flakes on shared runners (timing, resource
@@ -683,6 +779,13 @@ jobs:
           key: cargo-smoke-${{ hashFiles('apps/tauri-smoke/src-tauri/Cargo.lock') }}
           restore-keys: cargo-smoke-
       - run: pnpm install --frozen-lockfile
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v4
+        with:
+          path: .turbo
+          key: turbo-linux-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            turbo-linux-${{ hashFiles('pnpm-lock.yaml') }}-
+            turbo-linux-
       - run: pnpm build
       # Electron needs --no-sandbox on a CI runner (no user namespaces), and both runtimes need a
       # display to create a window even when that window is never shown.
@@ -713,6 +816,13 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v4
+        with:
+          path: .turbo
+          key: turbo-linux-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            turbo-linux-${{ hashFiles('pnpm-lock.yaml') }}-
+            turbo-linux-
       - run: pnpm build
       - run: pnpm --filter @reticlehq/e2e --fail-if-no-match exec playwright install --with-deps chromium
       # The token proxy is a python package, and without it `countTokensProxy` returns null for every

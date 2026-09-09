@@ -19,6 +19,7 @@ import { chromium } from 'playwright';
 import { start, TOOLS, BaselineStore, RecordingStore } from '@reticlehq/server';
 import { waitForSession } from '../wait-for-session.mjs';
 import { freePortSafely } from '../gate-harness.mjs';
+import { waitUntil } from '../wait-until.mjs';
 
 /** Atlas serves from here; the session is identified by it, since atlas self-assigns its id. */
 const ATLAS_PORT = 4320;
@@ -108,10 +109,13 @@ await waitForSession(() => server.bridge.sessions.list(), isAtlas, { what: `an a
 console.log('\n=== ATLAS: the hard fixture, driven ===');
 chk('atlas SDK connected', sessionId() !== undefined);
 
-// Give the virtualized table and the SSE stream time to be real.
-await sleep(2500);
-
-const snap = await T('reticle_snapshot', {});
+// Give the virtualized table and the SSE stream time to be real — by waiting until they ARE, rather
+// than by guessing that 2500ms is enough on every machine that will ever run this.
+const snap =
+  (await waitUntil(async () => {
+    const s = await T('reticle_snapshot', {});
+    return 0 < (s.nodes ?? 0) ? s : undefined;
+  })) ?? (await T('reticle_snapshot', {}));
 chk('a snapshot of a 10k-row app comes back at all', typeof snap.tree === 'string' && snap.nodes > 0, `nodes=${snap.nodes}`);
 
 // ── Virtualization honesty ────────────────────────────────────────────────────────────────────

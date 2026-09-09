@@ -23,6 +23,7 @@ import {
   spawnElectronSmoke,
   tempCaptures,
 } from '../desktop-harness.mjs';
+import { waitUntil } from '../wait-until.mjs';
 
 const { chk, state } = checker();
 const smokeDir = path.join(ROOT, 'apps/electron-smoke');
@@ -237,9 +238,14 @@ try {
     extraEnv: { RETICLE_SMOKE_NO_PRELOAD: '1' },
     urlIncludes: ':5174',
   });
-  await sleep(2500);
-
-  const net = await blind.tool('reticle_network', {});
+  // The un-instrumented renderer still loads its OWN subresources, and that is what the second check
+  // below asserts — so wait for one to be OBSERVED rather than for 2500ms to pass. The IPC half is an
+  // absence and cannot be polled for; this is the positive half, and it is the half the wait was for.
+  const net =
+    (await waitUntil(async () => {
+      const seen = await blind.tool('reticle_network', {});
+      return (seen.calls ?? []).some((c) => /:5174/.test(String(c.url ?? ''))) ? seen : undefined;
+    })) ?? (await blind.tool('reticle_network', {}));
   // Document-initiated subresource observation means the network view is no longer guaranteed
   // empty without the preload: the page's own <script>/<link>/<img> loads are seen at the
   // session layer. What must still be EMPTY here is the IPC half: no preload, no invoke patch,

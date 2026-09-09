@@ -20,6 +20,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { fileURLToPath } from 'node:url';
+import { waitUntil } from '../wait-until.mjs';
 const DIST = join(fileURLToPath(new URL('../../../packages/server/dist', import.meta.url)));
 const PORT = 9960;
 
@@ -668,7 +669,10 @@ await daemon.shutdown('idle');
 }
 
 // ── 10. Project profile (deliberately deferred 5s off the daemon boot path) ───
-await new Promise((r) => setTimeout(r, 6000));
+// The 5s deferral is the PRODUCT's, and it is real. What was invented was the 6000: a one-second
+// margin over it, unconditional, on every run. Wait for the event instead — same 5s floor on an idle
+// machine, and a loaded runner that needs seven gets seven instead of a red.
+await waitUntil(() => find('project_profiled').length > 0);
 // ── ────────────────────────────────────────────────────
 {
   const p = find('project_profiled')[0]?.properties;
