@@ -79,3 +79,48 @@ describe('the third-party false-green corpus', () => {
     },
   );
 });
+
+/**
+ * A row must be able to prove it is driving the RIGHT application.
+ *
+ * The corpus measures whether Reticle catches a defect. That means nothing unless the app under the
+ * cursor is the one the defect lives in, and an app can render, connect and return a green verdict
+ * while being something else entirely.
+ *
+ * Measured on the first row: nuclear's `main.tsx` branches on `window.__TAURI_INTERNALS__`. Under
+ * Tauri it loads the PLAYER, where this row's defect lives; in a plain browser it loads a REMOTE
+ * CONTROL app. A bare `vite` therefore renders 1867 characters of "Connecting to Nuclear..." and
+ * `reticle_assert` returns `verified: "yes"` for text on it. That verdict is real, and it is about
+ * the wrong application. Scoring against it would have produced a false green inside the instrument
+ * built to measure false greens.
+ *
+ * So every row names something that identifies its app, and says plainly whether it can be driven at
+ * all. `drivableInBrowser: false` is a fine answer — it routes the row to the desktop path instead
+ * of silently scoring it in the wrong place.
+ */
+describe('a row can prove it is driving the right application', () => {
+  it.each(corpus.rows.map((r) => [r.id, r] as const))(
+    '%s names an identifying marker for its app',
+    (_id, row) => {
+      const marker = (row as { boot?: { identifies?: { textContains?: string } } }).boot?.identifies
+        ?.textContains;
+      expect(
+        (marker ?? '').length,
+        'without a marker, a row can be scored against a different app that happens to render — ' +
+          'which is a false green inside the false-green corpus',
+      ).toBeGreaterThan(0);
+    },
+  );
+
+  it.each(corpus.rows.map((r) => [r.id, r] as const))(
+    '%s states whether it is drivable in a browser at all',
+    (_id, row) => {
+      const drivable = (row as { boot?: { drivableInBrowser?: boolean } }).boot?.drivableInBrowser;
+      expect(
+        typeof drivable,
+        'UNSTATED is the dangerous value: it reads as "probably fine" and is how a row gets scored ' +
+          'in the wrong runtime. `false` is a perfectly good answer.',
+      ).toBe('boolean');
+    },
+  );
+});

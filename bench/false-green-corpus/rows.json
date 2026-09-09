@@ -32,16 +32,21 @@
         "port": 4399,
         "url": "http://localhost:4399/",
         "renders": true,
-        "rendersNote": "CORRECTED. An earlier note here said the renderer needed its Tauri backend and rendered nothing. That was wrong and came from snapshotting immediately after the session dialled, before React had mounted: the reading was a timing artifact, not a property of the app. Measured directly, document.getElementById('root').innerHTML is 1867 characters under a bare vite.",
-        "measured": "2026-09-09: HTTP 200 in 1.5s; root innerHTML 1867 chars; Reticle session connects with the CDN snippet in index.html; reticle_assert {kind:text} returned verified:\"yes\" reason:\"proved\". reticle_snapshot reported nodes: 0 in the same run, which is a separate question and is recorded on the row rather than smoothed over."
+        "rendersNote": "CORRECTED TWICE, and the second correction is the important one. main.tsx branches on window.__TAURI_INTERNALS__: under Tauri it loads initPlayerApp (the player, where this row's defect lives) and in a plain browser it loads initRemoteApp \u2014 a REMOTE CONTROL app, a different application. So a bare `vite` renders 1867 characters of 'Connecting to Nuclear...' and Reticle returns verified:\"yes\" for text on it. That verdict is real and it is about the wrong app. A naive __TAURI_INTERNALS__ stub does not help: the player branch then fails with \"Cannot read properties of undefined (reading 'currentWindow')\". Driving this row needs the real Tauri runtime, which is desktop-e2e territory.",
+        "measured": "2026-09-09: bare vite -> remote app, root 1867 chars, reticle_assert text verified:\"yes\"; with a minimal Tauri stub -> root 0 chars, pageerror on currentWindow.",
+        "identifies": {
+          "$comment": "Text that proves the RIGHT application is loaded. Without this a row can be scored against a different app that happens to render \u2014 see rendersNote.",
+          "textContains": "Queue"
+        },
+        "drivableInBrowser": false
       },
       "drive": {
         "$comment": "What Reticle must catch. The defect is a state change nobody asked for: activating the ALREADY-PLAYING queue item stops playback. Declared as the consequence an agent would asserting on it, so a miss here is a false green in the exact sense this corpus measures.",
         "defect": "activating the already-current queue item stops playback",
         "observableVia": "state",
         "note": "Reaching a PLAYING queue, which the declared defect needs, is still app-specific setup and is not automated.",
-        "status": "reachable \u2014 a Reticle verdict was taken against this app at this ref",
-        "openQuestion": "reticle_snapshot reported nodes: 0 while reticle_assert PROVED text on the same page in the same run. One of those is wrong about this app and it is worth knowing which before scoring against it; a snapshot that under-reports would make every presence-grade row look uncatchable."
+        "status": "NOT drivable in a browser \u2014 the defect is in the Tauri-only player branch",
+        "openQuestion": "An earlier note here asked why reticle_snapshot said nodes: 0 while reticle_assert proved text. Resolved, and not a Reticle defect: the two readings were taken against different app states while the remote app was still connecting."
       }
     }
   ]
