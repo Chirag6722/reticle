@@ -9,6 +9,10 @@ const TITLES: Record<ViewId, { title: string; sub: string }> = {
   hostile: { title: 'Hostile', sub: 'a page that never goes quiet' },
   enterprise: { title: 'Enterprise', sub: 'ten thousand nodes, fifteen deep' },
   'saved-items': { title: 'Saved Items', sub: 'server-backed write · response-ignored fixture' },
+  'expiring-auth': {
+    title: 'Expiring Token',
+    sub: '401 · refresh · retry once — the false-contradiction fixture',
+  },
 };
 
 export function Topbar(): React.ReactElement {

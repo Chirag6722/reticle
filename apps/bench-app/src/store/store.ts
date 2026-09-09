@@ -14,7 +14,14 @@ import {
 } from '../data/seed.js';
 
 export type ViewId =
-  'overview' | 'deployments' | 'compose' | 'diagnostics' | 'hostile' | 'enterprise' | 'saved-items';
+  | 'overview'
+  | 'deployments'
+  | 'compose'
+  | 'diagnostics'
+  | 'hostile'
+  | 'enterprise'
+  | 'saved-items'
+  | 'expiring-auth';
 export type EnvFilter = Env | 'all';
 
 export interface Toast {
