@@ -100,6 +100,19 @@ const RULES = [
     edit: (text, from, to) =>
       text.split(`**${from}**`).join(`**${to}**`).split(`is ${from}.`).join(`is ${to}.`),
   },
+  {
+    what: 'crate pin in docs (major.minor, Cargo caret semantics)',
+    // These read `reticle-tauri = "2.13"`, not the full version — a caret pin, which is the correct
+    // thing for a Cargo dependency and the reason the whole-version replace above cannot see them.
+    // `crate-version-lockstep.test.ts` caught exactly this on the 2.14.0 bump; it is why the rule
+    // exists rather than a fourth place someone has to remember.
+    files: () => tracked('docs/*.mdx', 'docs/**/*.mdx'),
+    matchesAnyVersion: true,
+    edit: (text, _from, to) => {
+      const minor = to.split('.').slice(0, 2).join('.');
+      return text.replace(/reticle-tauri = "\d+\.\d+"/g, `reticle-tauri = "${minor}"`);
+    },
+  },
 ];
 
 let changed = 0;
@@ -115,7 +128,7 @@ for (const rule of RULES) {
       console.log(`  ??  ${file} — listed by a rule but not present`);
       continue;
     }
-    if (!text.includes(current)) {
+    if (true !== rule.matchesAnyVersion && !text.includes(current)) {
       skipped += 1;
       continue;
     }
