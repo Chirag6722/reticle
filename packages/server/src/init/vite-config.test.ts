@@ -180,4 +180,11 @@ describe('the plugin call init writes', () => {
     if (r.kind !== VitePatchKind.APPLY) return;
     expect(r.code).toContain('captureNetworkBodies: true');
   });
+
+  it('bakes inject: false when the framework cannot use HTML injection', () => {
+    const r = patchViteConfig(BASIC, undefined, false, false);
+    expect(r.kind).toBe(VitePatchKind.APPLY);
+    if (r.kind !== VitePatchKind.APPLY) return;
+    expect(r.code).toContain('reticle({ inject: false })');
+  });
 });

@@ -112,6 +112,7 @@ export function frameworkPackages(
     // both right for it too — only the connect INJECTION differs, and that is the plan's business.
     case Framework.VITE:
     case Framework.REACT_ROUTER:
+    case Framework.TANSTACK_START:
     case Framework.SVELTEKIT:
       // SvelteKit builds on Vite; until a dedicated Svelte kit exists it uses the Vite build plugin.
       // The build plugin stamps `data-reticle-source` regardless of UI library, so a Vue or Svelte
@@ -301,6 +302,13 @@ export interface PlanInput {
   svelteKitHooksExists?: boolean;
   /** Whether app/entry.client.tsx already exists — it decides which React Router recipe to print. */
   reactRouterEntryExists?: boolean;
+  /**
+   * TanStack Start's document module, when found (`src/routes/__root.tsx` or `app/routes/__root.tsx`).
+   *
+   * The recipe is printed rather than written either way — a static import on that file SSRs and
+   * 500s — but the path has to be the one that actually exists, not a guess.
+   */
+  tanstackStartRoot?: string | undefined;
   /** CRA's bundled entry (src/index.tsx or .js) — where the connect import has to go. */
   craEntry?: { path: string; source: string } | null;
   /** Existing .env.development.local, so an unrelated variable in it survives. */
@@ -928,7 +936,8 @@ function uiLibraryStep(input: PlanInput): Step[] {
   if (
     lib === UiLibrary.REACT ||
     framework === Framework.SVELTEKIT ||
-    framework === Framework.NUXT
+    framework === Framework.NUXT ||
+    framework === Framework.TANSTACK_START
   ) {
     return [];
   }

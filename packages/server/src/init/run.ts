@@ -158,6 +158,12 @@ const NEXT_PAGES_APP_CANDIDATES = [
 ];
 const SVELTEKIT_HOOKS = 'src/hooks.client.ts';
 const REACT_ROUTER_ENTRY = 'app/entry.client.tsx';
+const TANSTACK_START_ROOT_CANDIDATES = [
+  'src/routes/__root.tsx',
+  'src/routes/__root.jsx',
+  'app/routes/__root.tsx',
+  'app/routes/__root.jsx',
+];
 const SOURCE_FILE = /\.(tsx|jsx|ts|js|svelte|vue|astro)$/;
 /** Files read for the testid scan. A capabilities block is a hint; reading a whole repo for it is not. */
 const MAX_SCANNED_FILES = 200;
@@ -576,6 +582,7 @@ function gatherPlanInput(options: InitOptions, io: InitIo, pkg: unknown): PlanIn
     nextReticleDevSource: io.readFile(devLocation.path),
     svelteKitHooksExists: io.exists(SVELTEKIT_HOOKS),
     reactRouterEntryExists: io.exists(REACT_ROUTER_ENTRY),
+    tanstackStartRoot: TANSTACK_START_ROOT_CANDIDATES.find((file) => io.exists(file)),
     craEntry: craEntryOf(io),
     craEnv: io.readFile(CRA_ENV_PATH),
     pairingToken: readPairingToken(),

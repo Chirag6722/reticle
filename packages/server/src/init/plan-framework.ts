@@ -48,6 +48,9 @@ import {
   WEBPACK4_REACT_SCRIPTS_MAJOR,
   reactRouterManual,
   REACT_ROUTER_ENTRY_PATH,
+  tanstackStartManual,
+  TANSTACK_START_ROOT_PATH,
+  UNVERIFIED_TANSTACK_START_NOTE,
   htmlManual,
 } from './snippets.js';
 import { hasOptOut, OPT_OUT_MARKER } from './init-opt-out.js';
@@ -75,6 +78,15 @@ export const VITE_PLUGIN_DETAIL = {
    * back with no file:line at all.
    */
   REACT_ROUTER: 'add reticle() to plugins (stamps data-reticle-source in .tsx components)',
+  /**
+   * TanStack Start SSRs its own HTML, so the plugin's HTML injection never fires and connect()
+   * comes from a client effect instead. `inject: false` is load-bearing honesty: leaving the
+   * default would keep reporting "also injects connect()" for a transform that never runs.
+   * The plugin is still required for the same reason it is under SvelteKit: without it every
+   * verdict on the app comes back with no file:line at all.
+   */
+  TANSTACK_START:
+    'add reticle({ inject: false }) to plugins (stamps data-reticle-source; Start SSRs its own HTML so connect() cannot come from the plugin)',
 } as const;
 
 const CAPABILITIES_TITLE = 'Capabilities + store';
@@ -293,13 +305,17 @@ function electronCaptureStep(input: PlanInput): Step[] {
   ];
 }
 
-export function viteSteps(input: PlanInput, detail: string = VITE_PLUGIN_DETAIL.VITE): Step[] {
+export function viteSteps(
+  input: PlanInput,
+  detail: string = VITE_PLUGIN_DETAIL.VITE,
+  inject = true,
+): Step[] {
   // Capabilities are independent of whether the config needed patching. Attaching them to the APPLY
   // branch meant a re-run on an already-wired app silently never created the module.
-  return [...viteConfigSteps(input, detail), ...capabilitiesStep(input)];
+  return [...viteConfigSteps(input, detail, inject), ...capabilitiesStep(input)];
 }
 
-function viteConfigSteps(input: PlanInput, detail: string): Step[] {
+function viteConfigSteps(input: PlanInput, detail: string, inject = true): Step[] {
   const cfg = input.viteConfig;
   const port = input.options.port;
   // An explicit "not here" is not an invitation. `init` runs unattended in a repo it has just met,
@@ -321,11 +337,11 @@ function viteConfigSteps(input: PlanInput, detail: string): Step[] {
         title: 'Vite plugin',
         target: 'vite.config',
         status: StepStatus.MANUAL,
-        detail: viteManual(port, input.detection.uiLibrary),
+        detail: viteManual(port, input.detection.uiLibrary, inject),
       },
     ];
   }
-  const patch = patchViteConfig(cfg.source, port, true === input.captureBodies);
+  const patch = patchViteConfig(cfg.source, port, true === input.captureBodies, inject);
   if (patch.kind === VitePatchKind.ALREADY) {
     return [
       {
@@ -342,7 +358,7 @@ function viteConfigSteps(input: PlanInput, detail: string): Step[] {
         title: 'Vite plugin',
         target: cfg.path,
         status: StepStatus.MANUAL,
-        detail: `${patch.reason}\n\n${viteManual(port, input.detection.uiLibrary)}`,
+        detail: `${patch.reason}\n\n${viteManual(port, input.detection.uiLibrary, inject)}`,
       },
     ];
   }
@@ -678,6 +694,30 @@ export function reactRouterSteps(input: PlanInput): Step[] {
   ];
 }
 
+/**
+ * TanStack Start: the client-document connect, printed rather than written.
+ *
+ * `src/routes/__root.tsx` is the document Start SSRs. A static import of the SDK on that module
+ * 500s, so writing one is worse than a documented manual step. See `tanstackStartManual`.
+ */
+export function tanstackStartSteps(input: PlanInput): Step[] {
+  const root = input.tanstackStartRoot ?? TANSTACK_START_ROOT_PATH;
+  return [
+    {
+      title: 'TanStack Start is UNVERIFIED',
+      target: root,
+      status: StepStatus.NOTICE,
+      detail: UNVERIFIED_TANSTACK_START_NOTE,
+    },
+    {
+      title: 'Connect snippet (TanStack Start)',
+      target: root,
+      status: StepStatus.MANUAL,
+      detail: tanstackStartManual(input.options.port, input.options.projectId, root),
+    },
+  ];
+}
+
 export function svelteKitSteps(input: PlanInput): Step[] {
   const unverified: Step = {
     title: 'SvelteKit is UNVERIFIED',
@@ -871,6 +911,13 @@ export function frameworkSteps(input: PlanInput): Step[] {
     // app, and the plugin is what stamps data-reticle-source. Without it the app connects and every
     // verdict comes back with no file:line.
     steps.push(...viteSteps(input, VITE_PLUGIN_DETAIL.REACT_ROUTER));
+  } else if (input.detection.framework === Framework.TANSTACK_START) {
+    steps.push(...tanstackStartSteps(input));
+    // The Vite plugin too, for the reason SvelteKit and React Router get it: Start IS a Vite app,
+    // and the plugin is what stamps data-reticle-source. `inject: false` because Start never
+    // transforms index.html — leaving the default would keep promising connect injection that
+    // cannot fire. Without the plugin the app connects and every verdict comes back with no file:line.
+    steps.push(...viteSteps(input, VITE_PLUGIN_DETAIL.TANSTACK_START, false));
   } else if (input.detection.framework === Framework.SVELTEKIT) {
     steps.push(...svelteKitSteps(input));
     // The Vite plugin as well as the client hook. `init` already INSTALLS @reticlehq/vite-plugin for

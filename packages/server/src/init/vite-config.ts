@@ -37,9 +37,14 @@ const RETICLE_MARKER = '@reticlehq/vite-plugin';
  * and reconcile-tools.ts — so the capability is discovered at the moment it is wanted, by the person
  * who wanted it, instead of being switched on before anyone has asked.
  */
-function reticlePluginCall(port: number | undefined, captureBodies: boolean): string {
+function reticlePluginCall(
+  port: number | undefined,
+  captureBodies: boolean,
+  inject = true,
+): string {
   const options = [
     ...(port === undefined ? [] : [`port: ${String(port)}`]),
+    ...(false === inject ? ['inject: false'] : []),
     ...(captureBodies ? ['captureNetworkBodies: true'] : []),
   ];
   return 0 === options.length ? 'reticle()' : `reticle({ ${options.join(', ')} })`;
@@ -84,11 +89,16 @@ function insertImport(source: string): string {
  * what a formatter rewrites, turning a one-line install into a diff against the user's own style. A
  * single-line array needs the space, or the result reads `[reticle(),react()]`.
  */
-function insertPlugin(source: string, port: number | undefined, captureBodies: boolean): string {
+function insertPlugin(
+  source: string,
+  port: number | undefined,
+  captureBodies: boolean,
+  inject: boolean,
+): string {
   return source.replace(PLUGINS_ARRAY, (match, _g, offset: number) => {
     const next = source[offset + match.length] ?? '';
     const separator = '' === next || /\s/.test(next) ? '' : ' ';
-    return `${match}${reticlePluginCall(port, captureBodies)},${separator}`;
+    return `${match}${reticlePluginCall(port, captureBodies, inject)},${separator}`;
   });
 }
 
@@ -100,30 +110,36 @@ function insertPluginsKey(
   source: string,
   port: number | undefined,
   captureBodies: boolean,
+  inject: boolean,
 ): string {
   return source.replace(CONFIG_OBJECT, (_match, prefix: string, offset: number) => {
     const rest = source.slice(offset + _match.length);
     const multiline = /^\s*\n/.test(rest);
     const indent = /^\s*\n(\s*)\S/.exec(rest)?.[1] ?? '  ';
-    const key = `plugins: [${reticlePluginCall(port, captureBodies)}],`;
+    const key = `plugins: [${reticlePluginCall(port, captureBodies, inject)}],`;
     return multiline ? `${prefix}{\n${indent}${key}` : `${prefix}{ ${key}`;
   });
 }
 
-export function patchViteConfig(source: string, port?: number, captureBodies = false): VitePatch {
+export function patchViteConfig(
+  source: string,
+  port?: number,
+  captureBodies = false,
+  inject = true,
+): VitePatch {
   if (source.includes(RETICLE_MARKER)) {
     return { kind: VitePatchKind.ALREADY };
   }
   if (PLUGINS_ARRAY.test(source)) {
     return {
       kind: VitePatchKind.APPLY,
-      code: insertImport(insertPlugin(source, port, captureBodies)),
+      code: insertImport(insertPlugin(source, port, captureBodies, inject)),
     };
   }
   if (CONFIG_OBJECT.test(source)) {
     return {
       kind: VitePatchKind.APPLY,
-      code: insertImport(insertPluginsKey(source, port, captureBodies)),
+      code: insertImport(insertPluginsKey(source, port, captureBodies, inject)),
     };
   }
   return { kind: VitePatchKind.MANUAL, reason: NO_PLUGINS_REASON };
