@@ -16,7 +16,7 @@ import { devCommandFrom } from './dev-script.js';
 import { restartHint, FEEDBACK_HINT } from './closing-hint.js';
 import { spanSync } from '../trace.js';
 import { projectIdOf, rememberProjectOnDisk } from '../project/remember-project.js';
-import { detect, Framework, namesAPackageManager, type DetectInput, UiLibrary } from './detect.js';
+import { detect, Framework, type DetectInput, UiLibrary } from './detect.js';
 import { wasMcpRegistered } from './mcp-registered.js';
 import { pickAstroHost } from './astro-host.js';
 import {
@@ -86,50 +86,9 @@ import { SERVER_VERSION } from '../version/server-version.js';
 import { InitFailure, reportInitOutcome } from '../telemetry/init-telemetry.js';
 import type { InitOutcome } from '@reticlehq/core';
 
-/** Lockfile basenames, in package-manager preference order (mirrors detect.ts). */
-const LOCKFILE_NAMES = [
-  'pnpm-lock.yaml',
-  'yarn.lock',
-  'bun.lockb',
-  'bun.lock',
-  'package-lock.json',
-] as const;
-
-/**
- * Resolve the lockfiles set used to pick the package manager. A lockfile in the project root wins;
- * otherwise we walk UP the directory tree (monorepos keep the lockfile at the workspace root, not in
- * each package) so `reticle init` in a sub-package suggests `pnpm add` instead of defaulting to `npm i`.
- *
- * The walk is skipped when the project has its own installed tree, because an INHERITED lockfile is
- * weaker evidence than a `node_modules` sitting right there — the ancestor describes the workspace,
- * the tree describes THIS package. Reported from the field: `init` in a `frontend/` app installed
- * with npm emitted `pnpm add -D` off a repo-root `pnpm-lock.yaml`, pnpm was not on PATH, and the
- * failed install took every downstream wiring step with it. A LOCAL lockfile still wins over the
- * tree — it is a deliberate statement about this package, not an inheritance.
- */
-export function resolveLockfiles(
-  rootFiles: ReadonlySet<string>,
-  cwd: string,
-  io: Pick<InitIo, 'exists'>,
-  nodeModulesMarkers: ReadonlySet<string> = new Set(),
-): Set<string> {
-  const set = new Set(rootFiles);
-  if (LOCKFILE_NAMES.some((name) => set.has(name))) return set; // local lockfile is authoritative
-  if (namesAPackageManager(nodeModulesMarkers)) return set;
-  let dir = cwd;
-  for (let depth = 0; depth < 50; depth++) {
-    for (const name of LOCKFILE_NAMES) {
-      if (io.exists(join(dir, name))) {
-        set.add(name);
-        return set;
-      }
-    }
-    const parent = dirname(dir);
-    if (parent === dir) break; // filesystem root
-    dir = parent;
-  }
-  return set;
-}
+import { resolveLockfiles } from './lockfiles.js';
+// Re-exported so the existing import site (and its test block) keeps working after the split.
+export { resolveLockfiles };
 
 const NODE_MODULES_DIR = 'node_modules';
 /**
