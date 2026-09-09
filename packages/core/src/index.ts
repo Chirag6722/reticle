@@ -10,6 +10,7 @@
 
 // ── STABLE public surface: the wire/domain contract ──────────────────────────────────────────────
 export * from './constants.js'; // EventType, ActionType, wire constants, TRANSPORT_LIMITS, …
+export * from './global-press.js'; // which press is a document key (Escape / Tab / a shortcut)
 export * from './source-constants.js'; // DATA_RETICLE_SOURCE_ATTR, RETICLE_ROOT_GLOBAL
 export * from './event-classification.js'; // CHURN_TYPES — shared eviction priority for buffer/queue
 export * from './verified-constants.js'; // Verified — the one field an agent gates on

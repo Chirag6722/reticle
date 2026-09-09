@@ -164,7 +164,7 @@ export const ACT_TOOLS: ToolDef[] = [
         .string()
         .optional()
         .describe(
-          `Element ref (e.g. 'e42') from reticle_snapshot/reticle_query — stable until the element leaves the DOM, so no re-snapshot between actions. Give this OR \`target\`.`,
+          `Element ref (e.g. 'e42') from reticle_snapshot/reticle_query — stable until the element leaves the DOM, so no re-snapshot between actions. Give this OR \`target\`. A press of Escape, Tab, or a modifier shortcut (Cmd+K) is a document key and needs neither.`,
         ),
       target: z
         .record(z.unknown())
@@ -319,7 +319,7 @@ export const ACT_TOOLS: ToolDef[] = [
         .string()
         .optional()
         .describe(
-          `Element ref (e.g. 'e42') from reticle_snapshot/reticle_query — stable until the element leaves the DOM, so no re-snapshot between actions. Give this OR \`target\`.`,
+          `Element ref (e.g. 'e42') from reticle_snapshot/reticle_query — stable until the element leaves the DOM, so no re-snapshot between actions. Give this OR \`target\`. A press of Escape, Tab, or a modifier shortcut (Cmd+K) is a document key and needs neither.`,
         ),
       target: z
         .record(z.unknown())
