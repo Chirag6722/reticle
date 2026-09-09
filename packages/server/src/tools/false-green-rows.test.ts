@@ -124,3 +124,44 @@ describe('a row can prove it is driving the right application', () => {
     },
   );
 });
+
+/**
+ * The third criterion, and the one that cost the most to learn: a row's defect must be visible
+ * through a channel Reticle actually has.
+ *
+ * Excalidraw satisfies the other two comfortably — an auditable upstream oracle (51 pass at the fix,
+ * exactly its 2 new assertions fail at the parent) and a plain web app with no native runtime. Its
+ * defect is the ORDER of a container and its bound text after restore, deciding z-order and which
+ * element a later edit binds to. Excalidraw draws through StaticCanvas/InteractiveCanvas. Reticle
+ * observes DOM, state and network, and none of them can see inside a canvas.
+ *
+ * Scoring that row would have recorded a MISS, and the number would have been real and meaningless:
+ * a measurement of the documented canvas blind spot rather than of whether Reticle reports honestly.
+ * A corpus that quietly mixes the two produces a false-green rate nobody can act on, because the
+ * fix it implies (see the canvas gap) is not the fix it appears to name.
+ *
+ * So `scoreable` is explicit and carries its reason. An unscoreable row still earns its place: it is
+ * a verified pair, and it is the evidence for which apps belong in this corpus at all.
+ */
+describe('a row says whether it can be scored, and why not', () => {
+  it.each(corpus.rows.map((r) => [r.id, r] as const))('%s states scoreability', (_id, row) => {
+    const r = row as { scoreable?: boolean; notScoreableReason?: string };
+    expect(
+      typeof r.scoreable,
+      'UNSTATED reads as "score it" — which is how a canvas-internal or wrong-runtime defect ' +
+        'silently becomes a number about something else',
+    ).toBe('boolean');
+    if (false === r.scoreable) {
+      expect(
+        (r.notScoreableReason ?? '').length,
+        'an unscoreable row without a reason is indistinguishable from an abandoned one',
+      ).toBeGreaterThan(40);
+    }
+  });
+
+  it('records the criteria a row must satisfy, so the next row is not chosen by taste', () => {
+    const criteria = (corpus as { $selectionCriteria?: Record<string, unknown> })
+      .$selectionCriteria;
+    expect(Object.keys(criteria ?? {}).length).toBeGreaterThanOrEqual(4);
+  });
+});

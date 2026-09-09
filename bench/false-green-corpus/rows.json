@@ -47,7 +47,9 @@
         "note": "Reaching a PLAYING queue, which the declared defect needs, is still app-specific setup and is not automated.",
         "status": "NOT drivable in a browser \u2014 the defect is in the Tauri-only player branch",
         "openQuestion": "An earlier note here asked why reticle_snapshot said nodes: 0 while reticle_assert proved text. Resolved, and not a Reticle defect: the two readings were taken against different app states while the remote app was still connecting."
-      }
+      },
+      "scoreable": false,
+      "notScoreableReason": "Drivable only under the real Tauri runtime: in a browser main.tsx loads a different application (the remote control) from the one the defect lives in."
     },
     {
       "id": "excalidraw-bound-label-order",
@@ -88,7 +90,16 @@
         },
         "$comment": "A pure web app with no native runtime, which is why this row exists: the nuclear row's defect lives in a Tauri-only branch and cannot be driven in a browser at all. `renders` is null because it has NOT been measured in a browser yet, and the guard treats UNMEASURED as do-not-score."
       },
-      "whyItIsAFalseGreen": "A restored document renders: the shapes and their labels are all on the canvas and the drawing looks correct. What is wrong is the ORDER of a container and its bound text, which decides z-order and which element a later edit binds to. Nothing on screen announces it, and a presence check of the canvas passes."
+      "whyItIsAFalseGreen": "A restored document renders: the shapes and their labels are all on the canvas and the drawing looks correct. What is wrong is the ORDER of a container and its bound text, which decides z-order and which element a later edit binds to. Nothing on screen announces it, and a presence check of the canvas passes.",
+      "scoreable": false,
+      "notScoreableReason": "The defect is canvas-internal. Excalidraw draws through StaticCanvas/InteractiveCanvas, and this bug is the ORDER of a container and its bound text \u2014 z-order and later binding. Reticle observes DOM, state and network; none of them can see it. Scoring here would record a MISS that is really the documented canvas gap (#880), which would make the false-green number a measurement of Reticle's known blind spot rather than of its honesty."
     }
-  ]
+  ],
+  "$selectionCriteria": {
+    "$comment": "Learned by measuring, in this order, and each one eliminated a row that passed the ones before it.",
+    "1_auditableOracle": "An upstream commit that fixed a bug AND shipped its regression test. rowy has none in 600 commits; phanpy has none.",
+    "2_drivableApp": "The app must boot into the SAME application the defect lives in. nuclear passes 1 and fails this: a browser gets its remote-control UI, not the player.",
+    "3_observableDefect": "The defect must be visible through DOM, state or network. excalidraw passes 1 and 2 and fails this: it is a canvas app and the defect is z-order, which Reticle cannot see by design (#880). Scoring it would measure a known blind spot rather than honesty.",
+    "note": "All three are necessary. A row satisfying only the first two produces a confident number about nothing."
+  }
 }
