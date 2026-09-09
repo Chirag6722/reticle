@@ -318,6 +318,16 @@ export interface FlowReplayResult {
   /** Set when status === 'error' (load failure or resolved action failure). */
   error?: { code: string; message: string };
   /**
+   * Set when the replay STOPPED before the end of the flow.
+   *
+   * Replay breaks on the first failing step, so a flow that halted returns fewer step results than
+   * it has steps — and nothing said so. A caller reading a two-step flow's one result saw a step
+   * that was simply absent, which was reported as replay "silently skipping" an action. It does not
+   * skip; it stops, and now it says where and how much it never reached. Omitted entirely when every
+   * step ran, so a clean pass carries no extra bytes.
+   */
+  halted?: { atStep: number; notAttempted: number };
+  /**
    * Set on an `ok` replay whose flow cannot fail: it asserts no observable consequence, or has no
    * steps at all. The replay genuinely completed, so the status stays `ok` — but a bare `ok` read
    * as proof the feature works is exactly the false confidence `flow-risk.ts` argues against, and
