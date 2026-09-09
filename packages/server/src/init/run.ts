@@ -19,7 +19,12 @@ import { projectIdOf, rememberProjectOnDisk } from '../project/remember-project.
 import { detect, Framework, namesAPackageManager, type DetectInput, UiLibrary } from './detect.js';
 import { wasMcpRegistered } from './mcp-registered.js';
 import { pickAstroHost } from './astro-host.js';
-import { NEXT_CONFIG_CANDIDATES, PACKAGE_JSON, VITE_CONFIG_CANDIDATES } from './workspace-apps.js';
+import {
+  ELECTRON_VITE_CONFIG_CANDIDATES,
+  NEXT_CONFIG_CANDIDATES,
+  PACKAGE_JSON,
+  VITE_CONFIG_CANDIDATES,
+} from './workspace-apps.js';
 import { redirectToWorkspaceApp } from './workspace-redirect.js';
 import { isConnectStep } from './connect-steps.js';
 import { CURSOR_RULE_PATH, RETICLE_MD_PATH } from './agent-rules.js';
@@ -71,6 +76,7 @@ import {
 import { deriveProjectId, packageName } from './project-id.js';
 import {
   VITE_DEV_MODULE_PATH,
+  ELECTRON_VITE_DEV_MODULE_PATH,
   connectArgWithToken,
   staticPageSnippet,
   streamlitPageSnippet,
@@ -221,6 +227,30 @@ function dependencyNames(pkg: unknown): Set<string> {
     ...Object.keys(p['devDependencies'] ?? {}),
   ]);
 }
+/** electron-vite and the unbundled Electron layouts this repo already ships. */
+const ELECTRON_MAIN_SOURCES = [
+  'src/main/index.ts',
+  'src/main/index.js',
+  'src/main/index.mts',
+  'src/main/index.mjs',
+  'electron/main.cjs',
+  'electron/main.js',
+  'electron/main.ts',
+  'src/main.ts',
+  'src/main.js',
+];
+const ELECTRON_PRELOAD_SOURCES = [
+  'src/preload/index.ts',
+  'src/preload/index.js',
+  'src/preload/index.mts',
+  'src/preload/index.mjs',
+  'electron/preload.cjs',
+  'electron/preload.js',
+  'electron/preload.ts',
+  'src/preload.ts',
+  'src/preload.js',
+];
+
 const ASTRO_CONFIG_CANDIDATES = [
   'astro.config.mjs',
   'astro.config.js',
@@ -379,6 +409,17 @@ function firstPresent(files: ReadonlySet<string>, candidates: readonly string[])
   return null;
 }
 
+function firstReadable(
+  io: Pick<InitIo, 'readFile'>,
+  candidates: readonly string[],
+): { path: string; source: string } | null {
+  for (const path of candidates) {
+    const source = io.readFile(path);
+    if (source !== null) return { path, source };
+  }
+  return null;
+}
+
 /**
  * The directory the human's agent runs in, when it is not the app's directory.
  *
@@ -411,6 +452,15 @@ function gatherPlanInput(options: InitOptions, io: InitIo, pkg: unknown): PlanIn
   const viteSource = null === vitePath ? null : io.readFile(vitePath);
   const viteConfig =
     vitePath !== null && viteSource !== null ? { path: vitePath, source: viteSource } : null;
+
+  const electronVitePath = firstPresent(rootFiles, ELECTRON_VITE_CONFIG_CANDIDATES);
+  const electronViteSource = null === electronVitePath ? null : io.readFile(electronVitePath);
+  const electronViteConfig =
+    electronVitePath !== null && electronViteSource !== null
+      ? { path: electronVitePath, source: electronViteSource }
+      : null;
+  const electronMain = firstReadable(io, ELECTRON_MAIN_SOURCES);
+  const electronPreload = firstReadable(io, ELECTRON_PRELOAD_SOURCES);
 
   // Global MCP registration targets each agent that's present: Claude via its CLI, Cursor via its
   // global config file. Only probe when the MCP step is in play.
@@ -494,6 +544,9 @@ function gatherPlanInput(options: InitOptions, io: InitIo, pkg: unknown): PlanIn
     detectedClients,
     cursorProjectPresent: io.exists(CURSOR_PROJECT_MARKER),
     viteConfig,
+    electronViteConfig,
+    electronPreload,
+    electronMain,
     astroConfig:
       astroPath !== null && astroSource !== null ? { path: astroPath, source: astroSource } : null,
     astroLayout:
@@ -512,7 +565,11 @@ function gatherPlanInput(options: InitOptions, io: InitIo, pkg: unknown): PlanIn
     storeHints: storeHints(dependencyNames(pkg)),
     foundStores: scanStores(sourceFiles, dependencyNames(pkg)),
     nextFoundStores: scanStores(sourceFiles, dependencyNames(pkg), dirname(devLocation.path)),
-    viteDevModuleExists: io.exists(VITE_DEV_MODULE_PATH),
+    viteDevModuleExists: io.exists(
+      detection.framework === Framework.ELECTRON_VITE
+        ? ELECTRON_VITE_DEV_MODULE_PATH
+        : VITE_DEV_MODULE_PATH,
+    ),
     nextReticleDevPath: devLocation.path,
     nextReticleDevImport: devLocation.importSpecifier,
     nextReticleDevExists: io.exists(devLocation.path),

@@ -13,6 +13,9 @@ import {
   patchAstroEnvDts,
   patchAstroLayout,
 } from './astro-patch.js';
+import { patchElectronViteConfig } from './electron-vite-patch.js';
+import { patchElectronMain, patchElectronPreload } from './electron-patch.js';
+import { ELECTRON_CAPTURE_FIX, ELECTRON_PRELOAD_FIX } from './desktop-doctor.js';
 import {
   CRA_DEV_MODULE_IMPORT,
   CRA_ENV_PATH,
@@ -30,6 +33,7 @@ import {
   NEXT_LAYOUT_PATH,
   viteDevModuleFile,
   VITE_DEV_MODULE_PATH,
+  ELECTRON_VITE_DEV_MODULE_PATH,
   nextReticleDevFile,
   NEXT_RETICLE_DEV_PATH,
   nextConfigManual,
@@ -38,6 +42,7 @@ import {
   UNVERIFIED_FRAMEWORK_NOTE,
   astroManual,
   nuxtManual,
+  electronViteManual,
   NUXT_PLUGIN_PATH,
   webpack4TranspileNote,
   WEBPACK4_REACT_SCRIPTS_MAJOR,
@@ -131,12 +136,12 @@ function needsManualStore(hints: readonly string[], wired: readonly unknown[]): 
   return hints.length > 0 && 0 === wired.length;
 }
 
-function capabilitiesStep(input: PlanInput): Step[] {
+function capabilitiesStep(input: PlanInput, path: string = VITE_DEV_MODULE_PATH): Step[] {
   if (true === input.viteDevModuleExists) {
     return [
       {
         title: CAPABILITIES_TITLE,
-        target: VITE_DEV_MODULE_PATH,
+        target: path,
         status: StepStatus.ALREADY,
         detail: 'file exists, left alone, it is yours to edit',
       },
@@ -168,7 +173,7 @@ function capabilitiesStep(input: PlanInput): Step[] {
   return [
     {
       title: CAPABILITIES_TITLE,
-      target: VITE_DEV_MODULE_PATH,
+      target: path,
       status: StepStatus.APPLY,
       detail: `${found}; ${
         wired.length > 0
@@ -178,7 +183,7 @@ function capabilitiesStep(input: PlanInput): Step[] {
             : 'no state library detected'
       }`,
       write: {
-        path: VITE_DEV_MODULE_PATH,
+        path,
         content: viteDevModuleFile(testids, stores, wired, input.detection.uiLibrary),
       },
       dependsOnInstall: true,
@@ -195,12 +200,96 @@ function capabilitiesStep(input: PlanInput): Step[] {
       ? [
           {
             title: CAPABILITIES_TODO_TITLE,
-            target: VITE_DEV_MODULE_PATH,
+            target: path,
             status: StepStatus.NOTICE,
-            detail: capabilitiesTodo(VITE_DEV_MODULE_PATH, stores),
+            detail: capabilitiesTodo(path, stores),
           } satisfies Step,
         ]
       : []),
+  ];
+}
+
+export const ELECTRON_VITE_PLUGIN_TITLE = 'Vite plugin (electron-vite renderer)';
+export const ELECTRON_PRELOAD_TITLE = 'Electron preload (IPC shim)';
+export const ELECTRON_CAPTURE_TITLE = 'Electron capture (screenshots)';
+
+/**
+ * electron-vite: the renderer plugin, then capabilities, then the two Electron halves.
+ *
+ * The plugin and the Electron steps are independent. A renderer without the preload still
+ * connects — it only loses IPC visibility — so they stay separate rather than collapsing to one
+ * manual recipe the way Astro's config+layout pair does.
+ */
+export function electronViteSteps(input: PlanInput): Step[] {
+  const port = input.options.port;
+  const manual = electronViteManual(port, input.detection.uiLibrary);
+  const cfg = input.electronViteConfig ?? null;
+  const plugin: Step =
+    null === cfg
+      ? {
+          title: ELECTRON_VITE_PLUGIN_TITLE,
+          target: 'electron.vite.config',
+          status: StepStatus.MANUAL,
+          detail: manual,
+        }
+      : patchStep(
+          ELECTRON_VITE_PLUGIN_TITLE,
+          cfg.path,
+          patchElectronViteConfig(cfg.source, port),
+          'add reticle({ desktop: true }) to the renderer plugins (also injects connect())',
+          manual,
+        );
+  return [
+    plugin,
+    ...capabilitiesStep(input, ELECTRON_VITE_DEV_MODULE_PATH),
+    ...electronPreloadStep(input),
+    ...electronCaptureStep(input),
+  ];
+}
+
+function electronPreloadStep(input: PlanInput): Step[] {
+  const file = input.electronPreload ?? null;
+  if (null === file) {
+    return [
+      {
+        title: ELECTRON_PRELOAD_TITLE,
+        target: 'preload',
+        status: StepStatus.MANUAL,
+        detail: ELECTRON_PRELOAD_FIX,
+      },
+    ];
+  }
+  return [
+    patchStep(
+      ELECTRON_PRELOAD_TITLE,
+      file.path,
+      patchElectronPreload(file.source, file.path),
+      'require the IPC shim as the first line of preload',
+      ELECTRON_PRELOAD_FIX,
+    ),
+  ];
+}
+
+function electronCaptureStep(input: PlanInput): Step[] {
+  const file = input.electronMain ?? null;
+  if (null === file) {
+    return [
+      {
+        title: ELECTRON_CAPTURE_TITLE,
+        target: 'main',
+        status: StepStatus.MANUAL,
+        detail: ELECTRON_CAPTURE_FIX,
+      },
+    ];
+  }
+  return [
+    patchStep(
+      ELECTRON_CAPTURE_TITLE,
+      file.path,
+      patchElectronMain(file.source, file.path),
+      'installReticleCapture on the BrowserWindow so screenshots work',
+      ELECTRON_CAPTURE_FIX,
+    ),
   ];
 }
 
@@ -766,6 +855,8 @@ export function frameworkSteps(input: PlanInput): Step[] {
   const steps: Step[] = [];
   if (input.detection.framework === Framework.VITE) {
     steps.push(...viteSteps(input));
+  } else if (input.detection.framework === Framework.ELECTRON_VITE) {
+    steps.push(...electronViteSteps(input));
   } else if (input.detection.framework === Framework.NEXT) {
     steps.push(...nextSteps(input));
   } else if (input.detection.framework === Framework.ASTRO) {
