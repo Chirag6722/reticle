@@ -331,3 +331,34 @@ describe('the dependency install is quiet about things that are not ours', () =>
     }
   });
 });
+
+describe('customReconciler', () => {
+  // The whole point: a lowercase tag in these projects may not be a DOM element, and stamping one
+  // unmounts the app to a white screen from inside the commit phase.
+  it.each([
+    '@react-three/fiber',
+    'react-three-fiber',
+    '@react-pdf/renderer',
+    'ink',
+    'react-native',
+  ])('is true when %s is a dependency', (name) => {
+    expect(
+      detect(input({ pkg: { dependencies: { react: '^19.0.0', [name]: '^9.0.0' } } }))
+        .customReconciler,
+    ).toBe(true);
+  });
+
+  it('finds it in devDependencies too', () => {
+    expect(
+      detect(input({ pkg: { devDependencies: { '@react-three/fiber': '^9.0.0' } } }))
+        .customReconciler,
+    ).toBe(true);
+  });
+
+  it('is false for an ordinary React DOM app', () => {
+    expect(
+      detect(input({ pkg: { dependencies: { react: '^19.0.0', three: '^0.170.0' } } }))
+        .customReconciler,
+    ).toBe(false);
+  });
+});

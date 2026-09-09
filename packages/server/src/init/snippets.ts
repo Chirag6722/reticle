@@ -116,12 +116,19 @@ export function viteManual(
   port: number | undefined,
   uiLibrary: UiLibrary = UiLibrary.UNKNOWN,
   inject = true,
+  sourceMapping = true,
 ): string {
   const options = [
     ...(port === undefined ? [] : [`port: ${String(port)}`]),
     ...(false === inject ? ['inject: false'] : []),
+    ...(sourceMapping ? [] : ['sourceMapping: false']),
   ];
   const call = 0 === options.length ? 'reticle()' : `reticle({ ${options.join(', ')} })`;
+  const note = sourceMapping
+    ? ''
+    : `\n\n\`sourceMapping: false\` because this app renders through a non-DOM React renderer, where a
+lowercase JSX tag is not an element. Stamping one crashes the app at commit time. You lose source
+pointers, not the app.`;
   return `Add the Reticle plugin to your Vite config:
 
   import { reticle } from '@reticlehq/vite-plugin';
@@ -131,7 +138,7 @@ export function viteManual(
   });
 
 Keep \`reticle()\` LAST so it sees the output of your other plugins. It only applies during \`vite\`
-(dev) — it is dropped from \`vite build\`.`;
+(dev) — it is dropped from \`vite build\`.${note}`;
 }
 
 /**
@@ -168,12 +175,18 @@ Also add \`import '@reticlehq/electron/preload'\` as the first line of your prel
 }
 
 /** Next.js config wrap — always printed (we never auto-rewrite next.config). */
-export function nextConfigManual(configFile: string): string {
+export function nextConfigManual(configFile: string, sourceMapping = true): string {
+  const options = sourceMapping ? '' : ', { sourceMapping: false }';
+  const note = sourceMapping
+    ? ''
+    : `\n\n\`sourceMapping: false\` because this app renders through a non-DOM React renderer, where a
+lowercase JSX tag is not an element. Stamping one crashes the app at commit time. You lose source
+pointers, not the app.`;
   return `Wrap your ${configFile} export with withReticle (keeps SWC, dev-only):
 
   import { withReticle } from '@reticlehq/next';
 
-  export default withReticle(nextConfig);`;
+  export default withReticle(nextConfig${options});${note}`;
 }
 
 /**

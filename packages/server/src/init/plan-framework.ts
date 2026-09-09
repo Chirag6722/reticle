@@ -318,6 +318,10 @@ export function viteSteps(
 function viteConfigSteps(input: PlanInput, detail: string, inject = true): Step[] {
   const cfg = input.viteConfig;
   const port = input.options.port;
+  // Stamp `data-reticle-source` unless this app renders through a non-DOM React reconciler, where a
+  // lowercase JSX tag is not an element and the stamp crashes the app at commit time. See
+  // `Detection.customReconciler`.
+  const stampSource = true !== input.detection?.customReconciler;
   // An explicit "not here" is not an invitation. `init` runs unattended in a repo it has just met,
   // and it was reported adding the plugin to an app whose config said Reticle was deliberately
   // excluded. A NOTICE rather than a ⚠: opting out is a decision, not something to go and fix.
@@ -337,11 +341,17 @@ function viteConfigSteps(input: PlanInput, detail: string, inject = true): Step[
         title: 'Vite plugin',
         target: 'vite.config',
         status: StepStatus.MANUAL,
-        detail: viteManual(port, input.detection.uiLibrary, inject),
+        detail: viteManual(port, input.detection.uiLibrary, inject, stampSource),
       },
     ];
   }
-  const patch = patchViteConfig(cfg.source, port, true === input.captureBodies, inject);
+  const patch = patchViteConfig(
+    cfg.source,
+    port,
+    true === input.captureBodies,
+    inject,
+    stampSource,
+  );
   if (patch.kind === VitePatchKind.ALREADY) {
     return [
       {
@@ -358,7 +368,7 @@ function viteConfigSteps(input: PlanInput, detail: string, inject = true): Step[
         title: 'Vite plugin',
         target: cfg.path,
         status: StepStatus.MANUAL,
-        detail: `${patch.reason}\n\n${viteManual(port, input.detection.uiLibrary, inject)}`,
+        detail: `${patch.reason}\n\n${viteManual(port, input.detection.uiLibrary, inject, stampSource)}`,
       },
     ];
   }
@@ -476,7 +486,7 @@ export function nextSteps(input: PlanInput): Step[] {
   const configPatch: SourcePatch =
     null === input.nextConfigSource || input.nextConfigSource === undefined
       ? { kind: PatchKind.MANUAL, reason: `no ${configFile} found` }
-      : patchNextConfig(input.nextConfigSource);
+      : patchNextConfig(input.nextConfigSource, true !== input.detection?.customReconciler);
   const layout = input.nextLayout ?? null;
   // Pages Router mounts through pages/_app, App Router through the root layout — different edits,
   // and picking by path is what stops a Pages app being handed the layout patch that cannot apply.
@@ -511,7 +521,7 @@ export function nextSteps(input: PlanInput): Step[] {
       configFile,
       configPatch,
       'wrap the export in withReticle (source mapping, dev-only)',
-      nextConfigManual(configFile),
+      nextConfigManual(configFile, true !== input.detection?.customReconciler),
     ),
     patchStep(
       'Mount ReticleDev',

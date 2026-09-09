@@ -119,6 +119,28 @@ export interface Detection {
   reactScriptsMajor?: number | undefined;
   /** React 19 dropped _debugSource, so it needs the build-time source-map stamp. */
   needsSourceMapping: boolean;
+  /**
+   * Whether this project renders through a NON-DOM React reconciler, in which case the
+   * `data-reticle-source` stamp must be switched off for the whole app.
+   *
+   * React is a reconciler interface, not a renderer. A lowercase JSX tag is a host element in
+   * every renderer, but only in React DOM is a host element a node that takes attributes. The
+   * babel plugin's allowlist keeps the stamp off `<mesh>` and `<group>`, and it cannot help with
+   * the tags that COLLIDE: `<line>` is both SVG's and `THREE.Line`, `<audio>` is both. R3F's
+   * `applyProps` reads any dashed prop as a pierced property path, walks `data` -> `reticle` on a
+   * three.js instance that has no `data`, and throws from inside the commit phase — which unmounts
+   * the entire tree to a white screen, long after the app looked fine.
+   *
+   * A tag name alone cannot separate the two, and a lexical "is it under a <Canvas>" walk only sees
+   * the file being transformed. The manifest can: an app that depends on one of these renderers has
+   * the collision, so `init` writes `sourceMapping: false` rather than shipping a crash. The cost is
+   * source pointers on that app; the alternative cost is the app.
+   *
+   * Optional so every existing fixture keeps compiling without naming it, in the one direction a
+   * default here can be wrong safely: absent means an ordinary React DOM app, which is what an
+   * unstated fixture is. `detect` always sets it.
+   */
+  customReconciler?: boolean | undefined;
   packageManager: PackageManager;
 }
 
@@ -147,6 +169,18 @@ const ASTRO_CONFIGS = [
 function depVersion(pkg: PackageJsonLike, name: string): string | undefined {
   return pkg.dependencies?.[name] ?? pkg.devDependencies?.[name] ?? pkg.peerDependencies?.[name];
 }
+
+/**
+ * React renderers whose host instances are not DOM nodes. Presence of any one of them means a
+ * lowercase JSX tag in this project may not be an element. See `Detection.customReconciler`.
+ */
+const CUSTOM_RECONCILER_DEPS = [
+  '@react-three/fiber',
+  'react-three-fiber',
+  '@react-pdf/renderer',
+  'ink',
+  'react-native',
+];
 
 function hasAnyConfig(files: ReadonlySet<string>, candidates: readonly string[]): boolean {
   return candidates.some((c) => files.has(c));
@@ -300,6 +334,9 @@ export function detect(input: DetectInput): Detection {
       depVersion(input.pkg, 'typescript') !== undefined,
     reactMajor,
     needsSourceMapping: reactMajor !== undefined && reactMajor >= 19,
+    customReconciler: CUSTOM_RECONCILER_DEPS.some(
+      (name) => depVersion(input.pkg, name) !== undefined,
+    ),
     packageManager: detectPackageManager(input.lockfiles, input.nodeModulesMarkers ?? new Set()),
   };
 }
