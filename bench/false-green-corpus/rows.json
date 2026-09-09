@@ -175,8 +175,23 @@
         },
         "$comment": "MEASURED in headless chromium on 2026-09-09, not assumed: 1151 characters of body text, title 'React Admin', and the DataTable itself rendering Posts/Comments/Tags with a DELETE control \u2014 the surface this defect lives on. examples/simple/src/index.tsx does one unconditional createRoot of <Admin>, with no runtime branch, which is structurally the opposite of the nuclear row's entry."
       },
-      "scoreable": true,
-      "$whyThisOneIsScoreable": "The first row to satisfy all three criteria, and the first that could serve a STANDING gate, which is what this issue actually asks for. Boot is a bare vite dev server that was ready in 433ms with no database, no containers and no seed \u2014 unlike the formbricks row, whose eight-container stack could never run as a gate however good its oracle is."
+      "scoreable": false,
+      "$whyThisOneIsScoreable": "The first row to satisfy all three criteria, and the first that could serve a STANDING gate, which is what this issue actually asks for. Boot is a bare vite dev server that was ready in 433ms with no database, no containers and no seed \u2014 unlike the formbricks row, whose eight-container stack could never run as a gate however good its oracle is.",
+      "notScoreableReason": "Criteria 1-2 hold and are measured. Criterion 3 fails for THIS BOOT, which only driving could reveal: examples/simple serves its data from an in-memory fakerest provider, so the app makes no HTTP request at all. The oracle mocks deleteOne at the dataProvider SEAM, and in a real deployment that seam maps to HTTP -- but in the bootable example it does not, so the duplicate commit never reaches a channel Reticle observes. Scoring here would grade Reticle on a defect the app never exposes to it.",
+      "scoreAttempt": {
+        "at": "2026-09-09",
+        "setup": "released 2.13.1 on every side (vite-plugin, browser, react, server) to remove the wire-contract skew this branch introduces",
+        "drive": "select one post row, then click Delete with until={kind:net, method:DELETE, urlContains:posts, count:1}",
+        "reticleSaid": {
+          "verified": "no",
+          "verifiedReason": "assertion_failed",
+          "failureReason": "expected 1 network call(s) matching {method:DELETE, urlContains:posts}, saw 0"
+        },
+        "groundTruth": "the delete DID happen -- posts/getList total went 13 -> 12 -- with zero network traffic",
+        "reading": "Reticle did NOT emit a false green: it refused to claim success and said which channel came up empty. But it also did not catch the duplicate, because there was no duplicate to see on the wire. The verdict is honest and the row is not yet a test of the thing it was chosen for.",
+        "alsoObserved": "The capture reported integrity clean:false with buffer_loss, and flagged a no-signal-on-mutation instrumentation gap naming Button.tsx:54 -- both self-reported rather than silent.",
+        "toMakeItScoreable": "Boot a react-admin example whose dataProvider speaks HTTP (ra-data-json-server against a real endpoint) so the dataProvider seam the oracle mocks becomes the network channel Reticle watches."
+      }
     }
   ],
   "$selectionCriteria": {
