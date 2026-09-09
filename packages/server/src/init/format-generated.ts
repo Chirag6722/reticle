@@ -12,7 +12,16 @@ import { createRequire } from 'node:module';
 import { basename, join } from 'node:path';
 
 /** Basenames of full-file generators that a project's lint will see. */
-const GENERATED_SOURCE_NAMES = new Set(['reticle-dev.ts', 'reticle-dev.tsx', 'hooks.client.ts']);
+const GENERATED_SOURCE_NAMES = new Set([
+  'reticle-dev.ts',
+  'reticle-dev.tsx',
+  // CRA's JavaScript branch. Missing here, so the one project shape that HAS no TypeScript — and
+  // whose boilerplate lint is the strictest about line width — was the one never formatted.
+  'reticle-dev.js',
+  'hooks.client.ts',
+  'reticle.client.ts',
+  'entry.client.tsx',
+]);
 
 /** True when this write is a connect/dev module lint will treat as project source. */
 export function isGeneratedSourcePath(relPath: string): boolean {

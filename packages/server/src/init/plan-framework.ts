@@ -38,10 +38,13 @@ import {
   UNVERIFIED_FRAMEWORK_NOTE,
   astroManual,
   nuxtManual,
-  NUXT_PLUGIN_PATH,
+  nuxtPluginFile,
+  nuxtPluginPath,
+  NUXT_PLUGIN_NOTICE,
   webpack4TranspileNote,
   WEBPACK4_REACT_SCRIPTS_MAJOR,
-  reactRouterManual,
+  reactRouterEntryFile,
+  reactRouterEntryPatch,
   REACT_ROUTER_ENTRY_PATH,
   htmlManual,
 } from './snippets.js';
@@ -52,6 +55,7 @@ import { CSP_STEP_TITLE } from './csp-check.js';
 import { StepTitle } from './connect-steps.js';
 import { FRAMEWORK_ADAPTERS } from './framework-adapter.js';
 import { diagnoseWebCsp } from './csp-doctor.js';
+import { patchNuxtConfig } from './nuxt-patch.js';
 
 /** What adding `reticle()` to a Vite config buys, which differs by framework. */
 export const VITE_PLUGIN_DETAIL = {
@@ -473,6 +477,7 @@ export function craSteps(input: PlanInput): Step[] {
         path: modulePath,
         content: craDevModuleFile(input.options.port, input.options.projectId, {
           typescript: input.detection.typescript,
+          testids: input.testids ?? [],
         }),
       },
       dependsOnInstall: true,
@@ -550,43 +555,123 @@ export function craSteps(input: PlanInput): Step[] {
 }
 
 /**
- * Nuxt: one manual step carrying the whole recipe, and no pretence of more.
+ * Nuxt: the client plugin written, and the config patched so it can pair.
  *
- * There is no Nuxt app in `apps/` and no CI gate for one, so an auto-written plugin would be a
- * support claim nothing backs — the same reasoning SvelteKit already carries. What this DOES fix is
- * everything that made the previous fall-through actively wrong: Nuxt was classified as `html`, so
- * it was handed the React kit and a localhost-guarded snippet that cannot run in a Vue app.
+ * This used to be one MANUAL step carrying the whole recipe, so `init` ended on a ⚠ and exited 1 —
+ * a correct recipe nobody applies is the same outcome as no recipe. What it could not do until now
+ * was the pairing token: the bridge requires one even on localhost, nothing in a browser can read
+ * the file it lives in, and Nuxt loads no plugin of ours that could inject it. `nuxt.config`'s
+ * `vite.define` is the one place that can, which is also where the journal watch-ignore goes.
+ *
+ * ATOMIC, for the reason `astroSteps` is: a plugin written beside a config we could not patch is an
+ * app that dials the bridge and is refused, reported as one green step and one caveat when it is a
+ * guaranteed non-connection. If the config cannot be patched, BOTH halves go back to the recipe.
  */
 export function nuxtSteps(input: PlanInput): Step[] {
-  return [
+  const config = input.nuxtConfig ?? null;
+  const pluginPath = nuxtPluginPath(true === input.nuxtHasAppDir);
+  const manual: Step[] = [
     {
       title: StepTitle.CONNECT_SNIPPET_NUXT,
-      target: NUXT_PLUGIN_PATH,
+      target: null === config ? 'nuxt.config + a client plugin' : `${config.path} + ${pluginPath}`,
       status: StepStatus.MANUAL,
       detail: nuxtManual(input.options.port, input.options.projectId),
     },
   ];
+  if (null === config) return manual;
+  const configPatch = patchNuxtConfig(config.source);
+  if (configPatch.kind === PatchKind.MANUAL) return manual;
+  const notice: Step = {
+    title: StepTitle.NUXT_RESTART,
+    target: pluginPath,
+    status: StepStatus.NOTICE,
+    detail: NUXT_PLUGIN_NOTICE,
+  };
+  // Never overwritten: this file is the one an app owner edits — their registered stores, their own
+  // capabilities. Rewriting it would take those with it.
+  const plugin: Step =
+    true === input.nuxtPluginExists
+      ? {
+          title: StepTitle.CONNECT_SNIPPET_NUXT,
+          target: pluginPath,
+          status: StepStatus.ALREADY,
+          detail: 'file exists',
+        }
+      : {
+          title: StepTitle.CONNECT_SNIPPET_NUXT,
+          target: pluginPath,
+          status: StepStatus.APPLY,
+          detail: 'create the dev-only client plugin (Nuxt renders its own HTML)',
+          write: {
+            path: pluginPath,
+            content: nuxtPluginFile(
+              input.options.port,
+              input.options.projectId,
+              input.testids ?? [],
+            ),
+          },
+          dependsOnInstall: true,
+        };
+  return [
+    plugin,
+    patchStep(
+      StepTitle.NUXT_CONFIG,
+      config.path,
+      configPatch,
+      'inline the pairing token and keep the journal out of the watcher',
+      nuxtManual(input.options.port, input.options.projectId),
+    ),
+    notice,
+  ];
 }
 
 /**
- * React Router framework mode: the client-entry connect, printed rather than written.
+ * React Router framework mode: the client entry, WRITTEN.
  *
- * `app/entry.client.tsx` is an override of a default React Router supplies, so writing one
- * containing our import and nothing else would replace that default with a file that never
- * hydrates. See `reactRouterManual`.
+ * #678 happened here — every step reported green and the daemon showed zero sessions for 20+
+ * minutes, because framework mode renders HTML through its own request handler and the Vite plugin's
+ * `transformIndexHtml` injection never fires. The connect has to come from `app/entry.client.tsx`,
+ * and that used to be printed as a recipe: `init` exited 0 over an app that could not connect.
+ *
+ * The file is an OVERRIDE of a default React Router supplies, so when it is absent the generated one
+ * carries React Router's own default entry as well as the import — a file containing only our import
+ * would replace that default with one that never hydrates. When it is present, one line is added to
+ * it and nothing else is touched.
  */
 export function reactRouterSteps(input: PlanInput): Step[] {
+  const detail =
+    'connect from the client entry — framework mode renders HTML through its own request handler, ' +
+    "so the Vite plugin's index.html injection never fires";
+  const existing = input.reactRouterEntrySource ?? null;
+  if (true !== input.reactRouterEntryExists || null === existing) {
+    return [
+      {
+        title: StepTitle.CONNECT_SNIPPET_REACT_ROUTER,
+        target: REACT_ROUTER_ENTRY_PATH,
+        status: StepStatus.APPLY,
+        detail: `create the dev-only ${detail}`,
+        write: { path: REACT_ROUTER_ENTRY_PATH, content: reactRouterEntryFile() },
+        dependsOnInstall: true,
+      },
+    ];
+  }
+  const patched = reactRouterEntryPatch(existing);
   return [
-    {
-      title: StepTitle.CONNECT_SNIPPET_REACT_ROUTER,
-      target: REACT_ROUTER_ENTRY_PATH,
-      status: StepStatus.MANUAL,
-      detail: reactRouterManual(
-        input.options.port,
-        input.options.projectId,
-        true === input.reactRouterEntryExists,
-      ),
-    },
+    null === patched
+      ? {
+          title: StepTitle.CONNECT_SNIPPET_REACT_ROUTER,
+          target: REACT_ROUTER_ENTRY_PATH,
+          status: StepStatus.ALREADY,
+          detail: 'already imported',
+        }
+      : {
+          title: StepTitle.CONNECT_SNIPPET_REACT_ROUTER,
+          target: REACT_ROUTER_ENTRY_PATH,
+          status: StepStatus.APPLY,
+          detail: `add one line to ${detail}`,
+          write: { path: REACT_ROUTER_ENTRY_PATH, content: patched },
+          dependsOnInstall: true,
+        },
   ];
 }
 
@@ -623,6 +708,7 @@ export function svelteKitSteps(input: PlanInput): Step[] {
           input.options.port,
           input.options.projectId,
           input.detection.uiLibrary,
+          input.testids ?? [],
         ),
       },
       dependsOnInstall: true,
@@ -667,6 +753,7 @@ export function astroSteps(input: PlanInput): Step[] {
     input.options.port,
     input.options.projectId,
     input.detection.uiLibrary,
+    input.testids ?? [],
   );
   if (configPatch.kind === PatchKind.MANUAL || layoutPatch.kind === PatchKind.MANUAL) {
     return [

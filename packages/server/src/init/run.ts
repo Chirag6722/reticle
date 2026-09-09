@@ -72,9 +72,11 @@ import { deriveProjectId, packageName } from './project-id.js';
 import {
   VITE_DEV_MODULE_PATH,
   connectArgWithToken,
+  nuxtPluginPath,
   staticPageSnippet,
   streamlitPageSnippet,
 } from './snippets.js';
+import { NUXT_CONFIG_CANDIDATES } from './nuxt-patch.js';
 import { CLAUDE_COMMAND_PATH, CURSOR_COMMAND_PATH } from './slash-command.js';
 import { SERVER_VERSION } from '../version/server-version.js';
 import { InitFailure, reportInitOutcome } from '../telemetry/init-telemetry.js';
@@ -462,6 +464,12 @@ function gatherPlanInput(options: InitOptions, io: InitIo, pkg: unknown): PlanIn
   const layoutRelPath = astroHost?.path ?? null;
   const astroLayoutSource = astroHost?.source ?? null;
 
+  const nuxtConfigPath = firstPresent(rootFiles, NUXT_CONFIG_CANDIDATES);
+  const nuxtConfigSource = null === nuxtConfigPath ? null : io.readFile(nuxtConfigPath);
+  // Nuxt 4's default srcDir is `app/`, Nuxt 3's is the root — and a plugin written into the
+  // directory Nuxt does not scan is never registered, silently.
+  const nuxtHasAppDir = io.listDirs('.').includes('app');
+
   const nextConfigFile = firstPresent(rootFiles, NEXT_CONFIG_CANDIDATES);
   // App Router first; a Pages Router app has no layout, and its mount point is pages/_app.
   const layoutPath =
@@ -519,6 +527,15 @@ function gatherPlanInput(options: InitOptions, io: InitIo, pkg: unknown): PlanIn
     nextReticleDevSource: io.readFile(devLocation.path),
     svelteKitHooksExists: io.exists(SVELTEKIT_HOOKS),
     reactRouterEntryExists: io.exists(REACT_ROUTER_ENTRY),
+    // The SOURCE, so an entry the app already owns is ADDED TO rather than replaced — it is an
+    // override of React Router's default, and everything in it is load-bearing.
+    reactRouterEntrySource: io.readFile(REACT_ROUTER_ENTRY),
+    nuxtConfig:
+      nuxtConfigPath !== null && nuxtConfigSource !== null
+        ? { path: nuxtConfigPath, source: nuxtConfigSource }
+        : null,
+    nuxtHasAppDir,
+    nuxtPluginExists: io.exists(nuxtPluginPath(nuxtHasAppDir)),
     craEntry: craEntryOf(io),
     craEnv: io.readFile(CRA_ENV_PATH),
     pairingToken: readPairingToken(),

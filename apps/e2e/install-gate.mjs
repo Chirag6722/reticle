@@ -464,6 +464,9 @@ const PROBE_MARKUP = {
   sveltekit: {
     'app/src/routes/+page.svelte': `<h1 data-testid="${PROBE_MARKUP_TESTID}">SvelteKit</h1>\n`,
   },
+  nuxt: {
+    'app/app/app.vue': `<template>\n  <h1 data-testid="${PROBE_MARKUP_TESTID}">Nuxt</h1>\n</template>\n`,
+  },
 };
 
 const SCAFFOLDS = [
@@ -592,22 +595,36 @@ const SCAFFOLDS = [
   // was written not one of them was scaffolded here, so the only paths this gate watched were the
   // two where HTML injection works.
   //
-  // NUXT AND REACT ROUTER ARE DELIBERATELY ABSENT, and that absence is the finding, not an
-  // oversight. On both, `init` ends with a `[⚠]` and says so itself — "This app will NOT connect
-  // until the ⚠ step above is done by hand". Measured on this branch against pristine scaffolds:
-  //
-  //   nuxt          init EXITS 1, `[⚠] Connect snippet (Nuxt) → app/plugins/reticle.client.ts`
-  //   react-router  init exits 0, `[⚠] Connect snippet (React Router) → app/entry.client.tsx`
-  //
-  // `nuxtSteps` and `reactRouterSteps` (plan-framework.ts) each emit exactly one MANUAL step
-  // carrying the whole recipe, on purpose — the source says so. So "zero ⚠" cannot hold for them,
-  // and a cell that is red by design teaches a reader to ignore this gate. They belong here the
-  // day `init` writes those two files itself; the scaffold commands are kept so that is a paste:
-  //
-  //   nuxt          npx --yes nuxi@latest init app --template minimal --packageManager npm \
-  //                     --no-gitInit --no-install                      (dev ports: next)
-  //   react-router  npx --yes create-react-router@latest app --no-install --no-git-init --yes
-  //                                                                    (dev ports: vite)
+  // Nuxt and React Router used to be absent, and the absence was the finding: on both, `init` ended
+  // with a `[⚠]` and said so itself — "This app will NOT connect until the ⚠ step above is done by
+  // hand". `nuxtSteps` and `reactRouterSteps` each emitted exactly one MANUAL step carrying the
+  // whole recipe, so "zero ⚠" could not hold for them and a cell that is red by design teaches a
+  // reader to ignore this gate. `init` now WRITES both files (the Nuxt client plugin plus its
+  // nuxt.config patch, and the React Router client entry), so they belong here.
+  {
+    id: 'nuxt',
+    // Nuxt owns its own Vite instance and renders its own HTML, so nothing of ours is in the page's
+    // path to inject the pairing token — it has to be inlined by nuxt.config, and the plugin that
+    // connects has to be one Nuxt itself auto-registers. Two writes that only a browser can prove.
+    what: 'Nuxt — framework-owned Vite and HTML, so the connect is a .client plugin + a config patch',
+    initDevPorts: INIT_DEV_PORTS.next,
+    create: [
+      'npx',
+      ['--yes', 'nuxi@latest', 'init', 'app', '--template', 'minimal', '--packageManager', 'npm', '--no-gitInit', '--no-install'],
+    ],
+    files: PROBE_MARKUP.nuxt,
+    dev: (port) => ['npm', ['run', 'dev', '--', '--port', String(port)]],
+  },
+  {
+    id: 'react-router',
+    // #678 in its own cell: framework mode renders HTML through its own request handler, the Vite
+    // plugin's transformIndexHtml never fires, and every step reported green over an app that
+    // produced zero sessions for 20+ minutes.
+    what: 'React Router framework mode — the client entry init writes, because HTML injection never fires',
+    initDevPorts: INIT_DEV_PORTS.vite,
+    create: ['npx', ['--yes', 'create-react-router@latest', 'app', '--no-install', '--no-git-init', '--yes']],
+    dev: (port) => ['npm', ['run', 'dev', '--', '--port', String(port), '--strictPort']],
+  },
   {
     id: 'astro',
     what: 'Astro — framework-owned HTML, so the connect arrives through the Astro integration',

@@ -249,8 +249,22 @@ export interface PlanInput {
   viteDevModuleExists?: boolean | undefined;
   /** Whether src/hooks.client.ts already exists (SvelteKit idempotency). */
   svelteKitHooksExists?: boolean;
-  /** Whether app/entry.client.tsx already exists — it decides which React Router recipe to print. */
+  /** Whether app/entry.client.tsx already exists — it decides whether init writes one or patches it. */
   reactRouterEntryExists?: boolean;
+  /**
+   * Its SOURCE, when it is there.
+   *
+   * Content rather than existence, because the two cases need different files: an absent entry is
+   * written from React Router's own default plus our import, and an existing one gets that import
+   * added to whatever the app already put in it. Existence alone could only ever print a recipe.
+   */
+  reactRouterEntrySource?: string | null | undefined;
+  /** Discovered Nuxt config: its path + source, or null. It is where the pairing token is inlined. */
+  nuxtConfig?: { path: string; source: string } | null | undefined;
+  /** Whether the app has an `app/` directory — Nuxt 4's srcDir, and so where plugins are scanned. */
+  nuxtHasAppDir?: boolean | undefined;
+  /** Whether the Nuxt client plugin already exists (idempotency — the file is the owner's to edit). */
+  nuxtPluginExists?: boolean | undefined;
   /** CRA's bundled entry (src/index.tsx or .js) — where the connect import has to go. */
   craEntry?: { path: string; source: string } | null;
   /** Existing .env.development.local, so an unrelated variable in it survives. */

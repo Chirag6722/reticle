@@ -88,8 +88,16 @@ export const FRAMEWORK_ADAPTERS: Record<Framework, FrameworkAdapter> = {
     // single thing most likely to make someone abandon the setup, whether or not it works.
     packages: () => [RETICLE_BROWSER_SDK],
     steps: nuxtSteps,
-    connectStepTitles: [StepTitle.CONNECT_SNIPPET_NUXT],
-    carriesOwnUnverifiedNote: true,
+    // BOTH halves. The config is the only thing in a Nuxt app that can inline the pairing token,
+    // and the bridge refuses a connect without one even on localhost — so a ⚠ on it is a guaranteed
+    // non-connection, not a caveat.
+    connectStepTitles: [StepTitle.CONNECT_SNIPPET_NUXT, StepTitle.NUXT_CONFIG],
+    // FALSE since `init` started writing the plugin itself. The Nuxt recipe carries an UNVERIFIED
+    // line and is now only the fallback for a config we could not patch — so on the path everybody
+    // takes, suppressing the generic note left a Vue app with no honesty line at all. The generic
+    // one is also the more accurate of the two now: the install gate scaffolds Nuxt from scratch on
+    // every change, so the SETUP is proven and only the drive is not, which is what it says.
+    carriesOwnUnverifiedNote: false,
   },
   [Framework.VITE]: {
     // The build plugin stamps `data-reticle-source` regardless of UI library, so a Vue or Svelte

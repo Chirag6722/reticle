@@ -577,6 +577,8 @@ jobs:
             astro,
             sveltekit,
             cra,
+            nuxt,
+            react-router,
           ]
     runs-on: ${{ matrix.os }}
     needs: [verify, changes]

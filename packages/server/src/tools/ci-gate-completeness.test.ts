@@ -125,3 +125,51 @@ describe('every CI job either gates a merge or says why it does not', () => {
     ).toEqual([]);
   });
 });
+
+/**
+ * A scaffold the install gate knows about but CI never runs is coverage on paper only.
+ *
+ * The gate reads its scaffold list from `install-gate.mjs` and its expectations from
+ * `install-baseline.json`; CI runs one matrix cell per scaffold. Those are three lists that have to
+ * agree, and nothing made them. Adding a scaffold and forgetting the matrix leaves a baseline
+ * nobody checks — silent, and indistinguishable from coverage.
+ *
+ * This went from five scaffolds to ten in one branch, which is exactly when the drift happens.
+ */
+describe('every install-gate scaffold runs in CI', () => {
+  const baselineIds = (): string[] => {
+    const raw = readFileSync(join(REPO, 'apps/e2e/install-baseline.json'), 'utf8');
+    return Object.keys(JSON.parse(raw) as Record<string, unknown>).sort();
+  };
+
+  const matrixIds = (): string[] => {
+    const yml = readFileSync(join(REPO, '.github/workflows/ci.yml'), 'utf8');
+    const block = /scaffold:\s*\[([^\]]+)\]/s.exec(yml);
+    if (null === block) return [];
+    return (block[1] ?? '')
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0)
+      .sort();
+  };
+
+  it('the CI matrix and the recorded baseline name the same scaffolds', () => {
+    const inBaseline = baselineIds();
+    const inMatrix = matrixIds();
+
+    expect(
+      inMatrix.length,
+      'no scaffold matrix found in ci.yml — has the job changed shape?',
+    ).toBeGreaterThan(0);
+
+    expect(
+      inBaseline.filter((id) => !inMatrix.includes(id)),
+      'these scaffolds have a recorded baseline but no CI cell, so nothing ever runs them',
+    ).toEqual([]);
+
+    expect(
+      inMatrix.filter((id) => !inBaseline.includes(id)),
+      'these CI cells name a scaffold with no recorded baseline, so the cell fails asking for one',
+    ).toEqual([]);
+  });
+});

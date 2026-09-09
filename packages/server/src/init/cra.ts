@@ -15,6 +15,7 @@
 
 import { bridgeWsUrl } from '@reticlehq/core';
 import { CLI } from './agent-rules.js';
+import { registerCapabilitiesCall } from './snippets.js';
 
 /** The line added to `src/index.tsx` / `src/index.js`. Side-effect import: the module guards itself on NODE_ENV. */
 export const CRA_DEV_MODULE_IMPORT = "import './reticle-dev';";
@@ -124,6 +125,8 @@ interface CraDevModuleOptions {
    * the language branch.
    */
   typescript?: boolean;
+  /** `data-testid` values scanned from the app's source, declared so the app is verifiable. */
+  testids?: readonly string[];
 }
 
 /** The dev-only connect module imported from the app entry. */
@@ -170,7 +173,9 @@ export function craDevModuleFile(
 // REACT_APP_RETICLE_TOKEN because REACT_APP_* is the only thing CRA inlines
 // into browser code.
 if (process.env.NODE_ENV === 'development') {
-  void import('@reticlehq/react').then(({ reticle, install }) => {
+  void import('@reticlehq/react').then((sdk) => {
+    // On its own line: CRA boilerplate prettier caps lines at 80.
+    const { reticle, install, registerCapabilities } = sdk;
     install();
     const token = process.env.${TOKEN_VAR} ?? '';
     // Written by \`reticle init\` from the daemon that was live when it ran, and
@@ -189,6 +194,8 @@ if (process.env.NODE_ENV === 'development') {
     reticle.connect({
 ${connectFields}
     });
+    // What the agent can drive without guessing.
+${registerCapabilitiesCall(options.testids ?? [], '    ')}
   });
 }
 ${trailer}`;

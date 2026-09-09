@@ -26,6 +26,8 @@ export const StepTitle = {
   PAIRING_TOKEN_PER_MACHINE: 'Pairing token is per-machine',
   CONNECT_SNIPPET_CRA: 'Connect snippet (CRA)',
   CONNECT_SNIPPET_NUXT: 'Connect snippet (Nuxt)',
+  NUXT_CONFIG: 'Nuxt config (token + watcher)',
+  NUXT_RESTART: 'Restart the Nuxt dev server',
   CONNECT_SNIPPET_REACT_ROUTER: 'Connect snippet (React Router)',
   SVELTEKIT_UNVERIFIED: 'SvelteKit is UNVERIFIED',
   CLIENT_HOOK: 'Reticle client hook',
@@ -53,6 +55,10 @@ export const CONNECT_STEP_TITLES: ReadonlySet<StepTitle> = new Set<StepTitle>([
   StepTitle.CONNECT_SNIPPET_CRA,
   StepTitle.CONNECT_SNIPPET_ASTRO,
   StepTitle.CONNECT_SNIPPET_NUXT,
+  // The config is the other half of the Nuxt connect, not a nicety: it is the only thing in a Nuxt
+  // app that can inline the pairing token, and the bridge refuses a connect without one even on
+  // localhost. A plugin written beside an unpatched config is a guaranteed non-connection.
+  StepTitle.NUXT_CONFIG,
   StepTitle.CONNECT_SNIPPET_REACT_ROUTER,
   StepTitle.CLIENT_HOOK,
   StepTitle.CONNECT_MODULE,

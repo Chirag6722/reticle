@@ -344,6 +344,28 @@ Start the daemon BEFORE \`astro dev\`, so the token file exists when the config 
 }
 
 /**
+ * The `registerCapabilities` call every generated connect carries.
+ *
+ * Only the Vite and Next generators emitted one, so an Astro, SvelteKit, Nuxt or CRA app connected
+ * and then reported `hasCapabilities: false` — `init` printing, about its own work, "is instrumented
+ * and connected — but NOT verified". The testids are the ones already scanned out of the app's
+ * source; an empty list still declares the block, because the comment on it is how somebody learns
+ * the file is theirs to extend.
+ *
+ * `indent` because the call lands at four different depths: top level in a Vite dev module, inside a
+ * `.then` in the Nuxt plugin, inside a `<script>` in an Astro layout.
+ */
+export function registerCapabilitiesCall(testids: readonly string[], indent: string): string {
+  const ids = testids.map((t) => `'${t}'`).join(', ');
+  const none = 0 === testids.length ? ' // none found; add data-testid to your key elements' : '';
+  return `${indent}registerCapabilities({
+${indent}  testids: [${ids}],${none}
+${indent}  signals: [], // names you pass to reticle.signal()
+${indent}  stores: [], // register a store above, then name its key here
+${indent}});`;
+}
+
+/**
  * The app-side dev module the Vite plugin imports by convention.
  *
  * `registerCapabilities` tells the agent what it can drive without guessing; `registerStore` is the
@@ -545,6 +567,7 @@ export function svelteKitHooksFile(
   port: number | undefined,
   projectId?: string,
   uiLibrary: UiLibrary = UiLibrary.SVELTE,
+  testids: readonly string[] = [],
 ): string {
   // SvelteKit is Svelte, so this defaults to the sensor rather than the React adapter — and the
   // import here MUST match what `frameworkPackages` installed, or the hook loads a package that is
@@ -555,7 +578,7 @@ export function svelteKitHooksFile(
   return `// Dev-only: connect Reticle on the client. SvelteKit renders via app.html, so the Vite-plugin
 // index.html injection doesn't fire — connect from this client hook instead.
 if (import.meta.env.DEV) {
-  void import('${sdk.specifier}').then(({ reticle${sdk.usesInstall ? ', install' : ''} }) => {
+  void import('${sdk.specifier}').then(({ reticle${sdk.usesInstall ? ', install' : ''}, registerCapabilities }) => {
     ${sdk.usesInstall ? 'install();' : '// No React adapter here: the sensor has no install() to call.'}
     // The bridge requires the pairing token even on localhost. Nothing in a browser can read the
     // file it lives in, so @reticlehq/vite-plugin inlines it here at build time. Without it the
@@ -568,6 +591,7 @@ if (import.meta.env.DEV) {
       ...(root.length > 0 ? { root } : {}),
       ...(sdkVersion.length > 0 ? { sdkVersion } : {}),
     });
+${registerCapabilitiesCall(testids, '    ')}
   });
 }
 
@@ -621,68 +645,144 @@ export function webpack4TranspileNote(reactScriptsMajor: number): string {
 /** React Router's client-entry override point, in framework mode. */
 export const REACT_ROUTER_ENTRY_PATH = 'app/entry.client.tsx';
 
+/** The dev-only module @reticlehq/vite-plugin serves: connect() with the token already in it. */
+const RETICLE_CONNECT_MODULE = '/@reticle-connect';
+
+/** The one line that puts Reticle in a React Router client entry. */
+export const REACT_ROUTER_CONNECT_LINE = `if (import.meta.env.DEV) void import('/@reticle-connect');`;
+
 /**
- * The React Router framework-mode recipe, printed rather than written.
+ * The client entry `init` writes when React Router framework mode has none.
  *
  * `app/entry.client.tsx` is an OVERRIDE: React Router supplies a default client entry, and the file
- * only exists once an app opts out of it. Generating one containing our import and nothing else
- * would replace that default with a file that never hydrates — an app that connected to Reticle and
- * rendered nothing. Same judgement `astroSteps` already makes about a layout: a half-written entry
- * is worse than a documented manual step.
+ * only exists once an app opts out of it. So the generated one has to HYDRATE as well as connect —
+ * a file containing only our import would replace that default with one that never hydrates, an app
+ * that connects to Reticle and renders nothing. This is React Router v7's own default entry with one
+ * line added.
  *
- * Two shapes, because the file may or may not be there, and the answer is different:
- *   - it exists  -> add one line to it, and only that line
- *   - it does not -> create it from React Router's own default, plus that line
+ * The import is the module `@reticlehq/vite-plugin` serves. It already carries the port, the project
+ * id and this machine's pairing token, and it imports the app's `src/reticle-dev` dev module — which
+ * is where capabilities are registered. Nothing here needs filling in.
  */
-export function reactRouterManual(
-  port: number | undefined,
-  projectId?: string,
-  entryExists = false,
-): string {
-  const connect = connectArg(port, projectId);
-  const line = `if (import.meta.env.DEV) void import('/@reticle-connect');`;
-  const head = `React Router framework mode renders HTML through its own request handler, so the Vite
-  plugin's index.html injection never fires and the connect script never reaches the page. The
-  plugin is still required — it stamps data-reticle-source, which is what puts file:line on every
-  verdict — but connect() has to come from the client entry.`;
-  if (entryExists) {
-    return `${head}
+export function reactRouterEntryFile(): string {
+  return `import { HydratedRouter } from 'react-router/dom';
+import { StrictMode, startTransition } from 'react';
+import { hydrateRoot } from 'react-dom/client';
 
-  Add this to the TOP of ${REACT_ROUTER_ENTRY_PATH}, above the hydration call:
+// Dev-only: React Router framework mode renders HTML through its own request handler, so the Vite
+// plugin's index.html injection never fires and the connect script never reaches the page. The
+// plugin is still doing the other half of the job — it stamps data-reticle-source, which is what
+// puts file:line on every verdict.
+${REACT_ROUTER_CONNECT_LINE}
 
-      ${line}
+startTransition(() => {
+  hydrateRoot(
+    document,
+    <StrictMode>
+      <HydratedRouter />
+    </StrictMode>,
+  );
+});
+`;
+}
 
-  The import is the module @reticlehq/vite-plugin serves; it carries the port, the project id and
-  this machine's pairing token already, so there is nothing to fill in${0 === connect.length ? '' : ` (connect args: ${connect})`}.`;
+/**
+ * Add the connect line to an entry the app already owns — or null when it is already there.
+ *
+ * After the LAST import, for the reason the CRA patch does the same: the entry's own imports must
+ * still be evaluated first, and this is a side-effect import.
+ */
+export function reactRouterEntryPatch(source: string): string | null {
+  if (source.includes(RETICLE_CONNECT_MODULE)) return null;
+  const lines = source.split('\n');
+  let lastImport = -1;
+  for (const [index, line] of lines.entries()) {
+    if (/^\s*import\s/.test(line)) lastImport = index;
   }
-  return `${head}
-
-  ${REACT_ROUTER_ENTRY_PATH} does not exist yet. It is an OVERRIDE of React Router's default client
-  entry, so it has to hydrate as well as connect — a file containing only the import would replace
-  the default with one that never hydrates. Create it with React Router's own default plus the
-  import:
-
-      import { HydratedRouter } from 'react-router/dom';
-      import { StrictMode, startTransition } from 'react';
-      import { hydrateRoot } from 'react-dom/client';
-
-      ${line}
-
-      startTransition(() => {
-        hydrateRoot(
-          document,
-          <StrictMode>
-            <HydratedRouter />
-          </StrictMode>,
-        );
-      });
-
-  Check it against your React Router version's documented default entry before saving — this is the
-  v7 shape, and it is the half that must be right whether or not Reticle is in it.`;
+  lines.splice(lastImport + 1, 0, REACT_ROUTER_CONNECT_LINE);
+  return lines.join('\n');
 }
 
 /** Where a Nuxt dev-only client plugin belongs. `.client` keeps it out of SSR; Nuxt auto-registers it. */
 export const NUXT_PLUGIN_PATH = 'app/plugins/reticle.client.ts';
+
+/**
+ * The plugin directory Nuxt actually scans, which is not the same on 3 and 4.
+ *
+ * Nuxt 4's default `srcDir` is `app/`, so plugins live in `app/plugins/`. Nuxt 3's is the project
+ * root, so they live in `plugins/`. Writing to the wrong one is the silent failure this whole change
+ * exists to remove: the file is on disk, `init` reports it green, Nuxt never scans that directory,
+ * and no plugin is ever registered. Keyed on whether the app HAS an `app/` directory, which is the
+ * same signal Nuxt itself uses to pick its srcDir.
+ */
+export function nuxtPluginPath(hasAppDir: boolean): string {
+  return hasAppDir ? NUXT_PLUGIN_PATH : 'plugins/reticle.client.ts';
+}
+
+/**
+ * The dev-only Nuxt client plugin `init` writes.
+ *
+ * Every trap in it is one somebody actually hit. `import.meta.dev` rather than a hostname check: the
+ * reported failure was a snippet guarded on `window.location.hostname === 'localhost'`, which is
+ * false on any hosts-file alias or LAN address and throws during SSR, so the connect never ran with
+ * no error and no log line. `.client.ts` rather than an SSR guard, because that suffix is what keeps
+ * this out of the server bundle. `@reticlehq/browser` rather than the React kit, because installing
+ * a package named `@reticlehq/react` into a Vue codebase is the single thing most likely to make
+ * somebody abandon the setup.
+ *
+ * The token is inlined by `nuxt.config`'s `vite.define` (see nuxt-patch.ts). The bridge requires it
+ * even on localhost, and nothing in a browser can read the file it lives in.
+ */
+export function nuxtPluginFile(
+  port: number | undefined,
+  projectId?: string,
+  testids: readonly string[] = [],
+): string {
+  const base = connectArg(port, projectId);
+  const fields = '' === base ? '' : `${base.slice(1, -1).trim()}, `;
+  return `// Dev-only: connect Reticle from a Nuxt client plugin. Nuxt owns its own Vite instance and
+// renders its own HTML, so the Vite plugin's index.html injection never fires — a .client plugin is
+// the path that can register a session at all.
+export default defineNuxtPlugin(() => {
+  // import.meta.dev is resolved at BUILD time, so it does not care what hostname you develop on.
+  // Do NOT guard on window.location.hostname === 'localhost': that is false on any hosts-file alias
+  // or LAN address, and window does not exist during SSR.
+  if (!import.meta.dev) return;
+  void import('@reticlehq/browser').then(({ reticle, registerCapabilities }) => {
+    // Both inlined by nuxt.config's vite.define, which \`reticle init\` wrote. The bridge refuses a
+    // connect with no token even on localhost; the root makes source paths repo-relative.
+    const token = typeof __RETICLE_TOKEN__ !== 'undefined' ? __RETICLE_TOKEN__ : '';
+    const root = typeof __RETICLE_ROOT__ !== 'undefined' ? __RETICLE_ROOT__ : '';
+    reticle.connect({
+      ${fields}...(token.length > 0 ? { token } : {}),
+      ...(root.length > 0 ? { root } : {}),
+    });
+
+    // What the agent can drive without guessing. Add a store here too — registerStore('cart',
+    // piniaStore(useCartStore())) — and the agent can check what the app BELIEVES, not just what it
+    // rendered. See node_modules/@reticlehq/server/docs/usage.md.
+${registerCapabilitiesCall(testids, '    ')}
+  });
+});
+
+declare const __RETICLE_TOKEN__: string | undefined;
+declare const __RETICLE_ROOT__: string | undefined;
+`;
+}
+
+/**
+ * Said as its own NOTICE beside the write, not inside it: a running dev server does not pick up a
+ * new plugin, and off localhost the connect needs two more arguments.
+ *
+ * A ✓ line is one SKILL.md tells the reader to skip, so a caveat carried on the ✓ is a caveat nobody
+ * reads — and both of these end with an app that boots, looks correct and never pairs.
+ */
+export const NUXT_PLUGIN_NOTICE =
+  'Restart the dev server: one that is already running does not pick up a new plugin — it will not ' +
+  'appear in .nuxt/plugins/client.mjs and the app comes up with no SDK at all. And if your dev host ' +
+  'is anything other than localhost (a hosts-file alias, a LAN IP, a tunnel), that connect call ' +
+  'needs TWO additions, not one: allowNonLocalhost: true AND the token from ~/.reticle/pairing-token. ' +
+  'The flag alone is NOT sufficient off localhost.';
 
 /**
  * The Nuxt recipe, written out in full because every trap in it is one somebody actually hit.
