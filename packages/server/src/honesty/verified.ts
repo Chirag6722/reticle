@@ -8,6 +8,7 @@ import {
 } from '@reticlehq/core';
 import { HonestyGrade, type HonestyBlock } from './honesty.js';
 import { unsettledBecause, type UnsettledWindow } from './unsettled.js';
+import { pageTornDownWhileOn } from '../session/no-session-diagnosis.js';
 
 /**
  * The decision rule: eight trust dimensions in, one answer out.
@@ -33,6 +34,14 @@ interface VerifiedInputs {
    * confidently-wrong-by-accident this clause exists to remove.
    */
   observationLost?: boolean;
+  /**
+   * The URL the session was on when observation was lost.
+   *
+   * Only meaningful with `observationLost`. A route that 500s tears the page down mid-wait; naming
+   * the last URL in the verdict is the difference between "install problem" and "the page died on
+   * /X" (#808). Absent when we never knew, which must not invent a route.
+   */
+  lastUrl?: string;
   honesty: HonestyBlock;
   /**
    * Set when the assertion could not be EVALUATED at all — an under-specified call, or nothing
@@ -159,11 +168,15 @@ export function decideVerified(inputs: VerifiedInputs): VerifiedVerdict {
   //
   // UNKNOWN, for the same reason `unclean_capture` is: the evidence is ABSENT, not negative.
   if (true === inputs.observationLost) {
+    const lost =
+      undefined === inputs.lastUrl || '' === inputs.lastUrl
+        ? 'the tab disconnected'
+        : pageTornDownWhileOn(inputs.lastUrl);
     return {
       verified: Verified.UNKNOWN,
       verifiedReason: VerifiedReason.OBSERVATION_LOST,
       because:
-        'the tab disconnected while this action was being observed, so its outcome was never ' +
+        `${lost} while this action was being observed, so its outcome was never ` +
         'seen — this says nothing about the app. Call reticle_sessions for the current session ' +
         '(a reloaded tab keeps its id; a closed one is gone) and repeat the action if it is safe ' +
         'to repeat',
