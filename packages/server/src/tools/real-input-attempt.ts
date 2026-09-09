@@ -141,7 +141,7 @@ async function readUploadRoots(
   } catch {
     return [];
   }
-  if ('object' !== typeof parsed || parsed === null || Array.isArray(parsed)) return [];
+  if ('object' !== typeof parsed || null === parsed || Array.isArray(parsed)) return [];
   const listed = (parsed as Record<string, unknown>)['uploadRoots'];
   if (!Array.isArray(listed)) return [];
   const roots: string[] = [];
