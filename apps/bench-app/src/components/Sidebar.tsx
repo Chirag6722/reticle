@@ -18,6 +18,7 @@ const NAV: NavDef[] = [
   // Response-ignored fixture: server-backed write whose render trails the response.
   { id: 'saved-items', label: 'Saved Items', icon: IconSave },
   { id: 'expiring-auth', label: 'Expiring Token', icon: IconSave },
+  { id: 'awkward', label: 'Awkward Controls', icon: IconSave },
 ];
 
 // The enterprise-scale fixture is opt-in: without its URL knob the nav item is not even rendered,

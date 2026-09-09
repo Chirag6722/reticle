@@ -21,7 +21,8 @@ export type ViewId =
   | 'hostile'
   | 'enterprise'
   | 'saved-items'
-  | 'expiring-auth';
+  | 'expiring-auth'
+  | 'awkward';
 export type EnvFilter = Env | 'all';
 
 export interface Toast {

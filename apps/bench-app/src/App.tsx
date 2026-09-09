@@ -13,6 +13,7 @@ import { Diagnostics } from './views/Diagnostics.js';
 import { Enterprise } from './views/Enterprise.js';
 import { SavedItems } from './views/SavedItems.js';
 import { ExpiringAuth } from './views/ExpiringAuth.js';
+import { AwkwardControls } from './views/AwkwardControls.js';
 
 export function App(): React.ReactElement {
   const auth = useApp((s) => s.auth);
@@ -47,6 +48,7 @@ export function App(): React.ReactElement {
           {'enterprise' === view ? <Enterprise /> : null}
           {'saved-items' === view ? <SavedItems /> : null}
           {'expiring-auth' === view ? <ExpiringAuth /> : null}
+          {'awkward' === view ? <AwkwardControls /> : null}
         </div>
       </div>
       <Toasts />

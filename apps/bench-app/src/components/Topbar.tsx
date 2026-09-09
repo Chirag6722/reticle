@@ -13,6 +13,7 @@ const TITLES: Record<ViewId, { title: string; sub: string }> = {
     title: 'Expiring Token',
     sub: '401 · refresh · retry once — the false-contradiction fixture',
   },
+  awkward: { title: 'Awkward Controls', sub: 'file input · unnamed icon button · canvas' },
 };
 
 export function Topbar(): React.ReactElement {

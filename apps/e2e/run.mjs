@@ -95,6 +95,8 @@ const ORDER = [
   'slow-endpoint-replay-test',
   // A 401 the app recovered from must not read as two defects. Same bench-app, its own fixture view.
   'auth-retry-not-a-defect-test',
+  // A file input, an unnamed icon button and a canvas — three properties `apps/` had no fixture for.
+  'awkward-controls-test',
   'multi-agent-lease-test',
   'atlas-hard-fixture-test',
   // Drives a real session and then checks that the EVENTS describe it — a different question from
