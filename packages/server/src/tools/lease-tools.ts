@@ -22,9 +22,11 @@ import {
 } from '../session/lease-visibility.js';
 import { reticleStateHome } from '../daemon/daemon.js';
 import {
+  LeaseNotReadyReason,
   REDACTED_VALUE,
   RETICLE_URL_PARAM,
   RETICLE_DEFAULT_PORT,
+  ReticleCommand,
   SeedStorageSchema,
   scrubKnownSecrets,
   type SeedStorage,
@@ -307,6 +309,54 @@ function sessionParamOf(url: string | undefined): string | undefined {
 
 const LEASE_READY_ATTEMPTS = 100;
 const LEASE_READY_POLL_MS = 100;
+
+/**
+ * How long a liveness probe waits for the tab to say anything at all.
+ *
+ * Short on purpose. This is not "finish the work", it is "are you there" — a page executing
+ * JavaScript answers a no-argument command in single-digit milliseconds, and a wedged one is not
+ * going to answer in two seconds either.
+ */
+const LEASE_PROBE_TIMEOUT_MS = 1_500;
+
+/** The narrow slice of a session the probe needs. Anything that quacks like this works. */
+interface ProbeableSession {
+  command?: (name: string, args: Record<string, unknown>, timeoutMs: number) => Promise<unknown>;
+}
+
+/**
+ * Does this tab still answer?
+ *
+ * `ready: true` used to mean "a row is in the sessions map", which is how a lease came back ready
+ * and was then rejected by `snapshot`, `state` and `console`. Presence is not liveness: the map
+ * still holds a tab that is attached, streaming events, and answering nothing (#692).
+ *
+ * ANY reply counts, including one that reports the command failed. The question is whether the SDK
+ * answers at all, not what it says — so an SDK too old to know the command replies
+ * `unknown command '…'`, and that is proof. Only the absence of a reply is evidence of absence:
+ * `PendingCommands.track` REJECTS on timeout and on a dropped socket, and resolves on every real
+ * answer, so the two cases are already separated for us.
+ *
+ * `CAPABILITIES` is the probe because it takes no arguments and returns a small fixed list. No new
+ * wire command is introduced: this rides an existing round trip.
+ *
+ * Fails OPEN. A registry entry with no `command` is a shape this code did not put there, and
+ * turning a lease that works into a refusal over a probe that could not run would be a worse
+ * failure than the one being fixed.
+ */
+export async function probeLeaseAlive(
+  session: ProbeableSession | undefined,
+  timeoutMs: number = LEASE_PROBE_TIMEOUT_MS,
+): Promise<boolean> {
+  const send = session?.command;
+  if (send === undefined) return true;
+  try {
+    await send.call(session, ReticleCommand.CAPABILITIES, {}, timeoutMs);
+    return true;
+  } catch {
+    return false;
+  }
+}
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 /**
@@ -435,7 +485,13 @@ export const LEASE_ACQUIRE_TOOL: ToolDef = {
     ready: z
       .boolean()
       .describe(
-        'Whether the leased tab connected — false ⇒ the app may not embed @reticlehq/core.',
+        'Whether the leased tab is connected AND answering. On a reused lease this is probed, not assumed — a row in the session map is presence, not liveness. False ⇒ read notReadyReason.',
+      ),
+    notReadyReason: z
+      .enum([LeaseNotReadyReason.SDK_NEVER_DIALLED, LeaseNotReadyReason.SDK_STOPPED_ANSWERING])
+      .optional()
+      .describe(
+        'Present only when ready is false. sdk_never_dialled ⇒ nothing connected within the wait, so check the install (the app may not embed @reticlehq/core). sdk_stopped_answering ⇒ an SDK did connect and has stopped replying, so the tab is wedged and needs recovering, not reinstalling.',
       ),
     expiresInMs: z
       .number()
@@ -535,10 +591,17 @@ export const LEASE_ACQUIRE_TOOL: ToolDef = {
           // touch and release arrives under the id being handed back here.
           pool.alias(resolved, existing);
           pool.touch(existing);
+          // Probed only HERE, never on the mint path below. There, the readiness wait resolved
+          // moments ago and IS the liveness evidence; on reuse the last evidence may be minutes
+          // old, or there may be none at all — `unresponsive` is set by past commands failing, and
+          // its own contract says absence means "answering, OR NOT ASKED YET". So the happy path of
+          // a first acquire pays nothing for this.
+          const alive = await probeLeaseAlive(deps.sessions.get(resolved));
           return {
             sessionId: resolved,
             url,
-            ready: true,
+            ready: alive,
+            ...(alive ? {} : { notReadyReason: LeaseNotReadyReason.SDK_STOPPED_ANSWERING }),
             reused: true,
             expiresInMs: pool.leaseTtlMs(),
             leased: pool.activeCount(),
@@ -608,6 +671,10 @@ export const LEASE_ACQUIRE_TOOL: ToolDef = {
         sessionId: registeredId ?? lease.sessionId,
         url,
         ready,
+        // The other half of the pair. `ready: false` carried two opposite situations under one
+        // word: no SDK ever dialled in (look at the install) versus one dialled in and stopped
+        // answering (recover the tab). They want different next actions, so they get names.
+        ...(ready ? {} : { notReadyReason: LeaseNotReadyReason.SDK_NEVER_DIALLED }),
         expiresInMs: pool.leaseTtlMs(),
         leased: pool.activeCount(),
         queued: pool.queuedCount(),
