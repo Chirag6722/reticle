@@ -232,11 +232,20 @@ function viteConfigSteps(input: PlanInput, detail: string): Step[] {
         title: 'Vite plugin',
         target: 'vite.config',
         status: StepStatus.MANUAL,
-        detail: viteManual(port, input.detection.uiLibrary),
+        detail: viteManual(
+          port,
+          input.detection.uiLibrary,
+          true !== input.detection.customReconciler,
+        ),
       },
     ];
   }
-  const patch = patchViteConfig(cfg.source, port, true === input.captureBodies);
+  const patch = patchViteConfig(
+    cfg.source,
+    port,
+    true === input.captureBodies,
+    true !== input.detection.customReconciler,
+  );
   if (patch.kind === VitePatchKind.ALREADY) {
     return [
       {
@@ -253,7 +262,7 @@ function viteConfigSteps(input: PlanInput, detail: string): Step[] {
         title: 'Vite plugin',
         target: cfg.path,
         status: StepStatus.MANUAL,
-        detail: `${patch.reason}\n\n${viteManual(port, input.detection.uiLibrary)}`,
+        detail: `${patch.reason}\n\n${viteManual(port, input.detection.uiLibrary, true !== input.detection.customReconciler)}`,
       },
     ];
   }
@@ -371,7 +380,7 @@ export function nextSteps(input: PlanInput): Step[] {
   const configPatch: SourcePatch =
     null === input.nextConfigSource || input.nextConfigSource === undefined
       ? { kind: PatchKind.MANUAL, reason: `no ${configFile} found` }
-      : patchNextConfig(input.nextConfigSource);
+      : patchNextConfig(input.nextConfigSource, true !== input.detection?.customReconciler);
   const layout = input.nextLayout ?? null;
   // Pages Router mounts through pages/_app, App Router through the root layout — different edits,
   // and picking by path is what stops a Pages app being handed the layout patch that cannot apply.

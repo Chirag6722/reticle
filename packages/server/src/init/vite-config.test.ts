@@ -181,3 +181,23 @@ describe('the plugin call init writes', () => {
     expect(r.code).toContain('captureNetworkBodies: true');
   });
 });
+
+describe('source mapping off for a non-DOM React renderer', () => {
+  it('writes sourceMapping: false into the call', () => {
+    const r = patchViteConfig(BASIC, undefined, false, false);
+    if (r.kind !== VitePatchKind.APPLY) throw new Error('expected apply');
+    expect(r.code).toContain('reticle({ sourceMapping: false })');
+  });
+
+  it('keeps the port and the option together, in that order', () => {
+    const r = patchViteConfig(BASIC, 4400, false, false);
+    if (r.kind !== VitePatchKind.APPLY) throw new Error('expected apply');
+    expect(r.code).toContain('reticle({ port: 4400, sourceMapping: false })');
+  });
+
+  it('says nothing when the stamp is fine, which is the default', () => {
+    const r = patchViteConfig(BASIC, 4400);
+    if (r.kind !== VitePatchKind.APPLY) throw new Error('expected apply');
+    expect(r.code).not.toContain('sourceMapping');
+  });
+});
