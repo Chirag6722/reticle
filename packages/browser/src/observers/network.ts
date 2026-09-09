@@ -167,16 +167,44 @@ function methodOf(input: RequestInfo | URL, init: RequestInit | undefined): stri
 const NON_APP_FRAME =
   /@reticlehq|reticle\.ts|network\.ts|transport\.ts|<anonymous>|new Promise|node:internal/i;
 
-/** Pure: the first real app-code frame in a stack string, capped. Exported for unit testing. */
+/**
+ * A frame inside somebody's dependencies, ours included.
+ *
+ * `NON_APP_FRAME` matches on FILE NAME, which works only while our code is served under a path that
+ * still says `@reticlehq`. A bundler is free to rename it: Vite's dependency optimiser emits shared
+ * chunks as `/node_modules/.vite/deps/chunk-ABC123.js`, where nothing identifies the package. Our own
+ * patched `fetch` then reads as ordinary app code and gets reported as the CALLER.
+ *
+ * That is what a field reporter hit, and the cost was not a cosmetic mislabel. They were looking at
+ * an RSC request stuck `pending` for 170 seconds and trying to decide whether the app's navigation
+ * genuinely hung or Reticle's own tracking had lost it — and the evidence said Reticle initiated the
+ * request. Their words: "I could not disambiguate from the available tools." An instrument that names
+ * itself as the cause of the thing it is measuring destroys the reading.
+ */
+const DEPENDENCY_FRAME = /node_modules|\/\.vite\/deps\//i;
+
+/**
+ * Pure: the first real app-code frame in a stack string, capped. Exported for unit testing.
+ *
+ * Two passes, because "not the app" and "not useful" are different. The first pass skips
+ * dependencies entirely and finds the APP's own call site, which is what an agent wants: the line in
+ * their code that started this request. The second pass accepts a dependency frame, because a fetch
+ * that genuinely originates in `axios` or a query client has no app frame to find and naming the
+ * library still tells the reader where to look.
+ *
+ * A frame this file recognises as OURS is never returned by either pass. Where the only frames are
+ * ours the answer is `undefined`, and the field is omitted — saying nothing is strictly better than
+ * pointing at the observer, because a reader can go and look, whereas a false attribution stops them.
+ */
 export function firstAppFrame(stack: string | undefined): string | undefined {
   if (stack === undefined) return undefined;
-  for (const line of stack.split('\n').slice(1)) {
-    if (NON_APP_FRAME.test(line)) continue;
-    const trimmed = line.trim();
-    if (0 === trimmed.length) continue;
-    return trimmed.slice(0, 300);
-  }
-  return undefined;
+  const frames = stack
+    .split('\n')
+    .slice(1)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !NON_APP_FRAME.test(line));
+  const app = frames.find((line) => !DEPENDENCY_FRAME.test(line));
+  return (app ?? frames[0])?.slice(0, 300);
 }
 
 function initiatorFrame(): string | undefined {

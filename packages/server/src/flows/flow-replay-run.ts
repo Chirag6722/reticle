@@ -1,3 +1,4 @@
+import { resolveFlowUploads } from './flow-upload-resolve.js';
 import {
   EventType,
   FLOW_SIGNAL_TIMEOUT_MS,
@@ -401,9 +402,12 @@ export async function replayNamedFlow(
   // Floor the success oracle at the start of THIS replay so a stale signal from a prior run
   // in the same session can't fake a pass.
   const replayFloor = session.elapsed();
+  // A recorded upload names a path on disk; the browser can only take bytes. Resolved once, before
+  // step 1, through the same helper the live `reticle_act` uses. See resolveFlowUploads.
+  const replayable = await resolveFlowUploads(deps, loaded.value);
   const steps = await replayFlow(
     session,
-    loaded.value,
+    replayable,
     waitForPredicate,
     FLOW_SIGNAL_TIMEOUT_MS,
     true === args['confirmDangerous'],
@@ -418,7 +422,10 @@ export async function replayNamedFlow(
       loaded.value.success,
       dynamicTestids(loaded.value),
       waitForPredicate,
-      FLOW_SIGNAL_TIMEOUT_MS,
+      // The flow's own declaration, not the built-in floor: an app slow enough to need a longer
+      // step wait is slow enough that its OUTCOME lands late too, and greening every step only to
+      // fail the success oracle at 4s is the same false red one layer down.
+      loaded.value.signalTimeoutMs ?? FLOW_SIGNAL_TIMEOUT_MS,
       replayFloor,
     );
     const row: FlowStepResult = {

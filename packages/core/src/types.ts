@@ -162,6 +162,16 @@ export interface QueryEmptyHint {
    * the recovery is `{ scope: <ref>, self: true }` rather than another guess at the text.
    */
   splitText?: ElementDescriptor;
+  /**
+   * Present only when a ROLE+NAME search missed and that role DOES carry a nearly-matching name.
+   *
+   * Role+name matching is exact, deliberately: substring matching on `name` would let a query for
+   * "Save" select "Save and close", and acting on the wrong control is a worse failure than not
+   * finding the right one. But an exact miss used to say nothing about a label the caller was one
+   * word away from — reported from the field as a query for the button "Mesh" against a page whose
+   * button read "2 Mesh", costing a snapshot to discover. The match stays exact; the miss answers.
+   */
+  nameNearMiss?: string[];
 }
 
 /** Result of the QUERY command / reticle_query tool. `hint` present ONLY on zero matches. */

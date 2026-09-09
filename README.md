@@ -439,6 +439,8 @@ Reticle is built in the open. Pick the channel that fits:
 | Find something to work on | [`good first issue`](https://github.com/reticlehq/reticle/labels/good%20first%20issue) · [`help wanted`](https://github.com/reticlehq/reticle/labels/help%20wanted) |
 | Know where the project is headed | [ROADMAP](ROADMAP.md) · [what shipped](CHANGELOG.md) · [how we release](RELEASING.md) |
 | Send a change | [CONTRIBUTING.md](CONTRIBUTING.md) |
+| See Reticle working in a checkout you just cloned | [`docs/first-drive.md`](docs/first-drive.md) — clone to a real verdict, ~15 min |
+| Test a fresh install, or add a real-world app to the install gate | [`reticle-fixtures`](https://github.com/reticlehq/reticle-fixtures) — a pristine `clean` branch of third-party apps, plus `main` and `reticle/<version>`. Every app in this repo's `apps/` is already instrumented, so none of them can answer "does the install still work". See [`docs/fixtures.md`](docs/fixtures.md) |
 | Report a vulnerability, or reach the team privately | [SECURITY.md](SECURITY.md) · **hey@reticle.sh** |
 
 ## What's inside

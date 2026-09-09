@@ -138,7 +138,7 @@ describe('tool allowlists are complete', () => {
    * no guard, because it occupies the space where a real one would go.
    */
   it('holds the tool count, so a new tool forces a review of the eleven allowlists', () => {
-    const PINNED_RAW_TOOL_COUNT = 61;
+    const PINNED_RAW_TOOL_COUNT = 62;
 
     expect(
       RAW_TOOLS.length,

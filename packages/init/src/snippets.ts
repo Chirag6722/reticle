@@ -115,8 +115,18 @@ function frameworkPluginExample(uiLibrary: UiLibrary): string {
 export function viteManual(
   port: number | undefined,
   uiLibrary: UiLibrary = UiLibrary.UNKNOWN,
+  sourceMapping = true,
 ): string {
-  const call = port === undefined ? 'reticle()' : `reticle({ port: ${String(port)} })`;
+  const options = [
+    ...(port === undefined ? [] : [`port: ${String(port)}`]),
+    ...(sourceMapping ? [] : ['sourceMapping: false']),
+  ];
+  const call = 0 === options.length ? 'reticle()' : `reticle({ ${options.join(', ')} })`;
+  const note = sourceMapping
+    ? ''
+    : `\n\n\`sourceMapping: false\` because this app renders through a non-DOM React renderer, where a
+lowercase JSX tag is not an element. Stamping one crashes the app at commit time. You lose source
+pointers, not the app.`;
   return `Add the Reticle plugin to your Vite config:
 
   import { reticle } from '@reticlehq/vite-plugin';
@@ -126,7 +136,7 @@ export function viteManual(
   });
 
 Keep \`reticle()\` LAST so it sees the output of your other plugins. It only applies during \`vite\`
-(dev) — it is dropped from \`vite build\`.`;
+(dev) — it is dropped from \`vite build\`.${note}`;
 }
 
 /** Next.js config wrap — always printed (we never auto-rewrite next.config). */
@@ -488,6 +498,56 @@ st.html(
     """,
     unsafe_allow_javascript=True,
 )`;
+}
+
+/**
+ * DEBUG-only middleware that injects Reticle into every Django-rendered page.
+ *
+ * Django serves templates, so the generic script tag has no single home: an app has many templates
+ * and a base template it may not have. Middleware has exactly one, runs for every page, and is the
+ * idiomatic Django answer — a field reporter arrived at this same shape by hand after `init` printed
+ * a script tag and exited 1, and had to write the middleware and `.reticle.json` themselves.
+ *
+ * Guarded on `settings.DEBUG` so it can never reach production, and on the response being HTML so it
+ * does not corrupt a JSON API response or a file download. Injected before `</body>` rather than in
+ * `<head>`, so the SDK sees a parsed document.
+ */
+export function djangoMiddlewareSnippet(connectArgLiteral: string): string {
+  return `# reticle_dev.py — add to MIDDLEWARE while DEBUG is on:
+#   MIDDLEWARE = [..., "reticle_dev.ReticleDevMiddleware"]
+from django.conf import settings
+
+_SNIPPET = """<script type="module">
+  import { reticle } from '${CDN_SDK_URL}';
+  reticle.connect(${connectArgLiteral});
+</script>"""
+
+
+class ReticleDevMiddleware:
+    """Inject the Reticle SDK into HTML responses during development only."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        if not settings.DEBUG:
+            return response
+        if "text/html" not in response.get("Content-Type", ""):
+            return response
+        # Streaming responses have no .content to rewrite; leave them alone.
+        if getattr(response, "streaming", False):
+            return response
+        body = response.content.decode(response.charset)
+        if "</body>" not in body:
+            return response
+        response.content = body.replace("</body>", _SNIPPET + "</body>", 1).encode(
+            response.charset
+        )
+        if response.has_header("Content-Length"):
+            response["Content-Length"] = str(len(response.content))
+        return response
+`;
 }
 
 export function htmlManual(

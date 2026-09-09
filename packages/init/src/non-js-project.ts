@@ -70,6 +70,40 @@ export function streamlitSetupMessage(): string {
   );
 }
 
+/**
+ * Whether the no-package project is specifically a Django app.
+ *
+ * `manage.py` is the marker every Django project has and nothing else does, and it is already in
+ * ECOSYSTEM_MARKERS as `Python (Django)` — this asks the narrower question so the setup message can
+ * be Django's rather than Python's in general.
+ *
+ * Confirmed by `settings.py` alongside it where possible, because a bare `manage.py` in a repo root
+ * that also holds the real app deeper down should not claim more than it knows.
+ */
+export function detectDjangoProject(
+  exists: (file: string) => boolean,
+  rootDirectories: readonly string[] = [],
+): boolean {
+  if (!exists('manage.py')) return false;
+  if (exists('settings.py')) return true;
+  return rootDirectories.some((dir) => exists(`${dir}/settings.py`));
+}
+
+/** The Django-specific explanation printed immediately before its generated middleware. */
+export function djangoSetupMessage(): string {
+  return (
+    'This is a Django project. Django renders templates server-side, so there is no JS build to ' +
+    'import the SDK from and no single template to paste a script tag into — an app has many, and ' +
+    'may not have a base one. The middleware below is the Django-shaped answer: it runs for every ' +
+    'page, injects Reticle into HTML responses only, and is guarded on `settings.DEBUG` so it can ' +
+    'never reach production. Add it to MIDDLEWARE, start your server as usual, and the page will ' +
+    'dial the daemon on load. ' +
+    'If this project ALSO has a JS front end with its own package.json, running `reticle init` ' +
+    'there instead gives you source mapping and framework state as well: point at it with ' +
+    '`--app <dir>`.'
+  );
+}
+
 /** The ecosystem this directory looks like, or undefined when nothing says. */
 export function detectNonJsEcosystem(exists: (file: string) => boolean): string | undefined {
   for (const [marker, name] of ECOSYSTEM_MARKERS) {

@@ -195,6 +195,9 @@ export async function assertVerdict(
     stateUnwatched: isStateUnwatched(spots),
     // What the app DECLARED, so an under-instrumented one is told without having to be asked.
     hasCapabilities: session.hasCapabilities,
+    // Whether the build TURNED the source stamp off, so a red with no file:line prescribes the
+    // right fix. `false` from the page is the only value that means anything; absent is unknown.
+    ...(false === session.sourceMapping ? { sourceMappingDisabled: true } : {}),
     domMutated: false,
     signalsFired: 0,
     routeChanged: false,

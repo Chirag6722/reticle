@@ -480,6 +480,10 @@ function connectArgs(options: ReticleVitePluginOptions): string {
   if (true === options.captureNetworkBodies || '1' === process.env['VITE_RETICLE_CAPTURE_BODIES']) {
     args['captureNetworkBodies'] = true;
   }
+  // Only the OPT-OUT is announced, never the default. The daemon reads absence as "unknown", so
+  // sending `true` here would say nothing it does not already assume — while sending `false` is the
+  // one fact a red verdict needs to stop prescribing a plugin this project has deliberately muted.
+  if (false === options.sourceMapping) args['sourceMapping'] = false;
   // Same shape, same reason. Off unless asked for, in a config or for one session.
   if (true === options.exposePresenter || '1' === process.env['VITE_RETICLE_EXPOSE_PRESENTER']) {
     args['exposePresenter'] = true;

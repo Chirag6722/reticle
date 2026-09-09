@@ -8,7 +8,9 @@ import { dirname, join } from 'node:path';
 import { CSP_FILES } from './csp-doctor.js';
 import { preflightRefusal } from './preflight.js';
 import {
+  detectDjangoProject,
   detectStreamlitProject,
+  djangoSetupMessage,
   noPackageJsonMessage,
   streamlitSetupMessage,
 } from './non-js-project.js';
@@ -62,6 +64,8 @@ import {
   connectArgWithToken,
   nuxtPluginPath,
   staticPageSnippet,
+  djangoMiddlewareSnippet,
+  reticleConfigContent,
   streamlitPageSnippet,
 } from './snippets.js';
 import { NUXT_CONFIG_CANDIDATES } from './nuxt-patch.js';
@@ -863,6 +867,10 @@ function runInitSteps(options: InitOptions, io: InitIo): InitResult {
   if (redirectedEarly !== null) return redirectedEarly;
   if (null === pkgRaw) {
     const streamlit = detectStreamlitProject((file) => io.readFile(file), io.rootFiles());
+    // Asked only when Streamlit already said no, so the two can never both claim the page.
+    const django =
+      !streamlit &&
+      detectDjangoProject((file) => io.exists(join(options.cwd, file)), io.rootFiles());
     io.print(
       // Two genuinely different situations used to share one sentence: a JS developer in the wrong
       // directory, and a project that is not JavaScript at all. The second reads the old wording as
@@ -871,13 +879,40 @@ function runInitSteps(options: InitOptions, io: InitIo): InitResult {
       // hand before the real answer surfaced.
       streamlit
         ? streamlitSetupMessage()
-        : noPackageJsonMessage((file) => io.exists(join(options.cwd, file))),
+        : django
+          ? djangoSetupMessage()
+          : noPackageJsonMessage((file) => io.exists(join(options.cwd, file))),
     );
     // The message says "add the snippet below". Print the snippet, or the message is the same
     // broken promise in the other direction. `connectArg` carries the port; there is no projectId
     // to bake, because a projectId is derived from the package.json that does not exist here.
-    const connect = connectArgWithToken(options.port, undefined, io.host.pairingToken());
-    io.print(streamlit ? streamlitPageSnippet(connect) : staticPageSnippet(connect));
+    // Scope the project on disk before printing anything, so the daemon can serve this page.
+    //
+    // This path used to print and exit, leaving no `.reticle.json` at all — and the reporter who
+    // asked for the Django path had to hand-write one alongside the middleware. Without it the
+    // daemon has no config in its own directory, refuses the page's dial, and every downstream
+    // symptom points somewhere other than the cause (see #685). The projectId derivation already
+    // handles the no-package case: it falls back to the root folder name, fingerprinted by the
+    // absolute path so two checkouts stay distinct.
+    //
+    // Written only when absent. A config a user or an earlier run already placed here is theirs.
+    const nonJsProjectId = deriveProjectId(undefined, io.cwd());
+    if (!io.exists(RETICLE_CONFIG_FILE)) {
+      io.writeFile(
+        RETICLE_CONFIG_FILE,
+        reticleConfigContent(Framework.HTML, options.port, nonJsProjectId, io.host.installSource()),
+      );
+      rememberProjectOnDisk(io, nonJsProjectId, io.cwd(), Date.now());
+      io.print(`Wrote ${RETICLE_CONFIG_FILE} (project "${nonJsProjectId}").`);
+    }
+    const connect = connectArgWithToken(options.port, nonJsProjectId, io.host.pairingToken());
+    io.print(
+      streamlit
+        ? streamlitPageSnippet(connect)
+        : django
+          ? djangoMiddlewareSnippet(connect)
+          : staticPageSnippet(connect),
+    );
     // The onboarding funnel had NO instrumentation, so a setup that died here was indistinguishable
     // from someone who never ran the command — the two failure modes with the most different fixes.
     io.host.reportOutcome({ ok: false, reason: InitFailure.NO_PACKAGE_JSON });
