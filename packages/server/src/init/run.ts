@@ -18,6 +18,7 @@ import { devCommandFrom } from './dev-script.js';
 import { restartHint, FEEDBACK_HINT } from './closing-hint.js';
 import { spanSync } from '../trace.js';
 import { projectIdOf, rememberProjectOnDisk } from '../project/remember-project.js';
+import { declaredInstallSource } from '../telemetry/install-source.js';
 import { detect, Framework, namesAPackageManager, type DetectInput, UiLibrary } from './detect.js';
 import { wasMcpRegistered } from './mcp-registered.js';
 import { pickAstroHost } from './astro-host.js';
@@ -76,6 +77,7 @@ import {
   connectArgWithToken,
   staticPageSnippet,
   djangoMiddlewareSnippet,
+  reticleConfigContent,
   streamlitPageSnippet,
 } from './snippets.js';
 import { CLAUDE_COMMAND_PATH, CURSOR_COMMAND_PATH } from './slash-command.js';
@@ -874,7 +876,26 @@ function runInitSteps(options: InitOptions, io: InitIo): InitResult {
     // The message says "add the snippet below". Print the snippet, or the message is the same
     // broken promise in the other direction. `connectArg` carries the port; there is no projectId
     // to bake, because a projectId is derived from the package.json that does not exist here.
-    const connect = connectArgWithToken(options.port, undefined, readPairingToken());
+    // Scope the project on disk before printing anything, so the daemon can serve this page.
+    //
+    // This path used to print and exit, leaving no `.reticle.json` at all — and the reporter who
+    // asked for the Django path had to hand-write one alongside the middleware. Without it the
+    // daemon has no config in its own directory, refuses the page's dial, and every downstream
+    // symptom points somewhere other than the cause (see #685). The projectId derivation already
+    // handles the no-package case: it falls back to the root folder name, fingerprinted by the
+    // absolute path so two checkouts stay distinct.
+    //
+    // Written only when absent. A config a user or an earlier run already placed here is theirs.
+    const nonJsProjectId = deriveProjectId(undefined, io.cwd());
+    if (!io.exists(RETICLE_CONFIG_FILE)) {
+      io.writeFile(
+        RETICLE_CONFIG_FILE,
+        reticleConfigContent(Framework.HTML, options.port, nonJsProjectId, declaredInstallSource()),
+      );
+      rememberProjectOnDisk(io, nonJsProjectId, io.cwd(), Date.now());
+      io.print(`Wrote ${RETICLE_CONFIG_FILE} (project "${nonJsProjectId}").`);
+    }
+    const connect = connectArgWithToken(options.port, nonJsProjectId, readPairingToken());
     io.print(
       streamlit
         ? streamlitPageSnippet(connect)

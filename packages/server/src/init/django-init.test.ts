@@ -11,7 +11,9 @@
  */
 import { describe, expect, it } from 'vitest';
 import { detectDjangoProject, djangoSetupMessage } from './non-js-project.js';
-import { djangoMiddlewareSnippet } from './snippets.js';
+import { djangoMiddlewareSnippet, reticleConfigContent } from './snippets.js';
+import { deriveProjectId } from './project-id.js';
+import { Framework } from './detect.js';
 
 const has =
   (...files: string[]) =>
@@ -78,5 +80,34 @@ describe('the message that introduces it', () => {
 
   it('still points a project with a JS front end at the better path', () => {
     expect(djangoSetupMessage()).toContain('--app');
+  });
+});
+
+/**
+ * A non-JS project gets scoped on disk, not just advised.
+ *
+ * `init` used to print a snippet and exit with no `.reticle.json` at all, so the daemon had no
+ * config in its own directory, refused the page's dial, and every downstream symptom pointed
+ * somewhere other than the cause. The reporter who asked for the Django path had to hand-write the
+ * config alongside the middleware.
+ */
+describe('the config a non-JS project is left with', () => {
+  it('derives a projectId with no package.json to read a name from', () => {
+    const id = deriveProjectId(undefined, '/srv/my-django-site');
+    expect(id, 'the folder name is the fallback, so the id is legible').toContain('my-django-site');
+    expect(id.length).toBeGreaterThan('my-django-site'.length);
+  });
+
+  it('keeps two checkouts of the same folder name distinct', () => {
+    expect(deriveProjectId(undefined, '/a/site')).not.toBe(deriveProjectId(undefined, '/b/site'));
+  });
+
+  it('is stable for the same path, so a re-run does not re-scope the project', () => {
+    expect(deriveProjectId(undefined, '/srv/site')).toBe(deriveProjectId(undefined, '/srv/site'));
+  });
+
+  it('records the framework as html — a page that loads the SDK from a URL', () => {
+    const config = reticleConfigContent(Framework.HTML, undefined, 'site-abc');
+    expect(JSON.parse(config)).toMatchObject({ framework: 'html', projectId: 'site-abc' });
   });
 });
