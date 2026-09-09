@@ -468,6 +468,56 @@ st.html(
 )`;
 }
 
+/**
+ * DEBUG-only middleware that injects Reticle into every Django-rendered page.
+ *
+ * Django serves templates, so the generic script tag has no single home: an app has many templates
+ * and a base template it may not have. Middleware has exactly one, runs for every page, and is the
+ * idiomatic Django answer — a field reporter arrived at this same shape by hand after `init` printed
+ * a script tag and exited 1, and had to write the middleware and `.reticle.json` themselves.
+ *
+ * Guarded on `settings.DEBUG` so it can never reach production, and on the response being HTML so it
+ * does not corrupt a JSON API response or a file download. Injected before `</body>` rather than in
+ * `<head>`, so the SDK sees a parsed document.
+ */
+export function djangoMiddlewareSnippet(connectArgLiteral: string): string {
+  return `# reticle_dev.py — add to MIDDLEWARE while DEBUG is on:
+#   MIDDLEWARE = [..., "reticle_dev.ReticleDevMiddleware"]
+from django.conf import settings
+
+_SNIPPET = """<script type="module">
+  import { reticle } from '${CDN_SDK_URL}';
+  reticle.connect(${connectArgLiteral});
+</script>"""
+
+
+class ReticleDevMiddleware:
+    """Inject the Reticle SDK into HTML responses during development only."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        response = self.get_response(request)
+        if not settings.DEBUG:
+            return response
+        if "text/html" not in response.get("Content-Type", ""):
+            return response
+        # Streaming responses have no .content to rewrite; leave them alone.
+        if getattr(response, "streaming", False):
+            return response
+        body = response.content.decode(response.charset)
+        if "</body>" not in body:
+            return response
+        response.content = body.replace("</body>", _SNIPPET + "</body>", 1).encode(
+            response.charset
+        )
+        if response.has_header("Content-Length"):
+            response["Content-Length"] = str(len(response.content))
+        return response
+`;
+}
+
 export function htmlManual(
   port: number | undefined,
   projectId?: string,

@@ -8,7 +8,9 @@ import { dirname, join } from 'node:path';
 import { CSP_FILES } from './csp-doctor.js';
 import { preflightRefusal } from './preflight.js';
 import {
+  detectDjangoProject,
   detectStreamlitProject,
+  djangoSetupMessage,
   noPackageJsonMessage,
   streamlitSetupMessage,
 } from './non-js-project.js';
@@ -73,6 +75,7 @@ import {
   VITE_DEV_MODULE_PATH,
   connectArgWithToken,
   staticPageSnippet,
+  djangoMiddlewareSnippet,
   streamlitPageSnippet,
 } from './snippets.js';
 import { CLAUDE_COMMAND_PATH, CURSOR_COMMAND_PATH } from './slash-command.js';
@@ -852,6 +855,10 @@ function runInitSteps(options: InitOptions, io: InitIo): InitResult {
   if (redirectedEarly !== null) return redirectedEarly;
   if (null === pkgRaw) {
     const streamlit = detectStreamlitProject((file) => io.readFile(file), io.rootFiles());
+    // Asked only when Streamlit already said no, so the two can never both claim the page.
+    const django =
+      !streamlit &&
+      detectDjangoProject((file) => io.exists(join(options.cwd, file)), io.rootFiles());
     io.print(
       // Two genuinely different situations used to share one sentence: a JS developer in the wrong
       // directory, and a project that is not JavaScript at all. The second reads the old wording as
@@ -860,13 +867,21 @@ function runInitSteps(options: InitOptions, io: InitIo): InitResult {
       // hand before the real answer surfaced.
       streamlit
         ? streamlitSetupMessage()
-        : noPackageJsonMessage((file) => io.exists(join(options.cwd, file))),
+        : django
+          ? djangoSetupMessage()
+          : noPackageJsonMessage((file) => io.exists(join(options.cwd, file))),
     );
     // The message says "add the snippet below". Print the snippet, or the message is the same
     // broken promise in the other direction. `connectArg` carries the port; there is no projectId
     // to bake, because a projectId is derived from the package.json that does not exist here.
     const connect = connectArgWithToken(options.port, undefined, readPairingToken());
-    io.print(streamlit ? streamlitPageSnippet(connect) : staticPageSnippet(connect));
+    io.print(
+      streamlit
+        ? streamlitPageSnippet(connect)
+        : django
+          ? djangoMiddlewareSnippet(connect)
+          : staticPageSnippet(connect),
+    );
     // The onboarding funnel had NO instrumentation, so a setup that died here was indistinguishable
     // from someone who never ran the command — the two failure modes with the most different fixes.
     reportInitOutcome({ ok: false, reason: InitFailure.NO_PACKAGE_JSON });
