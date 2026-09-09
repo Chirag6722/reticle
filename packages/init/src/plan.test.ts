@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildPlan, StepStatus, type PlanInput } from './plan.js';
 import { Framework, PackageManager, UiLibrary, type Detection } from './detect.js';
-import { NodePlatform } from '../platform.js';
+import { NodePlatform } from './platform.js';
 import { cursorRuleFile } from './agent-rules.js';
 import { McpClient } from './mcp-clients.js';
 

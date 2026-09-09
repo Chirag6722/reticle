@@ -1,19 +1,15 @@
-import { afterAll, describe, expect, it } from 'vitest';
-import { mkdtempSync, readFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { ReticleDir, ReticleEnv } from '@reticlehq/core';
+import { describe, expect, it } from 'vitest';
 import { FEEDBACK_HINT } from './closing-hint.js';
+import { SILENT_HOST } from './host.js';
 import { runInit, resolveLockfiles, type InitIo, type InitOptions } from './run.js';
 
-// init now mints the pairing token; keep it out of the real ~/.reticle during tests.
-const pairingDir = mkdtempSync(join(tmpdir(), 'reticle-init-token-'));
-const savedTokenDir = process.env[ReticleEnv.PAIRING_TOKEN_DIR];
-process.env[ReticleEnv.PAIRING_TOKEN_DIR] = pairingDir;
-afterAll(() => {
-  if (savedTokenDir === undefined) delete process.env[ReticleEnv.PAIRING_TOKEN_DIR];
-  else process.env[ReticleEnv.PAIRING_TOKEN_DIR] = savedTokenDir;
-});
+/**
+ * The token the host hands over. Minting belongs to the bridge, which owns the file — this package
+ * only asks for one and inlines the answer, so what these tests prove is that it asks and that the
+ * answer reaches the snippet. That the daemon's host actually MINTS is proved on the server side by
+ * `setup/init-host.test.ts`, against the real `~/.reticle` seam.
+ */
+const HOST_TOKEN = 'a1b2c3d4e5f6';
 
 interface MemoryIo extends InitIo {
   written: Record<string, string>;
@@ -126,6 +122,7 @@ function memoryIo(
     },
     probe: (_command, args) => (args.includes('get') ? mcpExists : claudeAvailable),
     print: (l) => lines.push(l),
+    host: { ...SILENT_HOST, pairingToken: () => HOST_TOKEN },
   };
 }
 
@@ -247,15 +244,15 @@ describe('runInit', () => {
     expect(out).not.toMatch(/paste this into the page|script-tag snippet below/i);
   });
 
-  it('mints a pairing token into that snippet when none exists yet', () => {
+  it('inlines the host-supplied pairing token into that snippet', () => {
     // The CDN path has no build step. An empty token here is a page that can never authenticate,
-    // and regenerating the file later makes the pasted literal stale as well as wrong.
+    // and regenerating the file later makes the pasted literal stale as well as wrong — so `init`
+    // asks the host for the token (which mints one when the daemon has never run) instead of
+    // reading the file itself.
     const io = memoryIo({ 'requirements.txt': 'fastapi\n', 'app.py': 'x' });
     runInit(OPTS, io);
     const out = io.lines.join('\n');
-    const token = readFileSync(join(pairingDir, ReticleDir.PAIRING_TOKEN_FILE), 'utf8').trim();
-    expect(token.length).toBeGreaterThan(0);
-    expect(out).toContain(token);
+    expect(out).toContain(HOST_TOKEN);
     expect(out).toMatch(/token:\s*'[0-9a-f]+'/);
   });
 

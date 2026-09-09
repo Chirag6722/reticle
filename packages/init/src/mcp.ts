@@ -12,7 +12,7 @@
  * global agent config.
  */
 
-import { RETICLE_NPM_PACKAGE } from '../version/server-version.js';
+import { RETICLE_NPM_PACKAGE } from './version.js';
 
 // The name is a wire identity and lives in the contract; re-exported here so the registration writers
 // below (and their tests) keep reading it from the module that USES it.

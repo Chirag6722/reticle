@@ -7,5 +7,5 @@
     "types": ["node"]
   },
   "include": ["src/**/*"],
-  "references": [{ "path": "../core" }, { "path": "../init" }]
+  "references": [{ "path": "../core" }]
 }

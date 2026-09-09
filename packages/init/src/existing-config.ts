@@ -1,4 +1,4 @@
-import { devServerPortWarning, isLikelyDevServerPort } from '../cli/cli-port.js';
+import { devServerPortWarning, isLikelyDevServerPort } from './dev-server-ports.js';
 
 /** The project config file, named once. Lives here because this module is what reads it. */
 export const RETICLE_CONFIG_FILE = '.reticle.json';

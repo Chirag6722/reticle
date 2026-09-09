@@ -456,7 +456,7 @@ jobs:
           # are the whole of one-command onboarding — agent registration, pre-approval, the skill
           # file, the drive — and neither was on this list, so the release that made `init` an
           # install could edit every one of them without the install gate running once.
-          if echo "$CHANGED" | grep -qE '^(packages/(server/src/(init|setup)|vite-plugin|next|babel-plugin|browser|react|core)/|setup/|apps/e2e/(install-gate|gate-harness|install-baseline)|package\.json|pnpm-lock\.yaml|\.github/workflows/ci\.yml)'; then
+          if echo "$CHANGED" | grep -qE '^(packages/(init|server/src/setup|vite-plugin|next|babel-plugin|browser|react|core)/|setup/|apps/e2e/(install-gate|gate-harness|install-baseline)|package\.json|pnpm-lock\.yaml|\.github/workflows/ci\.yml)'; then
             echo "install=true" >> "$GITHUB_OUTPUT"
           else
             echo "install=false" >> "$GITHUB_OUTPUT"
@@ -467,7 +467,7 @@ jobs:
           # by definition: the IPC observer, desktop capture, and the setup/doctor pair that shape
           # and diagnose a desktop install. Anything broader (all of packages/browser, say) would
           # route most PRs here and give the routing back for nothing.
-          if echo "$CHANGED" | grep -qE '^(packages/(electron|tauri)/|apps/(electron|tauri)-smoke/|packages/browser/src/observers/ipc\.ts|packages/browser/src/dom/desktop-capture\.ts|packages/server/src/setup/desktop-shape\.ts|packages/server/src/init/desktop-doctor\.ts|\.github/workflows/ci\.yml)'; then
+          if echo "$CHANGED" | grep -qE '^(packages/(electron|tauri)/|apps/(electron|tauri)-smoke/|packages/browser/src/observers/ipc\.ts|packages/browser/src/dom/desktop-capture\.ts|packages/server/src/setup/desktop-shape\.ts|packages/init/src/desktop-doctor\.ts|\.github/workflows/ci\.yml)'; then
             echo "desktop=true" >> "$GITHUB_OUTPUT"
           else
             echo "desktop=false" >> "$GITHUB_OUTPUT"

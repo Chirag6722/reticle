@@ -21,7 +21,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { htmlManual } from './snippets.js';
-import { SERVER_VERSION } from '../version/server-version.js';
+import { RETICLE_VERSION } from './version.js';
 
 const snippet = htmlManual(4400, 'demo', 'tok_abc123');
 
@@ -45,7 +45,7 @@ describe('the no-build-step path', () => {
   it('pins the SDK to this server version, so the two cannot drift', () => {
     // An unpinned CDN import silently upgrades the page SDK underneath a daemon that did not move,
     // which is the `version_skew` failure arriving by a new route.
-    expect(snippet).toContain(`@${SERVER_VERSION}`);
+    expect(snippet).toContain(`@${RETICLE_VERSION}`);
   });
 });
 

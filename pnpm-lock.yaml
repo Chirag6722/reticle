@@ -546,6 +546,12 @@ importers:
         specifier: ^8.67.0
         version: 8.67.0(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3)
 
+  packages/init:
+    dependencies:
+      '@reticlehq/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/next:
     dependencies:
       '@babel/core':
@@ -591,6 +597,9 @@ importers:
       '@reticlehq/core':
         specifier: workspace:*
         version: link:../core
+      '@reticlehq/init':
+        specifier: workspace:*
+        version: link:../init
       ws:
         specifier: ^8.21.3
         version: 8.21.3

@@ -14,8 +14,7 @@ import {
 } from './non-js-project.js';
 import { devCommandFrom } from './dev-script.js';
 import { restartHint, FEEDBACK_HINT } from './closing-hint.js';
-import { spanSync } from '../trace.js';
-import { projectIdOf, rememberProjectOnDisk } from '../project/remember-project.js';
+import { projectIdOf, rememberProjectOnDisk } from './remember-project.js';
 import { detect, Framework, namesAPackageManager, type DetectInput, UiLibrary } from './detect.js';
 import { wasMcpRegistered } from './mcp-registered.js';
 import { pickAstroHost } from './astro-host.js';
@@ -24,7 +23,6 @@ import { redirectToWorkspaceApp } from './workspace-redirect.js';
 import { isConnectStep } from './connect-steps.js';
 import { CURSOR_RULE_PATH, RETICLE_MD_PATH } from './agent-rules.js';
 import { CRA_ENV_PATH } from './cra.js';
-import { defaultPairingTokenDir, readOrCreatePairingTokenSync } from '../bridge/pairing-token.js';
 import { formatGeneratedSource } from './format-generated.js';
 
 /** CRA's bundled entry, in the order create-react-app itself generates them. */
@@ -38,16 +36,6 @@ function craEntryOf(io: InitIo): { path: string; source: string } | null {
   return null;
 }
 
-/**
- * The daemon's pairing token, minted here if nothing has written it yet.
- *
- * `init` used to READ the file and return empty when the daemon had never started. The CDN snippet
- * inlined that empty value permanently, and regenerating the token made the pasted literal stale.
- * Same mint as the daemon (`readOrCreatePairingToken`), honours `RETICLE_PAIRING_TOKEN_DIR`.
- */
-function readPairingToken(): string {
-  return readOrCreatePairingTokenSync(defaultPairingTokenDir()) ?? '';
-}
 import {
   DEPS_TARGET,
   RETICLE_CONFIG_FILE,
@@ -78,8 +66,9 @@ import {
 } from './snippets.js';
 import { NUXT_CONFIG_CANDIDATES } from './nuxt-patch.js';
 import { CLAUDE_COMMAND_PATH, CURSOR_COMMAND_PATH } from './slash-command.js';
-import { SERVER_VERSION } from '../version/server-version.js';
-import { InitFailure, reportInitOutcome } from '../telemetry/init-telemetry.js';
+import { RETICLE_VERSION } from './version.js';
+import { InitFailure } from './init-failure.js';
+import type { InitHost } from './host.js';
 import type { InitOutcome } from '@reticlehq/core/telemetry';
 
 /** Lockfile basenames, in package-manager preference order (mirrors detect.ts). */
@@ -309,6 +298,12 @@ export interface InitIo {
   /** Can this process write into the project root — see preflight.ts. */
   canWrite(): boolean;
   print(line: string): void;
+  /**
+   * The capabilities only the daemon has: the release version's tracer, the outcome reporter, the
+   * bridge pairing token and the declared install channel. See host.ts for why they are carried
+   * here rather than as a second parameter, and why none of them is optional.
+   */
+  host: InitHost;
 }
 
 /**
@@ -538,7 +533,8 @@ function gatherPlanInput(options: InitOptions, io: InitIo, pkg: unknown): PlanIn
     nuxtPluginExists: io.exists(nuxtPluginPath(nuxtHasAppDir)),
     craEntry: craEntryOf(io),
     craEnv: io.readFile(CRA_ENV_PATH),
-    pairingToken: readPairingToken(),
+    pairingToken: io.host.pairingToken(),
+    installSource: io.host.installSource(),
     reticleConfigExists: io.exists(RETICLE_CONFIG_FILE),
     // The CONTENT, so a config that exists can be checked rather than trusted — a `"port"` set to
     // the app's own dev-server port used to survive every re-run of `init`.
@@ -564,7 +560,7 @@ function gatherPlanInput(options: InitOptions, io: InitIo, pkg: unknown): PlanIn
       install: options.install,
       projectId,
       // The SDK must match the CLI asking for it — see pinnedPackages.
-      sdkVersion: SERVER_VERSION,
+      sdkVersion: RETICLE_VERSION,
     },
   };
 }
@@ -714,7 +710,7 @@ function applyEffects(
       // no arrangement of the filesystem (a read-only mount, a full disk, an antivirus quarantining
       // a new dotfile) could have turned that tick into anything else. A checkmark that cannot fail
       // is decoration, and this one is the first thing a new user reads. Same shape as #139.
-      const wrote = spanSync('init.write', { target: s.target, path: write.path }, () => {
+      const wrote = io.host.span('init.write', { target: s.target, path: write.path }, () => {
         try {
           // Format connect modules with the project's Prettier when present (#684) — a clean
           // install must not fail the project's own lint on a file we just wrote.
@@ -738,7 +734,7 @@ function applyEffects(
     // slow is a completely different problem from the other.
     if (
       exec !== undefined &&
-      !spanSync('init.exec', { target: s.target, command: exec.command }, () =>
+      !io.host.span('init.exec', { target: s.target, command: exec.command }, () =>
         io.exec(exec.command, exec.args),
       )
     ) {
@@ -752,7 +748,7 @@ function applyEffects(
       // Walked in order, cheapest concession first, and STOPS at the first success — a later,
       // weaker attempt must never run once an earlier one has already produced a working tree.
       const succeeded = (s.retries ?? []).find((retry) =>
-        spanSync('init.exec.retry', { target: s.target, command: retry.command }, () =>
+        io.host.span('init.exec.retry', { target: s.target, command: retry.command }, () =>
           io.exec(retry.command, retry.args),
         ),
       );
@@ -847,7 +843,7 @@ function runInitSteps(options: InitOptions, io: InitIo): InitResult {
         'framework, the dev script and the package manager from it, and will not guess at any of ' +
         'them from a file it cannot read.',
     );
-    reportInitOutcome({ ok: false, reason: InitFailure.MALFORMED_PACKAGE_JSON });
+    io.host.reportOutcome({ ok: false, reason: InitFailure.MALFORMED_PACKAGE_JSON });
     return { ok: false, applied: 0, manual: 0 };
   }
   const pkgRaw = manifest.pkg;
@@ -880,11 +876,11 @@ function runInitSteps(options: InitOptions, io: InitIo): InitResult {
     // The message says "add the snippet below". Print the snippet, or the message is the same
     // broken promise in the other direction. `connectArg` carries the port; there is no projectId
     // to bake, because a projectId is derived from the package.json that does not exist here.
-    const connect = connectArgWithToken(options.port, undefined, readPairingToken());
+    const connect = connectArgWithToken(options.port, undefined, io.host.pairingToken());
     io.print(streamlit ? streamlitPageSnippet(connect) : staticPageSnippet(connect));
     // The onboarding funnel had NO instrumentation, so a setup that died here was indistinguishable
     // from someone who never ran the command — the two failure modes with the most different fixes.
-    reportInitOutcome({ ok: false, reason: InitFailure.NO_PACKAGE_JSON });
+    io.host.reportOutcome({ ok: false, reason: InitFailure.NO_PACKAGE_JSON });
     return { ok: false, applied: 0, manual: 0 };
   }
 
@@ -911,10 +907,10 @@ function runInitSteps(options: InitOptions, io: InitIo): InitResult {
     io.print(refusal);
     return { ok: false, applied: 0, manual: 1 };
   }
-  const plan = spanSync('init.plan', {}, () => buildPlan(planInput));
+  const plan = io.host.span('init.plan', {}, () => buildPlan(planInput));
   const effects = options.dryRun
     ? { failed: new Set<string>(), skipped: new Set<string>(), degraded: new Map<string, string>() }
-    : spanSync('init.apply', { steps: plan.steps.length }, () => applyEffects(plan, io));
+    : io.host.span('init.apply', { steps: plan.steps.length }, () => applyEffects(plan, io));
   const { failed, skipped, degraded } = effects;
   // The project's own dev command, so the closing line names what a human would actually type.
   const devCommand = devCommandFrom(pkgRaw, planInput.detection.packageManager);
@@ -947,6 +943,6 @@ function runInitSteps(options: InitOptions, io: InitIo): InitResult {
     ...(true === options.redirected ? { redirectedTo: options.cwd } : {}),
   };
   if (true === options.deferOutcome) return { ...result, context, outcome };
-  reportInitOutcome(outcome);
+  io.host.reportOutcome(outcome);
   return { ...result, context };
 }

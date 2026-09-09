@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { streamlitPageSnippet } from './snippets.js';
-import { SERVER_VERSION } from '../version/server-version.js';
+import { RETICLE_VERSION } from './version.js';
 
 const snippet = streamlitPageSnippet("{ token: 'tok_abc123' }");
 
@@ -18,7 +18,7 @@ describe('the Streamlit executable HTML helper', () => {
   });
 
   it('pins the browser SDK and carries the local pairing token', () => {
-    expect(snippet).toContain(`@reticlehq/browser@${SERVER_VERSION}/+esm`);
+    expect(snippet).toContain(`@reticlehq/browser@${RETICLE_VERSION}/+esm`);
     expect(snippet).toContain("reticle.connect({ token: 'tok_abc123' })");
   });
 });

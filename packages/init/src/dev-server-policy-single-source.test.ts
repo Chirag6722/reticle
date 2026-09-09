@@ -26,7 +26,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DEV_SERVER_POLICY } from './agent-rules.js';
 
-const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
+const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const skill = readFileSync(join(REPO, 'SKILL.md'), 'utf8');
 
 /** Sentences long enough to be a rule rather than a connective. */

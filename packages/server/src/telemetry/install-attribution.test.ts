@@ -25,7 +25,7 @@ import {
   resolveInstallSource,
   INSTALL_SOURCE_ENV,
 } from './install-source.js';
-import { reticleConfigContent } from '../init/snippets.js';
+import { reticleConfigContent } from '@reticlehq/init';
 
 describe('the install source survives the install', () => {
   let dir: string;

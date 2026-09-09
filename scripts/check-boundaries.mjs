@@ -42,6 +42,11 @@ export const SIDE = Object.freeze({
   // Server runtime — runs in the `reticle` process, touches sockets/fs, never the DOM.
   '@reticlehq/server': 'node',
   '@reticlehq/test': 'node',
+  // The project scaffolder. Build-time by nature — it edits configs and shells out to a package
+  // manager — but tagged 'node' rather than 'build' because @reticlehq/server depends on it, and a
+  // node-side package may only reach the node side and the isomorphic foundation. It carries no
+  // WS/MCP/DOM dependency of its own, which is the substance the 'build' tag exists to protect.
+  '@reticlehq/init': 'node',
   // Isomorphic foundation — imported by every side, imports none of them.
   '@reticlehq/core': 'iso',
 });

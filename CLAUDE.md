@@ -12,6 +12,7 @@ Reticle is the **proof layer for AI agents** — it verifies a running web app f
 packages/core          @reticlehq/core         — bottom-of-graph foundation: wire contract, constants, zod schemas (deps: zod)
 packages/browser       @reticlehq/browser      — instrumentation SDK embedded in the app (DOM-side)
 packages/server        @reticlehq/server       — bridge + MCP server, the `reticle` CLI (Node-side)
+packages/init          @reticlehq/init         — project scaffolder: `reticle init`'s codemod, no runtime (Node-side)
 packages/react         @reticlehq/react        — React adapter: DOM ref -> component -> source file
 packages/vite-plugin   @reticlehq/vite-plugin  — Vite integration: stamps source + auto-injects connect()
 packages/babel-plugin  @reticlehq/babel-plugin — stamps data-reticle-source (source mapping, React 19)
@@ -42,6 +43,7 @@ This is **one git repo** at the root (pnpm + turbo monorepo). The TS library pac
 - **`@reticlehq/core` is the contract.** Any message that crosses browser ↔ bridge ↔ agent is defined there as a constant + zod schema. It sits at the bottom of the graph (deps: `zod` only); everything depends on it, it depends on nothing. Never inline a wire string in `browser` or `server` — add it to `core`.
 - **`@reticlehq/browser` only touches the DOM/page.** It never imports Node APIs.
 - **`@reticlehq/server` only runs in Node.** It never imports DOM APIs.
+- **`@reticlehq/init` is build-time only.** It writes files and shells out to a package manager; it never opens a socket, reads daemon state or emits an event, and it imports NOTHING from `@reticlehq/server`. Everything it cannot know for itself — the release version, a tracer, the outcome reporter, the bridge pairing token, the declared install channel — arrives through the injected `InitHost` on `InitIo`. A new outward need is a new member on that interface, never an import.
 - **`@reticlehq/react` is optional enrichment.** Core must work without it.
 
 ## Non-negotiable rules

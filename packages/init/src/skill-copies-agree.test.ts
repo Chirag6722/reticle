@@ -19,7 +19,7 @@ import { join } from 'node:path';
  *
  * So: the normative sentences are shared verbatim, and the version is the one being shipped.
  */
-const ROOT = join(__dirname, '..', '..', '..', '..');
+const ROOT = join(__dirname, '..', '..', '..');
 const read = (rel: string): string => readFileSync(join(ROOT, rel), 'utf8');
 
 /** Every skill under `skills/`, as repo-relative paths — read from disk so a new one is covered. */

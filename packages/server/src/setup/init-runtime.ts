@@ -8,8 +8,8 @@
 
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { RETICLE_DEFAULT_PORT } from '@reticlehq/core';
-import type { InitResult } from '../init/run.js';
-import { confirmInstall, nodeConfirmDeps } from '../init/confirm.js';
+import type { InitResult } from '@reticlehq/init';
+import { confirmInstall, nodeConfirmDeps } from './confirm.js';
 import { writeLicenseKey } from './license-key.js';
 import { registerOtherAgents, runSetupCommand } from './setup-command.js';
 import { bridgeOccupied } from './bridge-port.js';

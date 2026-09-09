@@ -15,7 +15,7 @@ import type { FoundStore } from './capabilities.js';
 import { installFailureHint } from './install-hint.js';
 import { installRetries } from './install-retries.js';
 import { claudeAddCommand, mcpManual, mcpWindowsNote } from './mcp.js';
-import { NodePlatform } from '../platform.js';
+import { NodePlatform } from './platform.js';
 import {
   mergeClientConfig,
   ClientMergeStatus,
@@ -43,7 +43,7 @@ import { cspStep, frameworkSteps } from './plan-framework.js';
 import { FRAMEWORK_ADAPTERS, RETICLE_BROWSER_SDK, RETICLE_REACT_KIT } from './framework-adapter.js';
 import { join } from 'node:path';
 import { reticleConfigContent, unverifiedUiLibraryNote } from './snippets.js';
-import { configWithInstallSource, declaredInstallSource } from '../telemetry/install-source.js';
+import { configWithInstallSource } from './install-source-config.js';
 import { existingConfigProblem, projectIdOf, RETICLE_CONFIG_FILE } from './existing-config.js';
 
 // Re-exported: it moved to the module that reads it, and every existing importer says `plan.js`.
@@ -190,6 +190,15 @@ export interface PlanInput {
   mcpExists: boolean;
   /** `process.platform`. Injected so this module stays pure. Windows is the only branch. */
   platform?: string;
+  /**
+   * The install channel the environment declared, or undefined when nothing declared one.
+   *
+   * Injected for the same reason as `platform`: reading the environment from inside a pure planner
+   * is a hidden input. Only ever written when it is actually KNOWN — `unknown` in `.reticle.json`
+   * is indistinguishable from a config written before the field existed, and those are different
+   * facts.
+   */
+  installSource?: string | undefined;
   /** Whether THIS project has a .cursor/ directory — the signal that Cursor works on this repo. */
   cursorProjectPresent?: boolean | undefined;
   /**
@@ -833,7 +842,7 @@ function reticleConfigStep(input: PlanInput, content: string): Step {
     }
     // The one thing a re-run can still learn: which channel the user actually arrived through.
     // See configWithInstallSource — it only ever ADDS a field that is absent.
-    const backfilled = configWithInstallSource(input.reticleConfigSource, declaredInstallSource());
+    const backfilled = configWithInstallSource(input.reticleConfigSource, input.installSource);
     if (backfilled !== undefined) {
       return {
         title: RETICLE_CONFIG_TITLE,
@@ -875,7 +884,7 @@ function reticleConfigSteps(input: PlanInput): Step[] {
           input.options.projectId,
           // Only when it is actually known. Writing `unknown` would be indistinguishable from a
           // config written before this field existed, and the two mean different things.
-          declaredInstallSource(),
+          input.installSource,
         );
   return [reticleConfigStep(input, content), ...agentRootConfigStep(input, content)];
 }

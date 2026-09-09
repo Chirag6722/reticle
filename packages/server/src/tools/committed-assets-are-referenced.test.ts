@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { basename, dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -62,7 +62,12 @@ const referencingText = (): string => {
   )
     .split('\n')
     .filter((line) => line.length > 0)
-    .filter((file) => !GUARDED_DIRS.some((dir) => file.startsWith(`${dir}/`)));
+    .filter((file) => !GUARDED_DIRS.some((dir) => file.startsWith(`${dir}/`)))
+    // `git ls-files` reports the INDEX, so a file deleted in the working tree and not yet staged is
+    // still listed. Reading it throws ENOENT and takes the whole guard down with an errno instead of
+    // an answer — which is what happened while a package was being split out and every moved file
+    // was a pending deletion. A path that is not there references no image.
+    .filter((file) => existsSync(join(REPO, file)));
 
   return files.map((file) => readFileSync(join(REPO, file), 'utf8')).join('\n');
 };

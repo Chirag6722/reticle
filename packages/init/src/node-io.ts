@@ -14,11 +14,12 @@ import {
   accessSync,
   constants,
 } from 'node:fs';
-import { NodePlatform } from '../platform.js';
+import { NodePlatform } from './platform.js';
 import { join, dirname, isAbsolute } from 'node:path';
 import { homedir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import type { InitIo } from './run.js';
+import type { InitHost } from './host.js';
 import { windowsShellArg } from './windows-quote.js';
 
 /**
@@ -44,7 +45,7 @@ function shellSafe(args: readonly string[]): string[] {
   return args.map(windowsShellArg);
 }
 
-export function buildNodeIo(cwd: string): InitIo {
+export function buildNodeIo(cwd: string, host: InitHost): InitIo {
   // Project-relative by default; absolute paths (e.g. ~/.cursor/mcp.json) pass through unchanged.
   const abs = (rel: string): string => (isAbsolute(rel) ? rel : join(cwd, rel));
   return {
@@ -95,7 +96,9 @@ export function buildNodeIo(cwd: string): InitIo {
       }
     },
     scoped(rel) {
-      return buildNodeIo(abs(rel));
+      // The host travels with the re-rooted IO: a monorepo redirect re-enters `runInit` through
+      // this, and an untraced, unreported inner run is the half of init that actually did the work.
+      return buildNodeIo(abs(rel), host);
     },
     exec(command, args) {
       // Inherit stdio so the install's own progress is visible to the user.
@@ -119,5 +122,6 @@ export function buildNodeIo(cwd: string): InitIo {
     print(line) {
       process.stdout.write(`${line}\n`);
     },
+    host,
   };
 }

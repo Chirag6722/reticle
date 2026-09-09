@@ -8,7 +8,9 @@
  * simply never runs there.
  *
  * Node-side only, so deliberately NOT in `@reticlehq/core` — core is the wire contract, and a
- * platform name never crosses the wire. It DEFINES in `@reticlehq/init` because the scaffolder needs
- * it and may not import the daemon; re-exported here so every existing reader is unchanged.
+ * platform name never crosses the wire.
  */
-export { NodePlatform } from '@reticlehq/init';
+export const NodePlatform = {
+  WINDOWS: 'win32',
+  MACOS: 'darwin',
+} as const;

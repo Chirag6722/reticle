@@ -927,7 +927,7 @@ async function driveScaffold(scaffold, index) {
     const pkgPath = join(app, 'package.json');
     const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
     // `dev` OR `start`: CRA's own template names the script `start`, and `init` accepts either
-    // (DEV_SCRIPT_NAMES in packages/server/src/init/dev-script.ts). Requiring `dev` here would
+    // (DEV_SCRIPT_NAMES in packages/init/src/dev-script.ts). Requiring `dev` here would
     // fail a CRA app for being shaped exactly like every CRA app.
     chk(
       'the scaffold is a real app',

@@ -12,7 +12,7 @@ import {
 } from '@reticlehq/core';
 import { UiLibrary } from './detect.js';
 import type { FoundStore } from './capabilities.js';
-import { SERVER_VERSION } from '../version/server-version.js';
+import { RETICLE_VERSION } from './version.js';
 
 /**
  * The SDK as one import a plain page can actually resolve.
@@ -33,7 +33,7 @@ import { SERVER_VERSION } from '../version/server-version.js';
  * PINNED to this server's version on purpose. A floating import upgrades the page SDK underneath a
  * daemon that did not move, which is `version_skew` arriving by a route nothing checks.
  */
-const CDN_SDK_URL = `https://cdn.jsdelivr.net/npm/@reticlehq/browser@${SERVER_VERSION}/+esm`;
+const CDN_SDK_URL = `https://cdn.jsdelivr.net/npm/@reticlehq/browser@${RETICLE_VERSION}/+esm`;
 
 /**
  * The connect argument literal: a non-default port adds a `url`, and a projectId is always passed

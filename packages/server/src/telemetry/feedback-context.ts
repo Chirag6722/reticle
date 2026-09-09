@@ -19,9 +19,7 @@ import {
   StackUnknownReason,
   type Feedback,
 } from '@reticlehq/core/telemetry';
-import { parseMajor } from '../init/detect.js';
-import { findWorkspaceApps } from '../init/workspace-apps.js';
-import type { InitIo } from '../init/run.js';
+import { parseMajor, findWorkspaceApps, type InitIo } from '@reticlehq/init';
 
 /** The context fields — the whole `Feedback` shape minus what the author supplies. */
 type FeedbackContext = Pick<
