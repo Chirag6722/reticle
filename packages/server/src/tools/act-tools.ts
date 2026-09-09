@@ -635,7 +635,12 @@ export const ACT_TOOLS: ToolDef[] = [
         // On RED only, attach the Tier-2 divergence capsule (first-divergence + blast radius). Red-only,
         // so the common green path — what the loop optimizes — is unchanged; on red, diagnosis is the point.
         const links = predicateToExpectedLinks(until);
-        const capsule = verdict.pass ? undefined : buildDivergenceCapsule(links, windowEvents);
+        // Read before the capsule, which needs it: a window the buffer trimmed cannot state an
+        // absolute about what did NOT happen. See CausalSummary.truncated.
+        const bufferLost = session.lostSince(since);
+        const capsule = verdict.pass
+          ? undefined
+          : buildDivergenceCapsule(links, windowEvents, bufferLost);
         // Grade from what the verdict PROVED, not what it declared. A green anyOf holds on one branch, so
         // grading off `links` (every branch) would let a presence-only OR report grade `signal` — a false
         // green in the gate itself. `provenExpectedLinks` narrows a green to the branch that actually held;
@@ -664,7 +669,6 @@ export const ACT_TOOLS: ToolDef[] = [
         const impeachingNotes = [impeaching.note, gapNote].filter(
           (n): n is string => n !== undefined,
         );
-        const bufferLost = session.lostSince(since);
         // Which loss, as an enum, beside the prose that describes it. Classified here because this is
         // the only place that knows the three apart: our buffer, our transport, and the page's own
         // boundaries. See `CaptureLoss`.
@@ -789,7 +793,10 @@ export const ACT_TOOLS: ToolDef[] = [
         });
         // Computed once: the verdict block reports it, and the instrumentation gaps are a second
         // reading of the same evidence rather than a new observation.
-        const actionSummary = causalSummary(windowEvents, { stateUnwatched });
+        const actionSummary = causalSummary(windowEvents, {
+          stateUnwatched,
+          truncated: bufferLost,
+        });
         // Asked of every verdict drawn after an observed edit, not once per edit — see
         // isChangeUndeclared for why repeating it is disclosure rather than nagging.
         // Read ONCE and used twice: `changeUndeclared` asks whether the ledger is empty, and the
