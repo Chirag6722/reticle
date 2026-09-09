@@ -38,13 +38,21 @@ const SOURCE_FILE = /\.[jt]sx?$/;
 /** A subject line that claims to repair something. Deliberately loose; the pair is the real filter. */
 const REPAIRS = /\b(fix|fixes|fixed|bug|regression|broken)\b/i;
 
-const log = execFileSync('git', ['log', `-${String(LIMIT)}`, '--format=%H%x09%s', '--name-only'], {
+// `--numstat` rather than `--name-only`, because WHICH WAY the test file changed is the strongest
+// signal available. A regression test shipped with a fix is almost pure ADDITION: its author wrote a
+// new case for the bug. A test file with deletions alongside a source change is usually adapting to
+// an API change, so it cannot fail at the parent for the right reason and is not an oracle.
+//
+// Measured on a real false candidate: react-boilerplate's "fix: switched to plain objects in i18n
+// helper function" touched its LanguageSwitch test 2+/2- and is a refactor. The verified nuclear row
+// touched its store test 14+/0-.
+const log = execFileSync('git', ['log', `-${String(LIMIT)}`, '--format=%H%x09%s', '--numstat'], {
   cwd: dir,
   encoding: 'utf8',
   maxBuffer: 64 * 1024 * 1024,
 });
 
-/** Commits as {sha, subject, files}. `git log --name-only` separates entries by a blank line. */
+/** Commits as {sha, subject, files}. `git log --numstat` separates entries by a blank line. */
 function* commits(text) {
   let current;
   for (const raw of text.split('\n')) {
@@ -54,7 +62,12 @@ function* commits(text) {
       if (current !== undefined) yield current;
       current = { sha: header[1], subject: header[2], files: [] };
     } else if (line.trim().length > 0 && current !== undefined) {
-      current.files.push(line.trim());
+      // numstat: "<added>\t<deleted>\t<path>"; a binary file reports "-" for both.
+      const [added, deleted, ...rest] = line.trim().split('\t');
+      const path = rest.join('\t');
+      if (path !== undefined && path.length > 0) {
+        current.files.push({ path, added: Number(added) || 0, deleted: Number(deleted) || 0 });
+      }
     }
   }
   if (current !== undefined) yield current;
@@ -63,12 +76,25 @@ function* commits(text) {
 const rows = [];
 for (const commit of commits(log)) {
   if (!REPAIRS.test(commit.subject)) continue;
-  const tests = commit.files.filter((f) => TEST_FILE.test(f));
-  const sources = commit.files.filter((f) => SOURCE_FILE.test(f) && !TEST_FILE.test(f));
+  const tests = commit.files.filter((f) => TEST_FILE.test(f.path));
+  const sources = commit.files.filter((f) => SOURCE_FILE.test(f.path) && !TEST_FILE.test(f.path));
+  // The discriminator: a test that only GREW is a new case for the bug. One with deletions was
+  // rewritten to match changed code, which makes it an API adaptation rather than an oracle.
+  const grown = tests.filter((t) => t.added > 0 && t.deleted === 0);
   // Both, or it is not the shape: a fix with no test has no oracle, and a test with no source
   // change is somebody tidying their suite.
   if (tests.length === 0 || sources.length === 0) continue;
-  rows.push({ fixedRef: commit.sha, subject: commit.subject, tests, sources });
+  rows.push({
+    fixedRef: commit.sha,
+    subject: commit.subject,
+    tests: tests.map((t) => t.path),
+    sources: sources.map((f) => f.path),
+    // Ranked, not filtered: a rewritten test is USUALLY an adaptation and occasionally a real fix
+    // whose case was reworked. Dropping those silently would hide rows; ranking them puts the
+    // strong ones first and leaves the judgement where it belongs.
+    strong: grown.length > 0,
+    grownTests: grown.map((t) => `${t.path} (+${String(t.added)}/-${String(t.deleted)})`),
+  });
 }
 
 if (rows.length === 0) {
@@ -82,9 +108,18 @@ if (rows.length === 0) {
   process.exit(0);
 }
 
-console.log(`${String(rows.length)} CANDIDATE rows in ${dir} (unverified — see the header):\n`);
+// Strong first: a reviewer's time is the scarce resource, and the top of this list is where the
+// verifiable rows are.
+rows.sort((a, b) => Number(b.strong) - Number(a.strong));
+const strongCount = rows.filter((r) => r.strong).length;
+console.log(
+  `${String(rows.length)} CANDIDATE rows in ${dir} — ${String(strongCount)} with a test that only ` +
+    `GREW (unverified; see the header):\n`,
+);
 for (const row of rows.slice(0, 25)) {
-  console.log(`  ${row.fixedRef.slice(0, 9)}  ${row.subject.slice(0, 72)}`);
+  console.log(
+    `  ${row.strong ? '★' : ' '} ${row.fixedRef.slice(0, 9)}  ${row.subject.slice(0, 70)}`,
+  );
   // `~1` is load-bearing: truncating it yields a ref that resolves to the FIXED commit, which would
   // silently make the pair identical and the row meaningless.
   console.log(`      broken: ${row.fixedRef.slice(0, 9)}~1  oracle: ${row.tests[0]}`);
