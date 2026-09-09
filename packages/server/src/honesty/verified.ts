@@ -54,6 +54,15 @@ interface VerifiedInputs {
    * ones are floored at the act's cursor and cannot be satisfied by the past.
    */
   alreadyTrue?: boolean;
+  /**
+   * The `alreadyTrue` match was against a HIDDEN element/text — DOM presence, not something a person
+   * could see on screen. `text`/`element` predicates match presence by default (`visible: true` is
+   * opt-in), so a dialog's content mounted-but-hidden before the click reads identically to content
+   * that was genuinely already showing, and named neither fact (#889). Only changes `because`; the
+   * verdict itself is unchanged; a hidden pre-existing match is exactly as unfalsifiable as a visible
+   * one.
+   */
+  alreadyTrueHiddenMatch?: boolean;
   /** Cross-channel disagreements found in the action's window. */
   contradictions?: readonly { kind: string }[];
   /** Did a real frame flush before the wait gave up? */
@@ -355,7 +364,10 @@ export function decideVerified(inputs: VerifiedInputs): VerifiedVerdict {
       verified: true === settled ? Verified.NO_FAULT : Verified.UNKNOWN,
       verifiedReason: VerifiedReason.ALREADY_TRUE,
       because:
-        'the declared consequence was already true before this action, so it proves nothing about it — assert something the action CHANGES (a signal, a request, a route, or store state)',
+        'the declared consequence was already true before this action, so it proves nothing about it — assert something the action CHANGES (a signal, a request, a route, or store state)' +
+        (true === inputs.alreadyTrueHiddenMatch
+          ? '. That prior match was against a HIDDEN element — this predicate checks DOM presence, not visibility, by default; add `visible: true` if you meant "this is showing", not merely "this exists"'
+          : ''),
     };
   }
 

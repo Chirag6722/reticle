@@ -50,7 +50,10 @@ import { waitForReaction } from './react-grace.js';
 import { decideVerified } from '../honesty/verified.js';
 import { honestyForVerdict } from '../honesty/honesty.js';
 import { declaredExpectations, declaresBodyIndependentChannel } from '../events/declared.js';
-import { readsDomState } from '../honesty/already-true.js';
+import {
+  readsDomState,
+  alreadyTrueHiddenMatch as alreadyTrueHiddenMatchOf,
+} from '../honesty/already-true.js';
 import { describeWaitTarget, namedNetIsInFlight } from '../honesty/unsettled.js';
 import { saveFailedAssertCapsule } from './act-capsule.js';
 import { buildDivergenceCapsule } from '../capsule/capsule.js';
@@ -519,9 +522,17 @@ export const ACT_TOOLS: ToolDef[] = [
       // state — event-based ones are floored at this act's cursor and cannot be satisfied by the
       // past, so they need no pre-check and pay nothing. One extra query, on the path where a green
       // is otherwise unfalsifiable. See honesty/already-true.
-      const alreadyTrue =
+      const alreadyTruePrecheck =
         until !== undefined && readsDomState(until)
-          ? (await evaluatePredicate(session, until, since, false)).pass
+          ? await evaluatePredicate(session, until, since, false)
+          : undefined;
+      const alreadyTrue = alreadyTruePrecheck?.pass ?? false;
+      // #889: the pre-check evidence is already in hand — cheap to also ask whether that match was
+      // against something hidden, so the already_true message can name it instead of leaving the
+      // agent to re-derive "was this actually showing?" from nothing.
+      const alreadyTrueHiddenMatch =
+        alreadyTrue && until !== undefined
+          ? alreadyTrueHiddenMatchOf(until, alreadyTruePrecheck?.evidence)
           : false;
       try {
         // actCommand is the single interception point for upload+path rewrite.
@@ -748,6 +759,7 @@ export const ACT_TOOLS: ToolDef[] = [
           // Omit when false: a net-only `until` must still hit `outcome_unread`.
           ...(declaresBodyIndependentChannel(until) ? { independentOfBody: true } : {}),
           ...(alreadyTrue ? { alreadyTrue } : {}),
+          ...(alreadyTrueHiddenMatch ? { alreadyTrueHiddenMatch } : {}),
           // An assertion nobody could evaluate must not be reported as one the app failed.
           ...(verdict.inconclusive === undefined ? {} : { inconclusive: verdict.inconclusive }),
           // Nor must one nobody could OBSERVE. This is the act path, so it is the one that produced

@@ -98,6 +98,23 @@ describe('a contradiction outranks a passing assertion', () => {
     expect(v.because).toContain('duplicate-request');
     expect(v.because).toContain('response-ignored');
   });
+
+  /**
+   * #897: a route that rendered nothing AND left a console error behind is positive evidence of a
+   * crash, not mere absence — so it belongs in this describe block (an observed contradiction), not
+   * with the absence-derived kinds below. `route-rendered-nothing` alone stays absence-derived and
+   * downgrades to UNKNOWN; the crashed variant must not.
+   */
+  it('says NO for a crashed destination (route-rendered-nothing-crashed), not UNKNOWN', () => {
+    const v = decideVerified({
+      pass: true,
+      honesty: clean(),
+      settled: true,
+      contradictions: [{ kind: 'route-rendered-nothing-crashed' }],
+    });
+    expect(v.verified).toBe(Verified.NO);
+    expect(v.because).toContain('route-rendered-nothing-crashed');
+  });
 });
 
 /**
