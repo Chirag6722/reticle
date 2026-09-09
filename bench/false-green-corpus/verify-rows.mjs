@@ -15,13 +15,17 @@
 // differently, a transitive dep breaks an old checkout. This tells you that happened, instead of
 // letting a row quietly stop meaning what it says.
 //
+// `--boot` additionally proves the row's app SERVES, which is the precondition for scoring Reticle
+// against it. A row whose oracle discriminates but whose app cannot be booted is ground truth with
+// nothing to drive, and finding that out at scoring time is finding it out too late.
+//
 // Usage:
-//   node bench/false-green-corpus/verify-rows.mjs [--row <id>] [--work <dir>]
+//   node bench/false-green-corpus/verify-rows.mjs [--row <id>] [--work <dir>] [--boot]
 //
 // Network and disk heavy by nature: it clones and installs somebody else's project. Not part of any
 // gate that runs per-commit; this is a release-time check, or one you run when adding a row.
 
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -32,6 +36,7 @@ const CORPUS = JSON.parse(readFileSync(join(HERE, 'rows.json'), 'utf8'));
 
 const args = process.argv.slice(2);
 const only = args.includes('--row') ? args[args.indexOf('--row') + 1] : undefined;
+const withBoot = args.includes('--boot');
 const work = args.includes('--work')
   ? args[args.indexOf('--work') + 1]
   : join(tmpdir(), 'reticle-false-green-corpus');
@@ -98,6 +103,36 @@ for (const row of CORPUS.rows) {
     bad += 1;
   } else {
     console.log(`   ✅ brokenRef: exactly ${String(expected)} failed, as recorded`);
+  }
+
+  if (!withBoot || row.boot === undefined) continue;
+  // The app must SERVE at the broken ref — that is the state Reticle would be scored against, and
+  // it is the half a row can fail independently of its oracle.
+  const bootCwd = join(dir, row.boot.cwd);
+  const cmd = row.boot.command.replace('{port}', String(row.boot.port));
+  const child = spawn('bash', ['-lc', cmd], { cwd: bootCwd, detached: true, stdio: 'ignore' });
+  try {
+    let served = false;
+    for (let i = 0; i < 60 && !served; i += 1) {
+      await new Promise((r) => setTimeout(r, 1000));
+      served = await fetch(row.boot.url)
+        .then((r) => r.ok)
+        .catch(() => false);
+    }
+    if (served) {
+      console.log(`   ✅ boot: serves at ${row.boot.url} on the broken ref`);
+    } else {
+      console.log(`   ❌ boot: never served at ${row.boot.url} — nothing to drive Reticle against`);
+      bad += 1;
+    }
+  } finally {
+    // Negative pid kills the group: a detached vite orphans its child and holds the port for the
+    // life of the machine otherwise, which makes the NEXT run fail for a reason that is not its own.
+    try {
+      process.kill(-child.pid, 'SIGKILL');
+    } catch {
+      /* already gone */
+    }
   }
 }
 

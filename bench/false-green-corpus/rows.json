@@ -24,7 +24,20 @@
         ],
         "note": "Exactly the two tests the fix shipped fail, and the other 32 still pass. The oracle discriminates this defect specifically rather than reporting the build broken."
       },
-      "whyItIsAFalseGreen": "Double-clicking the queue item that is already playing silently STOPS playback. The item is selected, the queue renders correctly, and nothing on screen says anything is wrong — the failure is a state change nobody asked for. A presence-only check of the queue UI passes here, which is exactly the shape this corpus exists to measure."
+      "whyItIsAFalseGreen": "Double-clicking the queue item that is already playing silently STOPS playback. The item is selected, the queue renders correctly, and nothing on screen says anything is wrong \u2014 the failure is a state change nobody asked for. A presence-only check of the queue UI passes here, which is exactly the shape this corpus exists to measure.",
+      "boot": {
+        "$comment": "The renderer is a Vite app; `pnpm dev` is `tauri dev` and needs a Rust toolchain, but vite alone serves the same frontend as an ordinary web page. Measured: ready in 1.5s, HTTP 200.",
+        "cwd": "packages/player",
+        "command": "npx vite --port {port} --strictPort",
+        "port": 4399,
+        "url": "http://localhost:4399/"
+      },
+      "drive": {
+        "$comment": "What Reticle must catch. The defect is a state change nobody asked for: activating the ALREADY-PLAYING queue item stops playback. Declared as the consequence an agent would asserting on it, so a miss here is a false green in the exact sense this corpus measures.",
+        "defect": "activating the already-current queue item stops playback",
+        "observableVia": "state",
+        "note": "Requires the app to reach a playing queue, which needs its own setup on this fixture. Not yet automated; see verify-rows.mjs --drive."
+      }
     }
   ]
 }
