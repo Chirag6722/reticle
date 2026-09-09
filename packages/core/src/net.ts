@@ -30,6 +30,29 @@ export const NetInitiator = {
    * false red over favicons and fonts.
    */
   DOCUMENT: 'document',
+  /**
+   * The browser is LEAVING for this URL, recorded at the moment of departure.
+   *
+   * Emitted as a NET_PENDING that can never be matched, because that is exactly what it is: a
+   * request the browser is about to make and whose outcome this SDK will never see, having died with
+   * the document. Absence of a completion is honest here rather than a defect, and `reconcileNet`
+   * already renders an unmatched pending as `{status: 'pending'}` — so a `urlContains` assertion
+   * matches it and a `status: 200` one correctly does not.
+   *
+   * It exists because leaving the instrumented origin returned `observation_lost` and nothing else.
+   * "Sign in with <provider>" is on a large share of real apps, and the checkable claim is narrow:
+   * does the app hand the browser to the expected provider, with the expected parameters? Nobody
+   * expects Reticle to verify the provider's own pages. That modest claim came back as `unknown`,
+   * and the reporter's fallback was to read the local endpoint's 302 by hand and report the whole
+   * flow unverified.
+   *
+   * The same event covers a native download — an `<a download href="/api/export.pdf">` produces no
+   * fetch and no new document, so an export was equally unprovable.
+   *
+   * MUST be excluded from the settle oracle: a pending that by construction never completes would
+   * otherwise mean no page containing an outbound link ever settles again.
+   */
+  NAVIGATION: 'navigation',
 } as const;
 export type NetInitiator = (typeof NetInitiator)[keyof typeof NetInitiator];
 
