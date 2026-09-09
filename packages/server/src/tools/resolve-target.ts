@@ -39,9 +39,7 @@ function roleRank(role: unknown): number {
 }
 
 function statesOf(c: TargetCandidate): readonly string[] {
-  return Array.isArray(c.states)
-    ? c.states.filter((s): s is string => 'string' === typeof s)
-    : [];
+  return Array.isArray(c.states) ? c.states.filter((s): s is string => 'string' === typeof s) : [];
 }
 
 function inViewport(c: TargetCandidate): boolean {

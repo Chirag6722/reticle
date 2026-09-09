@@ -476,7 +476,11 @@ export function matchQuery(
   const stampViewport = described.length > 1;
   const descriptors: ElementDescriptor[] = described.map((el) => {
     let base = describe(el, visMemo);
-    if (stampViewport && isInViewport(el, visMemo) && !base.states.includes(ElementState.IN_VIEWPORT)) {
+    if (
+      stampViewport &&
+      isInViewport(el, visMemo) &&
+      !base.states.includes(ElementState.IN_VIEWPORT)
+    ) {
       base = { ...base, states: [...base.states, ElementState.IN_VIEWPORT] };
     }
     if (attrs === undefined || 0 === attrs.length) return base;

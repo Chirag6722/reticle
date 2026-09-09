@@ -98,7 +98,13 @@ describe('an ambiguous refusal ranks the candidates it already has', () => {
 
   it('still refuses — ranking is not a choice', () => {
     const r = resolveTargetRef([
-      { ref: 'e1', role: 'button', name: 'Save', visible: true, states: [ElementState.IN_VIEWPORT] },
+      {
+        ref: 'e1',
+        role: 'button',
+        name: 'Save',
+        visible: true,
+        states: [ElementState.IN_VIEWPORT],
+      },
       { ref: 'e2', role: 'button', name: 'Save', visible: true },
     ]);
     expect(r.kind).toBe('error');
