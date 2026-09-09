@@ -48,6 +48,47 @@
         "status": "NOT drivable in a browser \u2014 the defect is in the Tauri-only player branch",
         "openQuestion": "An earlier note here asked why reticle_snapshot said nodes: 0 while reticle_assert proved text. Resolved, and not a Reticle defect: the two readings were taken against different app states while the remote app was still connecting."
       }
+    },
+    {
+      "id": "excalidraw-bound-label-order",
+      "upstream": "https://github.com/excalidraw/excalidraw.git",
+      "fixedRef": "c9c96f619",
+      "brokenRef": "c9c96f619~1",
+      "subject": "normalize container + bound text order on restore",
+      "oracle": {
+        "kind": "upstream-test",
+        "package": ".",
+        "install": "yarn install --ignore-scripts",
+        "command": "npx vitest --run packages/excalidraw/tests/data/restore.test.ts",
+        "brokenSource": [
+          "packages/element/src/sortElements.ts",
+          "packages/excalidraw/actions/actionGroup.tsx",
+          "packages/excalidraw/data/restore.ts"
+        ]
+      },
+      "verified": {
+        "at": "2026-09-09",
+        "fixedRef": "51 passed",
+        "brokenRef": "2 failed, 49 passed",
+        "failing": [
+          "repairing bindings > should repair bound arrow label order and fractional index",
+          "repairing bindings > should repair bound rectangle label order and fractional index"
+        ],
+        "note": "Exactly the assertions the fix shipped fail; the other 49 pass. The oracle discriminates this defect rather than reporting the build broken."
+      },
+      "boot": {
+        "cwd": "excalidraw-app",
+        "command": "npx vite --port {port} --strictPort",
+        "port": 4396,
+        "url": "http://localhost:4396/",
+        "renders": null,
+        "drivableInBrowser": true,
+        "identifies": {
+          "textContains": "Excalidraw"
+        },
+        "$comment": "A pure web app with no native runtime, which is why this row exists: the nuclear row's defect lives in a Tauri-only branch and cannot be driven in a browser at all. `renders` is null because it has NOT been measured in a browser yet, and the guard treats UNMEASURED as do-not-score."
+      },
+      "whyItIsAFalseGreen": "A restored document renders: the shapes and their labels are all on the canvas and the drawing looks correct. What is wrong is the ORDER of a container and its bound text, which decides z-order and which element a later edit binds to. Nothing on screen announces it, and a presence check of the canvas passes."
     }
   ]
 }
