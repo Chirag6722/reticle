@@ -26,7 +26,6 @@ import type { CompiledProgram, RecordedStep } from './recordings.js';
 import type { FileSystemPort } from '../project/fs-port.js';
 import { flowDir, flowPath, reticleDirPaths, isValidFlowName } from '../project/reticle-dir.js';
 import { describeFlowZodFailure, parseFlowFileText } from './flow-expect-grammar.js';
-import { anchorFieldName } from './flow-secret-field.js';
 
 /**
  * A projectId only scopes storage when it's a safe single path segment (it's stamped from the
@@ -570,6 +569,26 @@ function redactSecretFill(
   const field = anchorFieldName(anchor);
   if (field === undefined || !defaultIsSensitiveKey(field)) return args;
   return { ...args, value: REDACTED_FILL };
+}
+
+/**
+ * What the anchor CALLS the field it points at.
+ *
+ * Every anchor kind names its target differently and all of them can name a password: a testid
+ * (auth-password), an accessible name (role=textbox, name="Password"), a signal. Checking only the
+ * testid variant would redact the app that uses test ids and quietly leak the one that does not —
+ * and an app without test ids is exactly the app whose flows were recorded by role.
+ *
+ * Exported because REPLAY has to agree with redaction about what the field is called. It did not:
+ * the replay paths took a `field` argument that only the testid caller passed, so a role-anchored
+ * secret was redacted at save under one name and looked up at replay under none — the flow typed
+ * the placeholder into the form. One function decides it for both sides, or the two drift again.
+ */
+export function anchorFieldName(anchor: FlowAnchor): string | undefined {
+  if (AnchorKind.TESTID === anchor.kind) return anchor.value;
+  if (AnchorKind.ROLE === anchor.kind) return anchor.name;
+  if (AnchorKind.SIGNAL === anchor.kind) return anchor.name;
+  return undefined;
 }
 
 function buildStep(

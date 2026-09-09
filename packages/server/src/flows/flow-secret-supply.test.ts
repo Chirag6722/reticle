@@ -2,18 +2,15 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   ActionType,
   AnchorKind,
-  FLOW_FILE_VERSION,
   ReticleCommand,
-  asRef,
+  FlowStepTool,
   type CommandResult,
-  type FlowFile,
   type FlowStep,
 } from '@reticlehq/core';
-import { ReticleTool } from '../tools/tool-names.js';
-import { asRecord, asString } from '../tools/tools-helpers.js';
-import { REDACTED_FILL } from './flows.js';
-import { replayFlow, type FlowReplaySession } from './flow-replay.js';
+import { REDACTED_FILL, anchorFieldName } from './flows.js';
 import { replayActionArgs } from './replay.js';
+import { runRoleStep, runSequenceStep } from './flow-step-runners.js';
+import type { FlowReplaySession } from './flow-replay.js';
 
 /**
  * Supplying at replay the secret that was redacted at save.
@@ -28,12 +25,9 @@ import { replayActionArgs } from './replay.js';
  */
 
 const KEY = 'RETICLE_SECRET_AUTH_PASSWORD';
-const ROLE_KEY = 'RETICLE_SECRET_PASSWORD';
 
 afterEach(() => {
   delete process.env[KEY];
-  delete process.env[ROLE_KEY];
-  delete process.env['RETICLE_SECRET_API_KEY'];
 });
 
 describe('a redacted fill at replay time', () => {
@@ -69,135 +63,144 @@ describe('a redacted fill at replay time', () => {
 });
 
 /**
- * Substitution used to fire on the testid runner only. A role-anchored fill, and every sub-step
- * of an act_sequence, called `replayActionArgs` without the field name, so a login recorded against
- * role+name typed the literal placeholder and the app answered 401.
+ * The unit above was always correct. The BUG was every caller but one.
+ *
+ * `replayActionArgs` substitutes only when its `field` argument is passed, and the testid path was
+ * the only one passing it — so a role-anchored login, and the same fill inside an `act_sequence`,
+ * typed the literal `<redacted: supply at replay>` into the form. Three of four replay paths were
+ * broken while every test above passed, because every test above calls the unit directly with a
+ * field already in hand.
+ *
+ * These drive the RUNNERS instead. That is the difference that would have caught it: an optional
+ * parameter is not checkable from the function's own tests, only from the call sites.
  */
-class CapturingSession implements FlowReplaySession {
-  readonly fills: unknown[] = [];
+describe('a redacted fill is supplied however the step is anchored', () => {
+  const ROLE_KEY = 'RETICLE_SECRET_PASSWORD';
+  afterEach(() => {
+    delete process.env[ROLE_KEY];
+  });
 
-  command(name: string, args: Record<string, unknown> = {}): Promise<CommandResult> {
-    if (ReticleCommand.QUERY === name) {
-      return Promise.resolve({
-        kind: 'command_result',
-        id: 'q',
-        ok: true,
-        result: {
-          elements: [
-            {
-              ref: asRef('e1'),
-              role: asString(args['value']) ?? 'textbox',
-              name: asString(args['name']) ?? 'Password',
-              states: [],
-              visible: true,
-            },
-          ],
-        },
-      });
-    }
-    if (ReticleCommand.ACT === name) {
-      this.fills.push(asRecord(args['args'])['value']);
-      return Promise.resolve({ kind: 'command_result', id: 'a', ok: true, result: {} });
-    }
-    if (ReticleCommand.ACT_SEQUENCE === name) {
-      const steps = Array.isArray(args['steps']) ? args['steps'] : [];
-      for (const step of steps) {
-        this.fills.push(asRecord(asRecord(step)['args'])['value']);
-      }
-      return Promise.resolve({ kind: 'command_result', id: 's', ok: true, result: {} });
-    }
-    return Promise.resolve({ kind: 'command_result', id: 'x', ok: true, result: {} });
+  /** Records the args of the ACT command so the test can assert what actually reached the page. */
+  function spySession(): {
+    session: FlowReplaySession;
+    actArgs: () => Record<string, unknown> | undefined;
+  } {
+    let seen: Record<string, unknown> | undefined;
+    const session: FlowReplaySession = {
+      command: (name, args = {}) => {
+        if (ReticleCommand.QUERY === name) {
+          return Promise.resolve({
+            kind: 'command_result',
+            id: 'q',
+            ok: true,
+            result: { elements: [{ ref: 'e1' }] },
+          } as unknown as CommandResult);
+        }
+        if (ReticleCommand.ACT === name) seen = args['args'] as Record<string, unknown>;
+        return Promise.resolve({ kind: 'command_result', id: 'a', ok: true } as CommandResult);
+      },
+      eventsSince: () => [],
+      onEvent: () => () => undefined,
+      elapsed: () => 0,
+    };
+    return { session, actArgs: () => seen };
   }
 
-  eventsSince(): never[] {
-    return [];
-  }
-
-  onEvent(): () => void {
-    return () => undefined;
-  }
-
-  elapsed(): number {
-    return 0;
-  }
-}
-
-function wait(): Promise<{ pass: boolean }> {
-  return Promise.resolve({ pass: true });
-}
-
-function file(steps: FlowStep[]): FlowFile {
-  return { version: FLOW_FILE_VERSION, name: 'sign-in', createdAt: 0, steps };
-}
-
-describe('every replay path supplies a redacted fill from the environment', () => {
-  it('a role-anchored fill is substituted, not typed as the placeholder', async () => {
+  it('supplies the secret on a ROLE-anchored fill', async () => {
     process.env[ROLE_KEY] = 'the-real-password';
-    const session = new CapturingSession();
-    await replayFlow(
+    const { session, actArgs } = spySession();
+    await runRoleStep(
       session,
-      file([
+      {
+        tool: FlowStepTool.ACT,
+        action: ActionType.FILL,
+        args: { value: REDACTED_FILL },
+      } as unknown as FlowStep,
+      0,
+      { kind: AnchorKind.ROLE, role: 'textbox', name: 'Password' },
+      false,
+      () => Promise.resolve(),
+    );
+    expect(
+      actArgs()?.['value'],
+      'a role-anchored login must replay, or sign-in cannot be replayed at all',
+    ).toBe('the-real-password');
+  });
+
+  it('names the field from the anchor’s NAME, not its whole label', () => {
+    // `textbox "Password"` would key on RETICLE_SECRET_TEXTBOX_PASSWORD — different from the testid
+    // path's key for the same field, and not something a user can guess. The env name has to be
+    // predictable or the flow can say a value is missing without saying what to set.
+    // `anchorFieldName` is the function REDACTION already uses to decide what to hide. Replay must
+    // ask the same one, or a secret is hidden under one name and looked up under another.
+    expect(anchorFieldName({ kind: AnchorKind.ROLE, role: 'textbox', name: 'Password' })).toBe(
+      'Password',
+    );
+  });
+});
+
+/**
+ * The sequence path, which is where a recorded login usually lands: fill, fill, click, in one step.
+ *
+ * Each sub-step carries its own anchor, so each needs its own field name — a single field threaded
+ * for the whole sequence would supply the password to the username box.
+ */
+describe('a redacted fill inside an act_sequence is supplied per sub-step', () => {
+  const KEY_PW = 'RETICLE_SECRET_PASSWORD';
+  afterEach(() => {
+    delete process.env[KEY_PW];
+  });
+
+  it('substitutes on the sub-step that carries the redacted fill', async () => {
+    process.env[KEY_PW] = 'the-real-password';
+    let sent: { args: Record<string, unknown> }[] | undefined;
+    const session: FlowReplaySession = {
+      command: (name, args = {}) => {
+        if (ReticleCommand.QUERY === name) {
+          return Promise.resolve({
+            kind: 'command_result',
+            id: 'q',
+            ok: true,
+            result: { elements: [{ ref: 'e1' }] },
+          } as unknown as CommandResult);
+        }
+        if (ReticleCommand.ACT_SEQUENCE === name) {
+          sent = args['steps'] as { args: Record<string, unknown> }[];
+        }
+        return Promise.resolve({ kind: 'command_result', id: 'a', ok: true } as CommandResult);
+      },
+      eventsSince: () => [],
+      onEvent: () => () => undefined,
+      elapsed: () => 0,
+    };
+    await runSequenceStep(
+      session,
+      {
+        tool: FlowStepTool.ACT_SEQUENCE,
+        anchor: { kind: AnchorKind.ROLE, role: 'form', name: 'Sign in' },
+        args: {},
+      },
+      0,
+      [
         {
-          tool: ReticleTool.ACT,
+          tool: FlowStepTool.ACT,
+          anchor: { kind: AnchorKind.ROLE, role: 'textbox', name: 'Email' },
+          action: ActionType.FILL,
+          args: { value: 'a@b.test' },
+        },
+        {
+          tool: FlowStepTool.ACT,
           anchor: { kind: AnchorKind.ROLE, role: 'textbox', name: 'Password' },
           action: ActionType.FILL,
           args: { value: REDACTED_FILL },
         },
-      ]),
-      wait,
-      60,
+      ],
+      false,
+      () => Promise.resolve(),
     );
-    expect(session.fills).toEqual(['the-real-password']);
-  });
-
-  it('a testid-anchored fill still substitutes (the path that already worked)', async () => {
-    process.env[KEY] = 'the-real-password';
-    const session = new CapturingSession();
-    await replayFlow(
-      session,
-      file([
-        {
-          tool: ReticleTool.ACT,
-          anchor: { kind: AnchorKind.TESTID, value: 'auth-password' },
-          action: ActionType.FILL,
-          args: { value: REDACTED_FILL },
-        },
-      ]),
-      wait,
-      60,
+    expect(sent?.[1]?.args['value'], 'the password sub-step gets the secret').toBe(
+      'the-real-password',
     );
-    expect(session.fills).toEqual(['the-real-password']);
-  });
-
-  it('each act_sequence sub-step is substituted from its own anchor', async () => {
-    process.env[ROLE_KEY] = 'the-real-password';
-    process.env[KEY] = 'the-real-password';
-    const session = new CapturingSession();
-    await replayFlow(
-      session,
-      file([
-        {
-          tool: ReticleTool.ACT_SEQUENCE,
-          anchor: { kind: AnchorKind.ROLE, role: 'form', name: 'login' },
-          steps: [
-            {
-              tool: ReticleTool.ACT,
-              anchor: { kind: AnchorKind.ROLE, role: 'textbox', name: 'Password' },
-              action: ActionType.FILL,
-              args: { value: REDACTED_FILL },
-            },
-            {
-              tool: ReticleTool.ACT,
-              anchor: { kind: AnchorKind.TESTID, value: 'auth-password' },
-              action: ActionType.FILL,
-              args: { value: REDACTED_FILL },
-            },
-          ],
-        },
-      ]),
-      wait,
-      60,
-    );
-    expect(session.fills).toEqual(['the-real-password', 'the-real-password']);
+    expect(sent?.[0]?.args['value'], 'and the email sub-step is untouched').toBe('a@b.test');
   });
 });
