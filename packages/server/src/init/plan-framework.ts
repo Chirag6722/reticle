@@ -50,6 +50,7 @@ import { StepStatus, type PlanInput, type Step } from './plan.js';
 import { Framework } from './detect.js';
 import { RETICLE_DEFAULT_PORT } from '@reticlehq/core';
 import { CSP_STEP_TITLE } from './csp-check.js';
+import { StepTitle } from './connect-steps.js';
 import { diagnoseWebCsp } from './csp-doctor.js';
 
 /** What adding `reticle()` to a Vite config buys, which differs by framework. */
@@ -72,7 +73,7 @@ export const VITE_PLUGIN_DETAIL = {
   REACT_ROUTER: 'add reticle() to plugins (stamps data-reticle-source in .tsx components)',
 } as const;
 
-const CAPABILITIES_TITLE = 'Capabilities + store';
+const CAPABILITIES_TITLE = StepTitle.CAPABILITIES;
 
 /**
  * The one step `init` genuinely cannot finish, addressed to the AGENT reading this report.
@@ -87,7 +88,7 @@ const CAPABILITIES_TITLE = 'Capabilities + store';
  * emits nothing it cannot prove, because a wrong import here throws on every dev page load — worse
  * than an empty file.
  */
-const CAPABILITIES_TODO_TITLE = 'AGENT: finish the capabilities file';
+const CAPABILITIES_TODO_TITLE = StepTitle.CAPABILITIES_TODO;
 
 function capabilitiesTodo(path: string, stores: readonly string[]): string {
   return (
@@ -219,7 +220,7 @@ function viteConfigSteps(input: PlanInput, detail: string): Step[] {
   if (cfg !== null && hasOptOut(cfg.source)) {
     return [
       {
-        title: 'Vite plugin',
+        title: StepTitle.VITE_PLUGIN,
         target: cfg.path,
         status: StepStatus.NOTICE,
         detail: `left alone: this config carries ${OPT_OUT_MARKER}. Remove that marker to instrument this app.`,
@@ -229,7 +230,7 @@ function viteConfigSteps(input: PlanInput, detail: string): Step[] {
   if (null === cfg) {
     return [
       {
-        title: 'Vite plugin',
+        title: StepTitle.VITE_PLUGIN,
         target: 'vite.config',
         status: StepStatus.MANUAL,
         detail: viteManual(port, input.detection.uiLibrary),
@@ -240,7 +241,7 @@ function viteConfigSteps(input: PlanInput, detail: string): Step[] {
   if (patch.kind === VitePatchKind.ALREADY) {
     return [
       {
-        title: 'Vite plugin',
+        title: StepTitle.VITE_PLUGIN,
         target: cfg.path,
         status: StepStatus.ALREADY,
         detail: 'reticle() already in plugins',
@@ -250,7 +251,7 @@ function viteConfigSteps(input: PlanInput, detail: string): Step[] {
   if (patch.kind === VitePatchKind.MANUAL) {
     return [
       {
-        title: 'Vite plugin',
+        title: StepTitle.VITE_PLUGIN,
         target: cfg.path,
         status: StepStatus.MANUAL,
         detail: `${patch.reason}\n\n${viteManual(port, input.detection.uiLibrary)}`,
@@ -259,7 +260,7 @@ function viteConfigSteps(input: PlanInput, detail: string): Step[] {
   }
   return [
     {
-      title: 'Vite plugin',
+      title: StepTitle.VITE_PLUGIN,
       target: cfg.path,
       status: StepStatus.APPLY,
       detail,
@@ -274,7 +275,7 @@ function viteConfigSteps(input: PlanInput, detail: string): Step[] {
  * there, and the hand-edit instructions when the file shape wasn't one we recognise.
  */
 function patchStep(
-  title: string,
+  title: StepTitle,
   path: string,
   patch: SourcePatch,
   applyDetail: string,
@@ -337,19 +338,19 @@ export function nextSteps(input: PlanInput): Step[] {
   const devFile: Step = input.nextReticleDevExists
     ? devStale
       ? {
-          title: 'ReticleDev component',
+          title: StepTitle.RETICLE_DEV_COMPONENT,
           target: devPath,
           status: StepStatus.MANUAL,
           detail: NEXT_DEV_FILE_STALE_DETAIL,
         }
       : {
-          title: 'ReticleDev component',
+          title: StepTitle.RETICLE_DEV_COMPONENT,
           target: devPath,
           status: StepStatus.ALREADY,
           detail: 'file exists',
         }
     : {
-        title: 'ReticleDev component',
+        title: StepTitle.RETICLE_DEV_COMPONENT,
         target: devPath,
         status: StepStatus.APPLY,
         detail: 'create dev-only connect component',
@@ -402,14 +403,14 @@ export function nextSteps(input: PlanInput): Step[] {
     devFile,
     ...nextTodo,
     patchStep(
-      'Next config (withReticle)',
+      StepTitle.NEXT_CONFIG,
       configFile,
       configPatch,
       'wrap the export in withReticle (source mapping, dev-only)',
       nextConfigManual(configFile),
     ),
     patchStep(
-      'Mount ReticleDev',
+      StepTitle.MOUNT_RETICLE_DEV,
       layout?.path ?? NEXT_LAYOUT_PATH,
       layoutPatch,
       'mount <ReticleDev /> in the root layout (dev-only)',
@@ -464,7 +465,7 @@ export function craSteps(input: PlanInput): Step[] {
   const steps: Step[] = [
     ...webpack4Step(input),
     {
-      title: 'Reticle connect module',
+      title: StepTitle.CONNECT_MODULE,
       target: modulePath,
       status: StepStatus.APPLY,
       detail: 'create the dev-only connect (CRA cannot inject through public/index.html)',
@@ -487,7 +488,7 @@ export function craSteps(input: PlanInput): Step[] {
   );
   if (env !== null) {
     steps.push({
-      title: 'Pairing token',
+      title: StepTitle.PAIRING_TOKEN,
       target: CRA_ENV_PATH,
       status: StepStatus.APPLY,
       // REACT_APP_* is the only thing CRA inlines into browser code; without the token the bridge
@@ -500,7 +501,7 @@ export function craSteps(input: PlanInput): Step[] {
     // Beside the write, not inside it. A ✓ line is one SKILL.md tells the reader to skip, and this
     // is the fact that decides whether the install works for anyone but the person running it.
     steps.push({
-      title: 'Pairing token is per-machine',
+      title: StepTitle.PAIRING_TOKEN_PER_MACHINE,
       target: CRA_ENV_PATH,
       status: StepStatus.NOTICE,
       detail: CRA_TOKEN_PER_MACHINE_NOTICE,
@@ -509,7 +510,7 @@ export function craSteps(input: PlanInput): Step[] {
     // No daemon has ever run here, so there is no token to inline. Omitting the step entirely made
     // init report all-green for an app that could never pair.
     steps.push({
-      title: 'Pairing token',
+      title: StepTitle.PAIRING_TOKEN,
       target: CRA_ENV_PATH,
       status: StepStatus.MANUAL,
       // `reticle serve`, not `reticle start` — the latter is not a verb this CLI dispatches, and
@@ -520,7 +521,7 @@ export function craSteps(input: PlanInput): Step[] {
   }
   if (null === entry) {
     steps.push({
-      title: 'Connect snippet (CRA)',
+      title: StepTitle.CONNECT_SNIPPET_CRA,
       target: 'src/index.tsx',
       status: StepStatus.MANUAL,
       detail: `Add \`${CRA_DEV_MODULE_IMPORT}\` to your app entry (src/index.tsx or src/index.js), after the existing imports.`,
@@ -531,13 +532,13 @@ export function craSteps(input: PlanInput): Step[] {
   steps.push(
     null === patched
       ? {
-          title: 'Connect snippet (CRA)',
+          title: StepTitle.CONNECT_SNIPPET_CRA,
           target: entry.path,
           status: StepStatus.ALREADY,
           detail: 'already imported',
         }
       : {
-          title: 'Connect snippet (CRA)',
+          title: StepTitle.CONNECT_SNIPPET_CRA,
           target: entry.path,
           status: StepStatus.APPLY,
           detail: 'import the dev-only connect module',
@@ -559,7 +560,7 @@ export function craSteps(input: PlanInput): Step[] {
 export function nuxtSteps(input: PlanInput): Step[] {
   return [
     {
-      title: 'Connect snippet (Nuxt)',
+      title: StepTitle.CONNECT_SNIPPET_NUXT,
       target: NUXT_PLUGIN_PATH,
       status: StepStatus.MANUAL,
       detail: nuxtManual(input.options.port, input.options.projectId),
@@ -577,7 +578,7 @@ export function nuxtSteps(input: PlanInput): Step[] {
 export function reactRouterSteps(input: PlanInput): Step[] {
   return [
     {
-      title: 'Connect snippet (React Router)',
+      title: StepTitle.CONNECT_SNIPPET_REACT_ROUTER,
       target: REACT_ROUTER_ENTRY_PATH,
       status: StepStatus.MANUAL,
       detail: reactRouterManual(
@@ -591,7 +592,7 @@ export function reactRouterSteps(input: PlanInput): Step[] {
 
 export function svelteKitSteps(input: PlanInput): Step[] {
   const unverified: Step = {
-    title: 'SvelteKit is UNVERIFIED',
+    title: StepTitle.SVELTEKIT_UNVERIFIED,
     target: SVELTEKIT_HOOKS_PATH,
     status: StepStatus.NOTICE,
     detail: UNVERIFIED_FRAMEWORK_NOTE,
@@ -602,7 +603,7 @@ export function svelteKitSteps(input: PlanInput): Step[] {
     return [
       unverified,
       {
-        title: 'Reticle client hook',
+        title: StepTitle.CLIENT_HOOK,
         target: SVELTEKIT_HOOKS_PATH,
         status: StepStatus.ALREADY,
         detail: 'file exists',
@@ -612,7 +613,7 @@ export function svelteKitSteps(input: PlanInput): Step[] {
   return [
     unverified,
     {
-      title: 'Reticle client hook',
+      title: StepTitle.CLIENT_HOOK,
       target: SVELTEKIT_HOOKS_PATH,
       status: StepStatus.APPLY,
       detail: 'create dev-only client connect (SvelteKit renders via app.html)',
@@ -644,7 +645,7 @@ export function astroSteps(input: PlanInput): Step[] {
   if (null === config || null === layout) {
     return [
       {
-        title: 'Connect snippet (Astro)',
+        title: StepTitle.CONNECT_SNIPPET_ASTRO,
         // Name what is actually there. `astro.config + layout` pointed at a layout this project may
         // not have — reported on a fixture with only src/pages/index.astro.
         target:
@@ -670,7 +671,7 @@ export function astroSteps(input: PlanInput): Step[] {
   if (configPatch.kind === PatchKind.MANUAL || layoutPatch.kind === PatchKind.MANUAL) {
     return [
       {
-        title: 'Connect snippet (Astro)',
+        title: StepTitle.CONNECT_SNIPPET_ASTRO,
         target: `${config.path} + ${layout.path}`,
         status: StepStatus.MANUAL,
         detail: manualWithLayout,
@@ -680,14 +681,14 @@ export function astroSteps(input: PlanInput): Step[] {
   const envPatch = patchAstroEnvDts(input.astroEnvDts ?? null);
   return [
     patchStep(
-      'Astro config (token + build target)',
+      StepTitle.ASTRO_CONFIG,
       config.path,
       configPatch,
       'inline the pairing token and raise build.target to es2022',
       manualWithLayout,
     ),
     patchStep(
-      'Connect snippet (Astro)',
+      StepTitle.CONNECT_SNIPPET_ASTRO,
       layout.path,
       layoutPatch,
       'add the dev-only connect <script> before </body>',
@@ -697,7 +698,7 @@ export function astroSteps(input: PlanInput): Step[] {
     // (#677). Independent of the two halves above: even an ALREADY config/layout still needs this
     // when the env file was never written.
     patchStep(
-      'Astro env types (Vite defines)',
+      StepTitle.ASTRO_ENV_DTS,
       ASTRO_ENV_DTS_PATH,
       envPatch,
       'declare __RETICLE_TOKEN__ / __RETICLE_ROOT__ for astro check',
@@ -763,36 +764,44 @@ export function cspStep(input: PlanInput): Step[] {
  * together they crossed the cap while neither did alone.
  */
 export function frameworkSteps(input: PlanInput): Step[] {
-  const steps: Step[] = [];
-  if (input.detection.framework === Framework.VITE) {
-    steps.push(...viteSteps(input));
-  } else if (input.detection.framework === Framework.NEXT) {
-    steps.push(...nextSteps(input));
-  } else if (input.detection.framework === Framework.ASTRO) {
-    steps.push(...astroSteps(input));
-  } else if (input.detection.framework === Framework.CRA) {
-    steps.push(...craSteps(input));
-  } else if (input.detection.framework === Framework.NUXT) {
-    steps.push(...nuxtSteps(input));
-  } else if (input.detection.framework === Framework.REACT_ROUTER) {
-    steps.push(...reactRouterSteps(input));
-    // The Vite plugin too, for the reason SvelteKit gets it: React Router framework mode IS a Vite
-    // app, and the plugin is what stamps data-reticle-source. Without it the app connects and every
-    // verdict comes back with no file:line.
-    steps.push(...viteSteps(input, VITE_PLUGIN_DETAIL.REACT_ROUTER));
-  } else if (input.detection.framework === Framework.SVELTEKIT) {
-    steps.push(...svelteKitSteps(input));
-    // The Vite plugin as well as the client hook. `init` already INSTALLS @reticlehq/vite-plugin for
-    // SvelteKit and then never wired it into the config, so it sat in package.json doing nothing —
-    // which is why a SvelteKit app connected fine and every verdict came back with no file:line.
-    steps.push(...viteSteps(input, VITE_PLUGIN_DETAIL.SVELTEKIT));
-  } else {
-    steps.push({
-      title: 'Connect snippet',
-      target: 'index.html',
-      status: StepStatus.MANUAL,
-      detail: htmlManual(input.options.port, input.options.projectId, input.pairingToken),
-    });
+  // A SWITCH where every case returns, deliberately, and with no `default`. The if/else chain this
+  // replaced ended in an `else` that emitted the plain-HTML manual snippet, so a member of
+  // `Framework` nobody wired here was installed as static HTML: every step green, no session ever.
+  // That is what happened to SvelteKit and to React Router, both of which are named above.
+  //
+  // Because the declared return type is `Step[]` and no case falls out, adding a member to
+  // `Framework` now makes this function lack an ending return and the BUILD goes red — the same
+  // guard `frameworkPackages` in plan.ts already relies on. `Framework.HTML` is an explicit case,
+  // not a fallthrough, so the manual path is something a framework is sent to on purpose.
+  switch (input.detection.framework) {
+    case Framework.VITE:
+      return viteSteps(input);
+    case Framework.NEXT:
+      return nextSteps(input);
+    case Framework.ASTRO:
+      return astroSteps(input);
+    case Framework.CRA:
+      return craSteps(input);
+    case Framework.NUXT:
+      return nuxtSteps(input);
+    case Framework.REACT_ROUTER:
+      // The Vite plugin too, for the reason SvelteKit gets it: React Router framework mode IS a Vite
+      // app, and the plugin is what stamps data-reticle-source. Without it the app connects and
+      // every verdict comes back with no file:line.
+      return [...reactRouterSteps(input), ...viteSteps(input, VITE_PLUGIN_DETAIL.REACT_ROUTER)];
+    case Framework.SVELTEKIT:
+      // The Vite plugin as well as the client hook. `init` already INSTALLS @reticlehq/vite-plugin
+      // for SvelteKit and then never wired it into the config, so it sat in package.json doing
+      // nothing — which is why a SvelteKit app connected fine and every verdict had no file:line.
+      return [...svelteKitSteps(input), ...viteSteps(input, VITE_PLUGIN_DETAIL.SVELTEKIT)];
+    case Framework.HTML:
+      return [
+        {
+          title: StepTitle.CONNECT_SNIPPET,
+          target: 'index.html',
+          status: StepStatus.MANUAL,
+          detail: htmlManual(input.options.port, input.options.projectId, input.pairingToken),
+        },
+      ];
   }
-  return steps;
 }
