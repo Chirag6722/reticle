@@ -304,7 +304,26 @@ export class BrowserPool {
     this.#aliases.set(registeredId, leaseId);
   }
 
-  /** The lease this id refers to: itself, or whatever it is an alias for. */
+  /**
+   * The lease this id refers to: itself, or whatever it is an alias for.
+   *
+   * EVERY AGENT-FACING LOOKUP MUST GO THROUGH THIS. A leased page runs the SDK, which dials and
+   * registers under its OWN session id, so the id `reticle_sessions` shows an agent is routinely the
+   * alias rather than the lease key. Four capabilities used the raw map instead — screenshots,
+   * hover, network mocks and the dial-failure diagnostic — and every one of them refused for a
+   * lease that was alive and working, addressed by the only id the agent had been given.
+   *
+   * `reticle_network_mock` is where that surfaced: it reported `no-cdp-provider` in every
+   * configuration a reporter could reach, including after `reticle drive`, and the recommendation it
+   * printed ("start with `reticle drive <url>`") could not fix it because the provider was never the
+   * problem. Their conclusion was that error-path verification was impossible without shipping
+   * failure-injection code inside the application — which is exactly what an external mock exists to
+   * avoid.
+   *
+   * `acquire` and `#release` are the two exceptions and must stay raw: the first is registering the
+   * lease key itself before any alias can exist, and the second must delete that key rather than
+   * whatever it points at.
+   */
   #leaseIdOf(sessionId: string): string {
     return this.#active.has(sessionId) ? sessionId : (this.#aliases.get(sessionId) ?? sessionId);
   }
@@ -333,7 +352,7 @@ export class BrowserPool {
     sessionId: string,
     opts: { fullPage?: boolean } = {},
   ): Promise<Uint8Array | undefined> {
-    const lease = this.#active.get(sessionId);
+    const lease = this.#active.get(this.#leaseIdOf(sessionId));
     if (lease === undefined || lease.page.screenshot === undefined) return undefined;
     this.touch(sessionId);
     try {
@@ -353,7 +372,7 @@ export class BrowserPool {
    * Touches the lease like any other tool call, so hovering keeps it alive.
    */
   async hoverLease(sessionId: string, x: number, y: number): Promise<boolean> {
-    const lease = this.#active.get(sessionId);
+    const lease = this.#active.get(this.#leaseIdOf(sessionId));
     if (lease === undefined || lease.page.hover === undefined) return false;
     this.touch(sessionId);
     try {
@@ -372,7 +391,7 @@ export class BrowserPool {
    * Touches the lease like any other tool call, so mocking keeps it alive.
    */
   async setMocksLease(sessionId: string, rules: readonly PooledMockRule[]): Promise<boolean> {
-    const lease = this.#active.get(sessionId);
+    const lease = this.#active.get(this.#leaseIdOf(sessionId));
     if (lease === undefined || lease.page.installMocks === undefined) return false;
     this.touch(sessionId);
     try {
@@ -533,7 +552,7 @@ export class BrowserPool {
    * Undefined means the page said nothing — never that it dialled the right place.
    */
   dialFailureUrl(sessionId: string): string | undefined {
-    return this.#active.get(sessionId)?.dialFailureUrl;
+    return this.#active.get(this.#leaseIdOf(sessionId))?.dialFailureUrl;
   }
 
   /**
