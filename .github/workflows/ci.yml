@@ -5,6 +5,20 @@ on:
     branches: [main]
   pull_request:
 
+# One run per branch, and the older one loses.
+#
+# A PR branch here takes a median of 5 CI runs and as many as 8, and every superseded run used to
+# execute to completion — during the audit that wrote this comment, 8 runs for the same branch were
+# queued at once, seven of them grading a diff nobody would ever merge. They also sit in front of
+# the runs that matter, so the cost is not only minutes, it is the queue.
+#
+# Cancellation is scoped to `pull_request` ONLY. A push to main must always run to completion: its
+# result is the record of what that commit did, `fixtures-dispatch` fires from it, and two merges
+# landing close together must not silently erase the first one's verdict.
+concurrency:
+  group: '${{ github.workflow }}-${{ github.ref }}'
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 # Least privilege by default (OpenSSF Scorecard Token-Permissions): the whole workflow is read-only;
 # any job that needs more must declare it explicitly. Nothing here writes to the repo.
 permissions:
@@ -331,22 +345,41 @@ jobs:
     outputs:
       install: ${{ steps.filter.outputs.install }}
       bench: ${{ steps.filter.outputs.bench }}
+      desktop: ${{ steps.filter.outputs.desktop }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
       - id: filter
         run: |
-          BASE="origin/${{ github.base_ref || 'main' }}"
+          # On a PR the base is the merge base with the target branch. On a PUSH TO MAIN there is no
+          # base_ref, so this used to resolve to `origin/main` — which on main IS HEAD, so the diff
+          # came back EMPTY, fell into the "no diff" branch below, and every merge to main paid the
+          # full pipeline. The previous tip is the right base there: `github.event.before`, except on
+          # a branch's first push where it is all zeros, in which case HEAD~1 says the same thing.
+          if [ "${{ github.event_name }}" = "push" ]; then
+            BEFORE="${{ github.event.before }}"
+            case "$BEFORE" in
+              ''|0000000000000000000000000000000000000000) BASE="HEAD~1" ;;
+              *) BASE="$BEFORE" ;;
+            esac
+          else
+            BASE="origin/${{ github.base_ref || 'main' }}"
+          fi
           if ! git rev-parse --verify "$BASE" >/dev/null 2>&1; then
             echo "cannot resolve $BASE — running every tier"
             echo "install=true" >> "$GITHUB_OUTPUT"
+            echo "desktop=true" >> "$GITHUB_OUTPUT"
             echo "bench=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
           CHANGED="$(git diff --name-only "$BASE"...HEAD || true)"
+          # Still fails OPEN. A base that resolves but produces nothing — a force-push, an empty
+          # merge, a re-run of a commit already on the base — cannot tell us what changed, and the
+          # safe direction to be wrong in is running too much.
           if [ -z "$CHANGED" ]; then
             echo "no diff against $BASE — running every tier"
             echo "install=true" >> "$GITHUB_OUTPUT"
+            echo "desktop=true" >> "$GITHUB_OUTPUT"
             echo "bench=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
           echo "changed files:"; echo "$CHANGED" | sed 's/^/  /'
@@ -361,6 +394,17 @@ jobs:
             echo "install=true" >> "$GITHUB_OUTPUT"
           else
             echo "install=false" >> "$GITHUB_OUTPUT"
+          fi
+          # The desktop battery boots a real Electron main process and BUILDS a Tauri binary from
+          # Rust — the slowest job in this file — and it ran on every PR including docs-only ones.
+          # Both adapters, both smoke apps, and the three browser/server files that are desktop-only
+          # by definition: the IPC observer, desktop capture, and the setup/doctor pair that shape
+          # and diagnose a desktop install. Anything broader (all of packages/browser, say) would
+          # route most PRs here and give the routing back for nothing.
+          if echo "$CHANGED" | grep -qE '^(packages/(electron|tauri)/|apps/(electron|tauri)-smoke/|packages/browser/src/observers/ipc\.ts|packages/browser/src/dom/desktop-capture\.ts|packages/server/src/setup/desktop-shape\.ts|packages/server/src/init/desktop-doctor\.ts|\.github/workflows/ci\.yml)'; then
+            echo "desktop=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "desktop=false" >> "$GITHUB_OUTPUT"
           fi
           # What can move TOKEN COST, which is a different question from what can break the install.
           # A tool's description and input schema are charged to the agent on every turn, so an edit
@@ -430,18 +474,27 @@ jobs:
   # on a mac could have surfaced, because on a mac the spawn simply works.
   #
   # fail-fast is off: which platform an install breaks on is the most useful single fact here, and
-  # cancelling the sibling throws it away.
+  # cancelling the sibling throws it away. The same reasoning is why the scaffolds are a matrix
+  # dimension rather than a loop inside one job.
+  #
+  # ONE SCAFFOLD PER CELL, since this commit. The five scaffolds ran sequentially in a single job,
+  # so wall clock was linear in the number of init paths — 34 minutes on Windows against a 75-minute
+  # cap, i.e. the documented scaling cliff: adding a sixth framework was a change to how long every
+  # PR takes. Fanned out, the slowest cell is one scaffold plus install and build, about seven
+  # minutes, and a seventh framework costs a runner rather than a queue.
   install-gate:
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
+        scaffold: [vite-react, vite-vue, next-app-router, next-pages-router, monorepo-subdir]
     runs-on: ${{ matrix.os }}
     needs: [verify, changes]
     if: needs.changes.outputs.install == 'true'
-    # Windows npm installs five real scaffolds appreciably slower than Linux does; the ubuntu run
-    # measured 33 minutes against the old 40-minute cap, which leaves no room on the slower machine.
-    timeout-minutes: 75
+    # One scaffold, twice (negative control then the real run), plus the workspace install and build
+    # every cell pays. Windows npm-installs a real app appreciably slower than Linux does, so the cap
+    # keeps generous headroom over the ~7 minutes this measures at.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
@@ -457,14 +510,14 @@ jobs:
       # a green that means nothing. check-boundaries and check-lossy-transforms already self-test in
       # CI for the same reason.
       - name: Install-gate self-test (a guard that has never failed is not a guard)
-        run: pnpm gate:install:self-test
+        run: pnpm gate:install:self-test --only ${{ matrix.scaffold }}
       - name: Install gate (scaffold, init, boot, open, assert a session)
-        run: pnpm gate:install
+        run: pnpm gate:install --only ${{ matrix.scaffold }}
       - name: Upload gate log on failure
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: install-gate-logs-${{ matrix.os }}
+          name: install-gate-logs-${{ matrix.os }}-${{ matrix.scaffold }}
           path: /tmp/reticle-verdaccio.log
           if-no-files-found: ignore
 
@@ -577,9 +630,15 @@ jobs:
   # This exists because v2.3.0 shipped Electron and Tauri support with no automated coverage at all:
   # the unit gate cannot boot a main process, and run-ci.sh boots no desktop runtime. Every bug the
   # two specs pin was found by driving these apps by hand.
+  #
+  # Path-routed as of this commit: it ran on every PR, docs-only ones included, and it is the
+  # slowest job here because most of its wall clock is a Rust build. A skip is safe because the
+  # `gate` aggregate below accepts `skipped` alongside `success`, so a docs PR still goes green
+  # without this ever starting.
   desktop-e2e:
     runs-on: ubuntu-latest
-    needs: verify
+    needs: [verify, changes]
+    if: needs.changes.outputs.desktop == 'true'
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
