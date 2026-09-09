@@ -4,7 +4,13 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { RETICLE_URL_PARAM, Verified, VerifiedReason } from '@reticlehq/core';
+import {
+  LeaseNotReadyReason,
+  ReticleCommand,
+  RETICLE_URL_PARAM,
+  Verified,
+  VerifiedReason,
+} from '@reticlehq/core';
 import {
   LEASE_TOOLS,
   acquireLeasedSession,
@@ -335,6 +341,133 @@ describe('reticle_lease_acquire', () => {
     });
 
     expect(aliased).toContainEqual([appNamed.id, first.sessionId]);
+    expect(acquired).toHaveLength(1);
+  });
+
+  /**
+   * A sessions stub whose tab answers, or does not, when probed.
+   *
+   * `answers: 'error'` is the interesting one: a reply saying the command failed still PROVES the
+   * SDK is alive, which is the whole question a liveness probe asks.
+   */
+  function sessionsThatAnswer(
+    id: string,
+    answers: 'ok' | 'error' | 'never',
+  ): {
+    deps: { get: (i: string) => unknown; all: () => { id: string; url?: string }[] };
+    probes: string[];
+  } {
+    const probes: string[] = [];
+    const session = {
+      id,
+      command: (name: string) => {
+        probes.push(name);
+        if ('never' === answers) return Promise.reject(new Error('command timed out after 1500ms'));
+        return Promise.resolve({
+          ok: 'ok' === answers,
+          error: 'error' === answers ? 'nope' : undefined,
+        });
+      },
+    };
+    // Answers for ANY id on purpose: the mint path's readiness wait then resolves on its first
+    // look, so a test about the mint path costs milliseconds instead of the full 10s wait.
+    return {
+      deps: { get: (i: string) => (i === id || 'any' === id ? session : undefined), all: () => [] },
+      probes,
+    };
+  }
+
+  it('probes a reused lease and reports a tab that has stopped answering', async () => {
+    // `ready: true` used to mean "a row is in the sessions map", which is why a lease could come back
+    // ready and then be rejected by snapshot, state and console. Presence is not liveness: the map
+    // still holds a tab that is attached, streaming events, and answering nothing.
+    const { pool, acquired } = fakePool();
+    const first = (await tool(ReticleTool.LEASE_ACQUIRE)(
+      { ...baseDeps, pool },
+      { url: 'http://localhost:3000/' },
+    )) as { sessionId: string };
+    const { deps: sessions, probes } = sessionsThatAnswer(first.sessionId, 'never');
+
+    const second = (await tool(ReticleTool.LEASE_ACQUIRE)(
+      { ...baseDeps, pool, sessions } as unknown as ToolDeps,
+      { url: 'http://localhost:3000/' },
+    )) as { sessionId: string; ready: boolean; reused?: boolean; notReadyReason?: string };
+
+    expect(probes).toEqual([ReticleCommand.CAPABILITIES]);
+    expect(second.ready).toBe(false);
+    expect(second.notReadyReason).toBe(LeaseNotReadyReason.SDK_STOPPED_ANSWERING);
+    // Still the lease it found. A wedged tab is reported, not silently swapped for a second context.
+    expect(second.sessionId).toBe(first.sessionId);
+    expect(acquired).toHaveLength(1);
+  });
+
+  it('counts any reply as alive, including one that says the command failed', async () => {
+    // The probe asks whether the SDK answers AT ALL, not what it says. An SDK too old to know the
+    // command replies `unknown command '...'` — which is an answer, and so is proof.
+    const { pool } = fakePool();
+    const first = (await tool(ReticleTool.LEASE_ACQUIRE)(
+      { ...baseDeps, pool },
+      { url: 'http://localhost:3000/' },
+    )) as { sessionId: string };
+    const { deps: sessions } = sessionsThatAnswer(first.sessionId, 'error');
+
+    const second = (await tool(ReticleTool.LEASE_ACQUIRE)(
+      { ...baseDeps, pool, sessions } as unknown as ToolDeps,
+      { url: 'http://localhost:3000/' },
+    )) as { ready: boolean; reused?: boolean; notReadyReason?: string };
+
+    expect(second.ready).toBe(true);
+    expect(second.reused).toBe(true);
+    expect(second.notReadyReason).toBeUndefined();
+  });
+
+  it('does not probe on the mint path, where the wait that just resolved is the evidence', async () => {
+    // Cost control, and the reason it is free: on a mint the readiness wait resolved moments ago, so
+    // a probe would re-ask a question just answered. On reuse the last evidence may be minutes old.
+    const { pool } = fakePool();
+    const { deps: sessions, probes } = sessionsThatAnswer('any', 'ok');
+
+    await tool(ReticleTool.LEASE_ACQUIRE)({ ...baseDeps, pool, sessions } as unknown as ToolDeps, {
+      url: 'http://localhost:3000/',
+    });
+
+    expect(probes).toEqual([]);
+  });
+
+  it('names the other reason when no SDK ever dialled in', async () => {
+    // The two `ready: false` situations are opposite, and they used to share a bare `false`: check
+    // the install, versus recover a tab that is wedged.
+    const { pool } = fakePool();
+    // `lastClosure` is present because the not-connected hint reads it on this branch — the stub is
+    // matching the registry's real shape, not widening the code under test.
+    const sessions = { get: () => undefined, all: () => [], lastClosure: () => undefined };
+
+    const result = (await tool(ReticleTool.LEASE_ACQUIRE)(
+      { ...baseDeps, pool, sessions } as unknown as ToolDeps,
+      { url: 'http://localhost:3000/' },
+    )) as { ready: boolean; notReadyReason?: string };
+
+    expect(result.ready).toBe(false);
+    expect(result.notReadyReason).toBe(LeaseNotReadyReason.SDK_NEVER_DIALLED);
+    // A generous per-test budget, not a duration assertion: this is the ONLY case that pays the
+    // real readiness wait, because proving "no SDK ever dialled in" means letting it run out.
+  }, 20_000);
+
+  it('treats a session it cannot probe as alive, rather than failing a working lease', async () => {
+    // Fail OPEN. A registry entry with no `command` is a shape this code did not put there, and
+    // turning a lease that works into a refusal over a probe that could not run would be a worse
+    // failure than the one being fixed.
+    const { pool, acquired } = fakePool();
+    await tool(ReticleTool.LEASE_ACQUIRE)({ ...baseDeps, pool }, { url: 'http://localhost:3000/' });
+
+    const second = (await tool(ReticleTool.LEASE_ACQUIRE)(
+      { ...baseDeps, pool },
+      { url: 'http://localhost:3000/' },
+    )) as { ready: boolean; reused?: boolean; notReadyReason?: string };
+
+    expect(second.ready).toBe(true);
+    expect(second.reused).toBe(true);
+    expect(second.notReadyReason).toBeUndefined();
     expect(acquired).toHaveLength(1);
   });
 
