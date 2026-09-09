@@ -41,7 +41,11 @@ import {
 } from './agent-rules.js';
 import { cspStep, frameworkSteps } from './plan-framework.js';
 import { join } from 'node:path';
-import { reticleConfigContent, unverifiedUiLibraryNote, WEBGL_CANVAS_LIMIT_NOTE } from './snippets.js';
+import {
+  reticleConfigContent,
+  unverifiedUiLibraryNote,
+  WEBGL_CANVAS_LIMIT_NOTE,
+} from './snippets.js';
 import { configWithInstallSource, declaredInstallSource } from '../telemetry/install-source.js';
 import { existingConfigProblem, projectIdOf, RETICLE_CONFIG_FILE } from './existing-config.js';
 

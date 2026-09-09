@@ -368,14 +368,16 @@ describe('webGlSubtree', () => {
     'is true when %s is a dependency',
     (name) => {
       expect(
-        detect(input({ pkg: { dependencies: { react: '^19.0.0', [name]: '^9.0.0' } } })).webGlSubtree,
+        detect(input({ pkg: { dependencies: { react: '^19.0.0', [name]: '^9.0.0' } } }))
+          .webGlSubtree,
       ).toBe(true);
     },
   );
 
   it('is false for three.js alone, and for other non-DOM reconcilers', () => {
     expect(
-      detect(input({ pkg: { dependencies: { react: '^19.0.0', three: '^0.170.0' } } })).webGlSubtree,
+      detect(input({ pkg: { dependencies: { react: '^19.0.0', three: '^0.170.0' } } }))
+        .webGlSubtree,
     ).toBe(false);
     expect(
       detect(input({ pkg: { dependencies: { react: '^19.0.0', ink: '^5.0.0' } } })).webGlSubtree,

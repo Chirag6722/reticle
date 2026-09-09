@@ -88,10 +88,8 @@ Anonymous usage telemetry is sent separately and can be turned off with `reticle
   subtree is a single `<canvas>` to `reticle_query` / `reticle_snapshot`: Reticle cannot pick faces
   or drive the camera inside the scene.
 
-  DOM, registered store state, and network **around** the canvas still work — and that is often
-  where the consequential bugs live (import counts, mesh stats, solver results that contradict the
-  UI). `init` prints this limit when it detects react-three-fiber so an adopting team does not
-  discover it only after trying to verify the feature they care about.
+DOM, registered store state, and network **around** the canvas still work, and that is often where the consequential bugs live (import counts, mesh stats, solver results that contradict the UI). `init` prints this limit when it detects react-three-fiber so an adopting team does not discover it only after trying to verify the feature they care about.
+
 </Accordion>
 
 <Accordion title="Is Reticle proven to make agents fix more bugs?">

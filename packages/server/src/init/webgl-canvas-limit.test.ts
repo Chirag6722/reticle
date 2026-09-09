@@ -45,7 +45,9 @@ function input(webGlSubtree: boolean): PlanInput {
 
 describe('init names the WebGL canvas limit', () => {
   it('raises a NOTICE when react-three-fiber is detected', () => {
-    const step = buildPlan(input(true)).steps.find((s) => s.title === 'WebGL canvas is not observable');
+    const step = buildPlan(input(true)).steps.find(
+      (s) => s.title === 'WebGL canvas is not observable',
+    );
     expect(step?.status).toBe(StepStatus.NOTICE);
     expect(step?.detail).toBe(WEBGL_CANVAS_LIMIT_NOTE);
     expect(step?.detail).toContain('not observable');
@@ -59,7 +61,9 @@ describe('init names the WebGL canvas limit', () => {
   });
 
   it('is a NOTICE, not work left to do — the canvas gap is disclosed, not blocked', () => {
-    const step = buildPlan(input(true)).steps.find((s) => s.title === 'WebGL canvas is not observable');
+    const step = buildPlan(input(true)).steps.find(
+      (s) => s.title === 'WebGL canvas is not observable',
+    );
     expect(step?.status).toBe(StepStatus.NOTICE);
     expect(step?.status).not.toBe(StepStatus.MANUAL);
   });
