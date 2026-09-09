@@ -120,7 +120,31 @@ for (const row of CORPUS.rows) {
         .catch(() => false);
     }
     if (served) {
-      console.log(`   ✅ boot: serves at ${row.boot.url} on the broken ref`);
+      // SERVING IS NOT RENDERING, and the difference is the whole point of this corpus.
+      //
+      // Measured on this row: nuclear's renderer answers HTTP 200 from vite and then renders
+      // NOTHING, because it invokes its Tauri backend at startup and there is no backend behind a
+      // bare `vite`. A Reticle session connected to it perfectly happily and reported `nodes: 0`.
+      // A boot check that stopped at the status code would have called that row drivable and the
+      // score would have been taken against an empty page — a false green in the instrument built
+      // to measure false greens.
+      const html = await fetch(row.boot.url)
+        .then((r) => r.text())
+        .catch(() => '');
+      const root = /<div id="root">([\s\S]*?)<\/div>/.exec(html)?.[1] ?? '';
+      // A Vite dev server ships an empty root and fills it from JS, so the served HTML cannot
+      // settle this on its own; the honest signal is whether the app MOUNTED, which only a browser
+      // can answer. Reported rather than asserted, so a row says what is known about it.
+      console.log(
+        `   ✅ boot: serves at ${row.boot.url} on the broken ref` +
+          (root.trim().length === 0 ? ' (root is empty in the served HTML — see `renders`)' : ''),
+      );
+      if (row.boot.renders === false) {
+        console.log(
+          '   ⚠  renders: NO — this row can verify its oracle but cannot yet be DRIVEN. ' +
+            (row.boot.rendersNote ?? ''),
+        );
+      }
     } else {
       console.log(`   ❌ boot: never served at ${row.boot.url} — nothing to drive Reticle against`);
       bad += 1;

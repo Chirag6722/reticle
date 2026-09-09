@@ -30,7 +30,10 @@
         "cwd": "packages/player",
         "command": "npx vite --port {port} --strictPort",
         "port": 4399,
-        "url": "http://localhost:4399/"
+        "url": "http://localhost:4399/",
+        "renders": false,
+        "rendersNote": "The renderer invokes its Tauri backend at startup, so a bare `vite` serves HTTP 200 and mounts nothing. A Reticle session connects and reports nodes: 0. Driving this row needs either the Tauri backend or a stub for the commands it calls at boot.",
+        "measured": "2026-09-09: HTTP 200 in 1.5s; Reticle session connected; snapshot nodes: 0."
       },
       "drive": {
         "$comment": "What Reticle must catch. The defect is a state change nobody asked for: activating the ALREADY-PLAYING queue item stops playback. Declared as the consequence an agent would asserting on it, so a miss here is a false green in the exact sense this corpus measures.",
