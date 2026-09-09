@@ -127,6 +127,64 @@ function hasAnyConfig(files: ReadonlySet<string>, candidates: readonly string[])
   return candidates.some((c) => files.has(c));
 }
 
+/** What identifies one framework in a project root: a dependency name, or a config file basename. */
+export interface FrameworkSignals {
+  /** `package.json` dependency names that name this framework outright. */
+  readonly deps: readonly string[];
+  /** Root config-file basenames that name it when the dependency is absent. */
+  readonly configs: readonly string[];
+}
+
+/**
+ * The detection half of the per-framework table.
+ *
+ * It is a `Record<Framework, …>` for the reason `frameworkPackages` and `FRAMEWORK_ADAPTERS` are:
+ * a member added to `Framework` with no signals here is a compile error rather than a framework
+ * that is quietly never detected. The globs used to be seven loose `const` arrays read by an
+ * if/else chain, so a new framework with no branch was classified as whatever matched next and
+ * wired for THAT — the SvelteKit and React Router failure, one step upstream of the plan.
+ *
+ * Deliberately NOT merged into `FRAMEWORK_ADAPTERS`: that record holds the plan's step builders,
+ * which import this module transitively, so folding detection into it would make "what is this
+ * project" depend on "how do we wire it". Both halves are completed by the compiler; the seam is
+ * asserted in `framework-adapter.test.ts`.
+ */
+export const FRAMEWORK_SIGNALS: Record<Framework, FrameworkSignals> = {
+  [Framework.NEXT]: { deps: ['next'], configs: NEXT_CONFIGS },
+  [Framework.NUXT]: { deps: ['nuxt'], configs: NUXT_CONFIGS },
+  [Framework.SVELTEKIT]: { deps: ['@sveltejs/kit'], configs: SVELTE_CONFIGS },
+  [Framework.ASTRO]: { deps: ['astro'], configs: ASTRO_CONFIGS },
+  /**
+   * `@react-router/dev` or a `react-router.config.*`, never `react-router` itself — library mode is
+   * a plain Vite app whose index.html the plugin does reach.
+   */
+  [Framework.REACT_ROUTER]: { deps: ['@react-router/dev'], configs: REACT_ROUTER_CONFIGS },
+  [Framework.VITE]: { deps: ['vite'], configs: VITE_CONFIGS },
+  /** CRA has no config file at all, so the dependency is the only signal. */
+  [Framework.CRA]: { deps: ['react-scripts'], configs: [] },
+  /** Nothing identifies plain HTML; it is where the chain below ends. */
+  [Framework.HTML]: { deps: [], configs: [] },
+};
+
+/**
+ * The precedence chain, and every line of it is load-bearing.
+ *
+ * Nuxt, SvelteKit, Astro and React Router all come BEFORE Vite: each is Vite-based, so the generic
+ * Vite branch would match them, and each renders its own HTML — so the plugin's `transformIndexHtml`
+ * injection never fires and `init` would report every step green over an app that never connects.
+ * CRA comes AFTER Vite, because a project migrating off CRA carries both and the Vite path is the
+ * one that works. `Framework.HTML` is the fall-through and so is absent here.
+ */
+export const DETECTION_ORDER: readonly Framework[] = [
+  Framework.NEXT,
+  Framework.NUXT,
+  Framework.SVELTEKIT,
+  Framework.ASTRO,
+  Framework.REACT_ROUTER,
+  Framework.VITE,
+  Framework.CRA,
+];
+
 /** Extract the leading major version from a semver range like "^19.0.0" or "19.1.1". */
 export function parseMajor(range: string | undefined): number | undefined {
   if (range === undefined) return undefined;
@@ -178,43 +236,11 @@ export function detectPackageManager(
 }
 
 function detectFramework(input: DetectInput): Framework {
-  const { pkg, configFiles } = input;
-  if (depVersion(pkg, 'next') !== undefined || hasAnyConfig(configFiles, NEXT_CONFIGS)) {
-    return Framework.NEXT;
+  for (const framework of DETECTION_ORDER) {
+    const signals = FRAMEWORK_SIGNALS[framework];
+    if (signals.deps.some((d) => depVersion(input.pkg, d) !== undefined)) return framework;
+    if (hasAnyConfig(input.configFiles, signals.configs)) return framework;
   }
-  // Nuxt before Vite: Nuxt apps can carry a `vite` dependency and even a vite.config, but the
-  // generic Vite path would wire a plugin into a config Nuxt does not read, and inject connect into
-  // an index.html Nuxt does not serve.
-  if (depVersion(pkg, 'nuxt') !== undefined || hasAnyConfig(configFiles, NUXT_CONFIGS)) {
-    return Framework.NUXT;
-  }
-  // SvelteKit is Vite-based but renders through app.html, so the Vite plugin's index.html injection
-  // never fires (verified) — it needs a manual client connect. Check BEFORE the generic Vite branch.
-  if (depVersion(pkg, '@sveltejs/kit') !== undefined || hasAnyConfig(configFiles, SVELTE_CONFIGS)) {
-    return Framework.SVELTEKIT;
-  }
-  // Astro is Vite-based but SSRs its own HTML, so the plugin's index.html injection never fires and
-  // `vite` is not a direct dependency — it used to fall all the way through to HTML and be handed
-  // connect instructions for a bundler it does not have. Check BEFORE the generic Vite branch.
-  if (depVersion(pkg, 'astro') !== undefined || hasAnyConfig(configFiles, ASTRO_CONFIGS)) {
-    return Framework.ASTRO;
-  }
-  // React Router framework mode before Vite, for the reason SvelteKit and Astro are: it renders
-  // HTML through its own request handler, so the plugin's index.html injection never fires. Keyed on
-  // `@react-router/dev` or a `react-router.config.*`, never on `react-router` itself — library mode
-  // is a plain Vite app whose index.html the plugin does reach.
-  if (
-    depVersion(pkg, '@react-router/dev') !== undefined ||
-    hasAnyConfig(configFiles, REACT_ROUTER_CONFIGS)
-  ) {
-    return Framework.REACT_ROUTER;
-  }
-  if (depVersion(pkg, 'vite') !== undefined || hasAnyConfig(configFiles, VITE_CONFIGS)) {
-    return Framework.VITE;
-  }
-  // Checked after Vite, never before: a project migrating off CRA can carry both, and the Vite path
-  // is the one that works. CRA has no config file at all, so the dependency is the only signal.
-  if (depVersion(pkg, 'react-scripts') !== undefined) return Framework.CRA;
   return Framework.HTML;
 }
 

@@ -18,9 +18,8 @@
 import { describe, expect, it } from 'vitest';
 import { restartHint } from './closing-hint.js';
 import { StepStatus } from './plan.js';
-import { Framework } from './detect.js';
 
-const closing = (status: StepStatus) => restartHint(Framework.VITE, status, 'pnpm dev');
+const closing = (status: StepStatus) => restartHint(status, 'pnpm dev');
 
 describe('the closing assigns the work rather than delegating it', () => {
   it.each([StepStatus.APPLY, StepStatus.ALREADY])('%s: does not say "ask your agent"', (s) => {

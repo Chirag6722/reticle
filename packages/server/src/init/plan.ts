@@ -40,6 +40,7 @@ import {
   CURSOR_RULE_PATH,
 } from './agent-rules.js';
 import { cspStep, frameworkSteps } from './plan-framework.js';
+import { FRAMEWORK_ADAPTERS, RETICLE_BROWSER_SDK, RETICLE_REACT_KIT } from './framework-adapter.js';
 import { join } from 'node:path';
 import { reticleConfigContent, unverifiedUiLibraryNote } from './snippets.js';
 import { configWithInstallSource, declaredInstallSource } from '../telemetry/install-source.js';
@@ -47,16 +48,6 @@ import { existingConfigProblem, projectIdOf, RETICLE_CONFIG_FILE } from './exist
 
 // Re-exported: it moved to the module that reads it, and every existing importer says `plan.js`.
 export { RETICLE_CONFIG_FILE };
-
-// An app dev installs exactly the audience-scoped browser-side dependencies — never the retired
-// `@reticlehq/core` umbrella (which dragged the Node MCP server + ws into every app). The kit is the
-// framework adapter (it re-exports the browser sensor), paired with that framework's dev-only build
-// plugin for source mapping + connect injection.
-const RETICLE_REACT_KIT = '@reticlehq/react';
-/** The framework-neutral sensor, for stacks the React adapter has nothing to attach to. */
-const RETICLE_BROWSER_SDK = '@reticlehq/browser';
-const RETICLE_VITE_PLUGIN = '@reticlehq/vite-plugin';
-const RETICLE_NEXT_PLUGIN = '@reticlehq/next';
 
 /**
  * Pin the SDK to the CLI's own version.
@@ -103,36 +94,7 @@ export function frameworkPackages(
   uiLibrary: UiLibrary = UiLibrary.UNKNOWN,
 ): readonly string[] {
   const kit = wantsReactKit(uiLibrary) ? RETICLE_REACT_KIT : RETICLE_BROWSER_SDK;
-  switch (framework) {
-    case Framework.NEXT:
-      // Next is React by construction, so the detection cannot disagree in a way worth honouring.
-      return [RETICLE_REACT_KIT, RETICLE_NEXT_PLUGIN];
-    // React Router framework mode is a Vite app that renders React, so the kit and the plugin are
-    // both right for it too — only the connect INJECTION differs, and that is the plan's business.
-    case Framework.VITE:
-    case Framework.REACT_ROUTER:
-    case Framework.SVELTEKIT:
-      // SvelteKit builds on Vite; until a dedicated Svelte kit exists it uses the Vite build plugin.
-      // The build plugin stamps `data-reticle-source` regardless of UI library, so a Vue or Svelte
-      // app still gets source pointers — it is only component identity that needs the React kit.
-      return [kit, RETICLE_VITE_PLUGIN];
-    case Framework.NUXT:
-      // The framework-neutral sensor, NOT the React kit. Nuxt renders Vue, and installing a package
-      // named @reticlehq/react — with `react` in its peer dependencies — into a Vue codebase is the
-      // single thing most likely to make someone abandon the setup, whether or not it works.
-      return [RETICLE_BROWSER_SDK];
-    case Framework.ASTRO:
-      // Astro owns its own Vite instance and renders its own HTML, so there is no config for the
-      // plugin to attach to — the kit alone, connected from a page <script> (see astroManual).
-      return [kit];
-    case Framework.CRA:
-      // react-scripts owns its webpack config and cannot be extended without ejecting, so there is
-      // no build plugin — the kit alone, imported from src/index.tsx (see cra.ts).
-      return [RETICLE_REACT_KIT];
-    case Framework.HTML:
-      // No bundler plugin to install — just the kit; connect is wired by hand (see htmlManual).
-      return [kit];
-  }
+  return FRAMEWORK_ADAPTERS[framework].packages(kit);
 }
 
 /** Exported so the init telemetry can tell an MCP-registration failure from a dependency install. */
@@ -910,16 +872,11 @@ function reticleConfigSteps(input: PlanInput): Step[] {
  */
 function uiLibraryStep(input: PlanInput): Step[] {
   const lib = input.detection.uiLibrary;
-  // Nuxt and SvelteKit each carry their own unverified wording inside the recipe, so a second,
-  // more generic notice beside it would only argue with the specific one.
-  const framework = input.detection.framework;
-  if (
-    lib === UiLibrary.REACT ||
-    framework === Framework.SVELTEKIT ||
-    framework === Framework.NUXT
-  ) {
-    return [];
-  }
+  // A framework whose own recipe already says it is unverified must not be argued with by a second,
+  // more generic notice. Asked of the registry rather than of a remembered `SVELTEKIT || NUXT` pair:
+  // the pair was the answer, not the question, and a third framework joining it was a silent edit.
+  if (lib === UiLibrary.REACT) return [];
+  if (FRAMEWORK_ADAPTERS[input.detection.framework].carriesOwnUnverifiedNote) return [];
   if (lib === UiLibrary.UNKNOWN) return [];
   return [
     {

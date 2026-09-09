@@ -48,7 +48,7 @@ export const STEP_TITLES: readonly StepTitle[] = Object.values(StepTitle);
  * Reported from a field sweep, where the ⚠ count and "did it connect" were treated as independent
  * signals and are not.
  */
-const CONNECT_STEP_TITLES: ReadonlySet<StepTitle> = new Set<StepTitle>([
+export const CONNECT_STEP_TITLES: ReadonlySet<StepTitle> = new Set<StepTitle>([
   StepTitle.CONNECT_SNIPPET,
   StepTitle.CONNECT_SNIPPET_CRA,
   StepTitle.CONNECT_SNIPPET_ASTRO,

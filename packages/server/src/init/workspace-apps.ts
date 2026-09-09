@@ -112,7 +112,7 @@ export function workspaceParents(sources: WorkspaceSources): string[] {
  * shape, next to `workspaceParents`, which answers the other half of it.
  */
 /** Deps that mark a directory as a runnable web app even when it has no bundler config file. */
-const APP_DEPS = ['next', 'vite'] as const;
+export const APP_DEPS = ['next', 'vite'] as const;
 
 function hasDevScript(pkgRaw: string): boolean {
   try {

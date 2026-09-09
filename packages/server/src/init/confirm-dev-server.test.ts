@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { InitConfirmation } from '@reticlehq/core';
+import { InitConfirmation } from '@reticlehq/core/telemetry';
 import { confirmationMessage, sharpenWithDevServers } from './confirm.js';
 
 const PORT = 4400;

@@ -47,10 +47,10 @@ import {
 } from './snippets.js';
 import { hasOptOut, OPT_OUT_MARKER } from './init-opt-out.js';
 import { StepStatus, type PlanInput, type Step } from './plan.js';
-import { Framework } from './detect.js';
 import { RETICLE_DEFAULT_PORT } from '@reticlehq/core';
 import { CSP_STEP_TITLE } from './csp-check.js';
 import { StepTitle } from './connect-steps.js';
+import { FRAMEWORK_ADAPTERS } from './framework-adapter.js';
 import { diagnoseWebCsp } from './csp-doctor.js';
 
 /** What adding `reticle()` to a Vite config buys, which differs by framework. */
@@ -755,53 +755,31 @@ export function cspStep(input: PlanInput): Step[] {
 }
 
 /**
- * The per-framework half of the plan, dispatched on the detected framework.
+ * The plain-HTML path: no bundler to hook, so the connect snippet is printed for a hand edit.
  *
- * Lives here rather than in `buildPlan` because every branch of it calls a function defined in this
- * file: the dispatch and the steps it dispatches to grow together, and keeping them apart put a
- * list that is entirely per-framework detail in the file that owns the plan's SHAPE. The 1000-line
- * backstop makes that cost concrete — two independent framework additions each grew `plan.ts`, and
- * together they crossed the cap while neither did alone.
+ * A function of its own, and NOT a fallthrough. Every framework is sent here on purpose or not at
+ * all — a member of `Framework` with no adapter entry is a compile error in `FRAMEWORK_ADAPTERS`,
+ * where the if/else chain this replaced used to hand it these instructions silently.
+ */
+export function htmlSteps(input: PlanInput): Step[] {
+  return [
+    {
+      title: StepTitle.CONNECT_SNIPPET,
+      target: 'index.html',
+      status: StepStatus.MANUAL,
+      detail: htmlManual(input.options.port, input.options.projectId, input.pairingToken),
+    },
+  ];
+}
+
+/**
+ * The per-framework half of the plan, looked up rather than switched.
+ *
+ * `FRAMEWORK_ADAPTERS` is a `Record<Framework, FrameworkAdapter>`, so a member added to `Framework`
+ * is a compile error in that one table instead of a framework the plan quietly does not serve. The
+ * exhaustive switch this replaced gave the same guarantee for the steps alone; the record gives it
+ * for the packages, the connect-step titles and the unverified-note flag in the same edit.
  */
 export function frameworkSteps(input: PlanInput): Step[] {
-  // A SWITCH where every case returns, deliberately, and with no `default`. The if/else chain this
-  // replaced ended in an `else` that emitted the plain-HTML manual snippet, so a member of
-  // `Framework` nobody wired here was installed as static HTML: every step green, no session ever.
-  // That is what happened to SvelteKit and to React Router, both of which are named above.
-  //
-  // Because the declared return type is `Step[]` and no case falls out, adding a member to
-  // `Framework` now makes this function lack an ending return and the BUILD goes red — the same
-  // guard `frameworkPackages` in plan.ts already relies on. `Framework.HTML` is an explicit case,
-  // not a fallthrough, so the manual path is something a framework is sent to on purpose.
-  switch (input.detection.framework) {
-    case Framework.VITE:
-      return viteSteps(input);
-    case Framework.NEXT:
-      return nextSteps(input);
-    case Framework.ASTRO:
-      return astroSteps(input);
-    case Framework.CRA:
-      return craSteps(input);
-    case Framework.NUXT:
-      return nuxtSteps(input);
-    case Framework.REACT_ROUTER:
-      // The Vite plugin too, for the reason SvelteKit gets it: React Router framework mode IS a Vite
-      // app, and the plugin is what stamps data-reticle-source. Without it the app connects and
-      // every verdict comes back with no file:line.
-      return [...reactRouterSteps(input), ...viteSteps(input, VITE_PLUGIN_DETAIL.REACT_ROUTER)];
-    case Framework.SVELTEKIT:
-      // The Vite plugin as well as the client hook. `init` already INSTALLS @reticlehq/vite-plugin
-      // for SvelteKit and then never wired it into the config, so it sat in package.json doing
-      // nothing — which is why a SvelteKit app connected fine and every verdict had no file:line.
-      return [...svelteKitSteps(input), ...viteSteps(input, VITE_PLUGIN_DETAIL.SVELTEKIT)];
-    case Framework.HTML:
-      return [
-        {
-          title: StepTitle.CONNECT_SNIPPET,
-          target: 'index.html',
-          status: StepStatus.MANUAL,
-          detail: htmlManual(input.options.port, input.options.projectId, input.pairingToken),
-        },
-      ];
-  }
+  return FRAMEWORK_ADAPTERS[input.detection.framework].steps(input);
 }

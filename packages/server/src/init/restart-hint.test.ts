@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { restartHint } from './closing-hint.js';
 import { StepStatus } from './plan.js';
-import { Framework } from './detect.js';
 
 /**
  * `init`'s last line is the one an agent acts on, and it was telling agents to stop when they should
@@ -24,7 +23,7 @@ import { Framework } from './detect.js';
  */
 describe("init's closing advice only asks for a restart when one is actually needed", () => {
   it('asks for the restart when this run registered the server', () => {
-    const hint = restartHint(Framework.VITE, StepStatus.APPLY);
+    const hint = restartHint(StepStatus.APPLY);
     expect(hint).toContain('restart your agent');
     expect(hint).toContain('The tools only appear after that');
   });
@@ -35,7 +34,7 @@ describe("init's closing advice only asks for a restart when one is actually nee
    * going.
    */
   it('never mentions a restart when the server was already registered', () => {
-    const hint = restartHint(Framework.VITE, StepStatus.ALREADY);
+    const hint = restartHint(StepStatus.ALREADY);
     expect(hint).not.toContain('restart your agent');
     expect(hint).not.toContain('The tools only appear after that');
     expect(hint).not.toContain('reload the window');
@@ -46,7 +45,7 @@ describe("init's closing advice only asks for a restart when one is actually nee
    * leaves an agent that has just read about restarts in a skill file to supply one from memory.
    */
   it('says the tools are already there, so the reader carries on instead of guessing', () => {
-    const hint = restartHint(Framework.VITE, StepStatus.ALREADY);
+    const hint = restartHint(StepStatus.ALREADY);
     expect(hint).toMatch(/already registered/i);
     expect(hint).toMatch(/no restart/i);
   });
@@ -59,7 +58,7 @@ describe("init's closing advice only asks for a restart when one is actually nee
       StepStatus.MANUAL,
       undefined,
     ]) {
-      const hint = restartHint(Framework.VITE, status);
+      const hint = restartHint(status);
       expect(hint, `status ${String(status)}`).toContain('npx @reticlehq/server status');
       expect(hint, `status ${String(status)}`).toMatch(/restart/i);
     }
@@ -72,7 +71,7 @@ describe("init's closing advice only asks for a restart when one is actually nee
    */
   it('gives no client-restart advice when nothing was registered', () => {
     for (const status of [StepStatus.SKIP, StepStatus.MANUAL, undefined]) {
-      const hint = restartHint(Framework.VITE, status);
+      const hint = restartHint(status);
       expect(hint, `status ${String(status)}`).not.toContain('restart your agent');
     }
   });

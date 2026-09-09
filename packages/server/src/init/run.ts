@@ -78,7 +78,7 @@ import {
 import { CLAUDE_COMMAND_PATH, CURSOR_COMMAND_PATH } from './slash-command.js';
 import { SERVER_VERSION } from '../version/server-version.js';
 import { InitFailure, reportInitOutcome } from '../telemetry/init-telemetry.js';
-import type { InitOutcome } from '@reticlehq/core';
+import type { InitOutcome } from '@reticlehq/core/telemetry';
 
 /** Lockfile basenames, in package-manager preference order (mirrors detect.ts). */
 const LOCKFILE_NAMES = [
@@ -636,9 +636,7 @@ function report(
     io.print('');
   }
   if (!continuesToRuntime) {
-    io.print(
-      restartHint(plan.framework, resolvedStatus(plan, MCP_TARGET, failed, skipped), devCommand),
-    );
+    io.print(restartHint(resolvedStatus(plan, MCP_TARGET, failed, skipped), devCommand));
   }
   return { ok: !connectPending, applied, manual };
 }

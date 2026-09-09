@@ -7,7 +7,6 @@
  * install, a wrong sentence loses a user quietly.
  */
 
-import { Framework } from './detect.js';
 import { StepStatus } from './plan.js';
 import { wasMcpRegistered } from './mcp-registered.js';
 import { CLI } from './agent-rules.js';
@@ -39,7 +38,7 @@ export const FEEDBACK_HINT =
  * an agent reading this can open package.json, and a human already knows how they start their own
  * app. A wrong command costs more than a missing one.
  */
-function devServerRestart(_framework: Framework, devCommand?: string): string {
+function devServerRestart(devCommand?: string): string {
   return devCommand === undefined
     ? 'Restart your dev server'
     : `Restart your dev server (\`${devCommand}\`)`;
@@ -59,12 +58,11 @@ function devServerRestart(_framework: Framework, devCommand?: string): string {
  * run did not register MCP (`--no-mcp`), where it would be advice about something we did not do.
  */
 export function restartHint(
-  framework: Framework,
   mcpStatus: StepStatus | undefined,
   /** The project's own dev command, when package.json named one. */
   devCommand?: string,
 ): string {
-  const dev = `${devServerRestart(framework, devCommand)}.`;
+  const dev = `${devServerRestart(devCommand)}.`;
   // NAME THE COMMAND THAT PROVES IT, not one that merely asks.
   //
   // `init` writes files and stops; the install is not finished until an app carrying the SDK has
