@@ -204,7 +204,7 @@ await runTool(actTool, deps, { ref: 'e7', action: 'type', args: 'hunter2-passwor
 await settle();
 // The envelope the product's MAIN verification tool returns: no top-level `pass`, the verdict
 // nested under `verdict`, the summary at `verified`. act_and_wait was absent from
-// VERIFICATION_TOOLS AND unreadable by bugsInResult, so every verdict it produced — and every
+// VERDICT_TOOLS AND unreadable by bugsInResult, so every verdict it produced — and every
 // failure — was invisible to both metrics. Measured: act_and_wait 14 calls/day, assert 0.
 const actAndWaitFail = {
   name: 'reticle_act_and_wait',

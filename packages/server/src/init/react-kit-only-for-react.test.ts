@@ -11,8 +11,8 @@
  * thing is true and the name does not say so. A Vue app on plain Vite is `Framework.VITE`, and a
  * SvelteKit app is Svelte, and both were handed the React kit.
  *
- * Found by running `reticle init --dry-run` against a real Electron + Vue + Pinia app (MarkText, the
- * `electron-vue-pinia` fixture from #121, which nobody had ever run the installer against). The
+ * Found by running `reticle init --dry-run` against a real Electron + Vue + Pinia app (MarkText,
+ * an upstream app nobody had ever run the installer against). The
  * output detected Vue correctly, said in as many words that React component identity is what you
  * will NOT get — and then, four lines later, told the reader to install `@reticlehq/react`.
  *
