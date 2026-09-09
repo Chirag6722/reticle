@@ -93,6 +93,48 @@
       "whyItIsAFalseGreen": "A restored document renders: the shapes and their labels are all on the canvas and the drawing looks correct. What is wrong is the ORDER of a container and its bound text, which decides z-order and which element a later edit binds to. Nothing on screen announces it, and a presence check of the canvas passes.",
       "scoreable": false,
       "notScoreableReason": "The defect is canvas-internal. Excalidraw draws through StaticCanvas/InteractiveCanvas, and this bug is the ORDER of a container and its bound text \u2014 z-order and later binding. Reticle observes DOM, state and network; none of them can see it. Scoring here would record a MISS that is really the documented canvas gap (#880), which would make the false-green number a measurement of Reticle's known blind spot rather than of its honesty."
+    },
+    {
+      "id": "formbricks-survey-list-stale-removal",
+      "upstream": "https://github.com/formbricks/formbricks.git",
+      "fixedRef": "0d0a35a69e91cc752d31db3b200d7514831fc771",
+      "brokenRef": "0d0a35a69e91cc752d31db3b200d7514831fc771~1",
+      "subject": "hold a survey out of the list until its removal settles",
+      "oracle": {
+        "kind": "upstream-test",
+        "package": "apps/web",
+        "install": "pnpm install --ignore-scripts",
+        "command": "npx vitest run modules/survey/list/hooks/use-archive-survey.test.ts modules/survey/list/hooks/use-surveys.test.ts",
+        "brokenSource": [
+          "apps/web/modules/survey/list/hooks/use-pending-survey-removals.ts",
+          "apps/web/modules/survey/list/hooks/use-survey-removal-mutation.ts",
+          "apps/web/modules/survey/list/hooks/use-surveys.ts",
+          "apps/web/modules/survey/list/lib/query.ts"
+        ],
+        "$comment": "use-pending-survey-removals.ts is NEW in the fix, so restoring the broken side DELETES it rather than checking it out."
+      },
+      "verified": {
+        "at": "2026-09-09",
+        "fixedRef": "8 passed",
+        "brokenRef": "4 failed, 4 passed",
+        "failing": ["use-surveys > a survey whose removal is pending is held out of the list"],
+        "note": "Half the suite fails and half passes, so the oracle discriminates the defect rather than reporting the build broken. The central assertion is literally the false-green shape: expect(list.surveys).toHaveLength(0) returns 1."
+      },
+      "whyItIsAFalseGreen": "A survey the user has just deleted or archived stays in the list until the removal settles. Nothing on the page reports an error: the request succeeded, the list rendered, and it shows a row that no longer exists. An agent that deletes something and then reads the page back sees the deleted item and can equally well conclude the delete failed or that the page is fine \u2014 both readings are wrong.",
+      "observableVia": ["dom"],
+      "boot": {
+        "cwd": "apps/web",
+        "command": "pnpm dev",
+        "needs": "postgres (docker compose -f docker-compose.dev.yml up -d) + prisma migrate + seed",
+        "renders": null,
+        "drivableInBrowser": "unmeasured",
+        "identifies": {
+          "textContains": "Formbricks"
+        },
+        "$comment": "UNMEASURED, and the value says so rather than guessing. Unlike the other two rows this one needs a database before it renders at all, so drivability is a real question here and not a formality."
+      },
+      "scoreable": false,
+      "notScoreableReason": "Criteria 1 and 3 are satisfied and verified: the oracle discriminates (8 passed at the fix, 4 failed and 4 passed against the broken source) and the defect is a list rendering a row that should not be there, which is plain DOM. Criterion 2 is not yet measured \u2014 the app needs postgres, migrations and a seed before it serves a page, so booting it is a real task rather than a formality. It is not scoreable until that boot has actually happened."
     }
   ],
   "$selectionCriteria": {

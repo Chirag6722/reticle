@@ -98,6 +98,9 @@ describe('the third-party false-green corpus', () => {
  * all. `drivableInBrowser: false` is a fine answer — it routes the row to the desktop path instead
  * of silently scoring it in the wrong place.
  */
+/** A row whose app has not been booted yet says so, rather than leaving the field out. */
+const UNMEASURED = 'unmeasured';
+
 describe('a row can prove it is driving the right application', () => {
   it.each(corpus.rows.map((r) => [r.id, r] as const))(
     '%s names an identifying marker for its app',
@@ -115,12 +118,15 @@ describe('a row can prove it is driving the right application', () => {
   it.each(corpus.rows.map((r) => [r.id, r] as const))(
     '%s states whether it is drivable in a browser at all',
     (_id, row) => {
-      const drivable = (row as { boot?: { drivableInBrowser?: boolean } }).boot?.drivableInBrowser;
+      const drivable = (row as { boot?: { drivableInBrowser?: boolean | string } }).boot
+        ?.drivableInBrowser;
       expect(
-        typeof drivable,
+        'boolean' === typeof drivable || UNMEASURED === drivable,
         'UNSTATED is the dangerous value: it reads as "probably fine" and is how a row gets scored ' +
-          'in the wrong runtime. `false` is a perfectly good answer.',
-      ).toBe('boolean');
+          'in the wrong runtime. `false` is a perfectly good answer, and so is the explicit ' +
+          `"${UNMEASURED}" for a row whose app has not been booted yet — what must never appear ` +
+          'is silence.',
+      ).toBe(true);
     },
   );
 });
