@@ -135,6 +135,48 @@
       },
       "scoreable": false,
       "notScoreableReason": "Criteria 1 and 3 are satisfied and verified: the oracle discriminates (8 passed at the fix, 4 failed and 4 passed against the broken source) and the defect is a list rendering a row that should not be there, which is plain DOM. Criterion 2 is not yet measured \u2014 the app needs postgres, migrations and a seed before it serves a page, so booting it is a real task rather than a formality. It is not scoreable until that boot has actually happened."
+    },
+    {
+      "id": "react-admin-duplicate-undoable-delete",
+      "upstream": "https://github.com/marmelab/react-admin.git",
+      "fixedRef": "62a56d8349c2a36695080a2af8714b4a568ef87f",
+      "brokenRef": "62a56d8349c2a36695080a2af8714b4a568ef87f~1",
+      "subject": "prevent duplicate undoable mutation commits",
+      "oracle": {
+        "kind": "upstream-test",
+        "package": ".",
+        "install": "yarn install --mode=skip-build",
+        "command": "npx cross-env LANG=en_US.UTF-8 NODE_ENV=test BABEL_ENV=cjs npx jest packages/ra-ui-materialui/src/layout/Notification.spec.tsx",
+        "brokenSource": ["packages/ra-ui-materialui/src/layout/Notification.tsx"],
+        "$comment": "jest, not vitest \u2014 the root test-unit script is cross-env + jest."
+      },
+      "verified": {
+        "at": "2026-09-09",
+        "fixedRef": "6 passed",
+        "brokenRef": "3 failed, 3 passed",
+        "failing": [
+          "<Notification /> > should confirm an undoable mutation once when the notification exits with MUI 6/7/9"
+        ],
+        "note": "Half fails and half passes, so the oracle discriminates. The assertion is expect(deleteOne).toHaveBeenCalledTimes(1) and the broken build records 2."
+      },
+      "whyItIsAFalseGreen": "An undoable delete commits TWICE. The screen is correct and reassuring: one row leaves the table, one 'deleted' notification appears, and it is dismissed normally. The wire carries two DELETE calls. Nothing rendered is wrong, so a screenshot, a human glance and a DOM assertion all pass \u2014 the only witness is the network channel disagreeing with the notification count. That is the two-channel contradiction this product claims to catch, which makes it the row most worth scoring.",
+      "observableVia": ["network", "dom"],
+      "boot": {
+        "cwd": "examples/simple",
+        "command": "npx vite --port {port} --strictPort",
+        "port": 4397,
+        "url": "http://localhost:4397/",
+        "needs": "nothing \u2014 the example app serves its data from an in-memory fake REST provider",
+        "renders": 1151,
+        "drivableInBrowser": true,
+        "identifies": {
+          "textContains": "Posts",
+          "title": "React Admin"
+        },
+        "$comment": "MEASURED in headless chromium on 2026-09-09, not assumed: 1151 characters of body text, title 'React Admin', and the DataTable itself rendering Posts/Comments/Tags with a DELETE control \u2014 the surface this defect lives on. examples/simple/src/index.tsx does one unconditional createRoot of <Admin>, with no runtime branch, which is structurally the opposite of the nuclear row's entry."
+      },
+      "scoreable": true,
+      "$whyThisOneIsScoreable": "The first row to satisfy all three criteria, and the first that could serve a STANDING gate, which is what this issue actually asks for. Boot is a bare vite dev server that was ready in 433ms with no database, no containers and no seed \u2014 unlike the formbricks row, whose eight-container stack could never run as a gate however good its oracle is."
     }
   ],
   "$selectionCriteria": {
