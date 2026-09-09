@@ -131,7 +131,7 @@ describe('probing the page', () => {
       server.once('error', reject);
       server.listen(0, '::1', () => {
         const addr = server.address();
-        if (addr === null || typeof addr === 'string') reject(new Error('no port'));
+        if (null === addr || 'string' === typeof addr) reject(new Error('no port'));
         else resolve(addr.port);
       });
     });
