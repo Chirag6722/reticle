@@ -49,6 +49,16 @@ export interface PooledPage {
    */
   installMocks?(rules: readonly PooledMockRule[]): Promise<void>;
   /**
+   * Resize this page's viewport. OPTIONAL, like `installMocks`: a fake that does not implement it
+   * makes `reticle_viewport` refuse rather than claim a resize the page never took.
+   *
+   * A lease IS a real browser page, so the resize was always possible — the tool simply had no route
+   * to it and consulted only the driven-provider path. On an SDK-only install there is no such
+   * provider, so mobile-only UI (a `lg:hidden` hamburger, a drawer that only mounts under a
+   * breakpoint) could not be driven at all without installing Playwright separately.
+   */
+  setViewport?(size: { width: number; height: number }): Promise<void>;
+  /**
    * Fires when the page opens a native `window.confirm`/`alert`/`prompt`. OPTIONAL, like `onConsole`:
    * a fake that does not implement it means the pool cannot see or arbitrate the dialog, and the
    * page is left to whatever the underlying engine does with no listener attached.
@@ -390,6 +400,28 @@ export class BrowserPool {
    *
    * Touches the lease like any other tool call, so mocking keeps it alive.
    */
+  /**
+   * Resize a leased page's viewport, or report that this page cannot be resized.
+   *
+   * Alias-resolved like every other agent-facing capability — see `#leaseIdOf`.
+   *
+   * Touches the lease like any other tool call, so resizing keeps it alive.
+   */
+  async setViewportLease(
+    sessionId: string,
+    size: { width: number; height: number },
+  ): Promise<boolean> {
+    const lease = this.#active.get(this.#leaseIdOf(sessionId));
+    if (lease === undefined || lease.page.setViewport === undefined) return false;
+    this.touch(sessionId);
+    try {
+      await lease.page.setViewport(size);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async setMocksLease(sessionId: string, rules: readonly PooledMockRule[]): Promise<boolean> {
     const lease = this.#active.get(this.#leaseIdOf(sessionId));
     if (lease === undefined || lease.page.installMocks === undefined) return false;
