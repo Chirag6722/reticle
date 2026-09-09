@@ -43,6 +43,7 @@ import { type ToolDef, sessionIdShape, commandOrThrow } from './tool-kit.js';
 import { applyMerges, type MergePlan } from './merge-tools.js';
 import { ACT_TOOLS } from './act-tools.js';
 import { OBSERVE_TOOLS } from './observe-tools.js';
+import { LINEAGE_TOOLS } from './lineage-tools.js';
 import { RECONCILE_TOOLS } from './reconcile-tools.js';
 import { READ_TOOLS } from './read-tools.js';
 import { LEASE_TOOLS } from './lease-tools.js';
@@ -620,6 +621,7 @@ export const RAW_TOOLS: ToolDef[] = [
   ...BROWSER_TOOLS,
   ...ACT_TOOLS,
   ...OBSERVE_TOOLS,
+  ...LINEAGE_TOOLS,
   ...READ_TOOLS,
   ...LEASE_TOOLS,
   // reticle_feedback — the agent reports that RETICLE failed (not that the app did). See feedback-tools.ts.
