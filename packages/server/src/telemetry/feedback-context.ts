@@ -18,7 +18,7 @@ import {
   PageDriver,
   StackUnknownReason,
   type Feedback,
-} from '@reticlehq/core';
+} from '@reticlehq/core/telemetry';
 import { parseMajor } from '../init/detect.js';
 import { findWorkspaceApps } from '../init/workspace-apps.js';
 import type { InitIo } from '../init/run.js';

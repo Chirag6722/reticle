@@ -22,7 +22,7 @@
  * than none: it is the number distribution decisions get steered on, and a guess and a measurement
  * are indistinguishable once they are in the same column.
  */
-import { InstallSource } from '@reticlehq/core';
+import { InstallSource } from '@reticlehq/core/telemetry';
 import { findProjectConfig } from '../cli/cli-port.js';
 
 /** The one marker. Set by a channel on the process that runs the install. */

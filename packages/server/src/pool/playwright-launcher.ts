@@ -7,7 +7,7 @@
  */
 
 import type { Browser } from 'playwright';
-import { BrowserLaunchKind } from '@reticlehq/core';
+import { BrowserLaunchKind } from '@reticlehq/core/telemetry';
 import { chromiumLaunchOptions } from '../chromium-launch-options.js';
 import { getSessionMetrics } from '../telemetry/session-metrics.js';
 import { classifyConnectFailure } from '../telemetry/connect-failure.js';

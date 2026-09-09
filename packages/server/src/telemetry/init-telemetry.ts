@@ -10,7 +10,7 @@
  * same treatment `cli_command_run` gets, for the same reason: an in-process fetch would keep the
  * event loop alive and tax the command by most of a second.
  */
-import { TelemetryEventKind, type InitOutcome } from '@reticlehq/core';
+import { TelemetryEventKind, type InitOutcome } from '@reticlehq/core/telemetry';
 import { getTelemetry } from './telemetry.js';
 import { resolveInstallSource } from './install-source.js';
 

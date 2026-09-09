@@ -10,6 +10,14 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./telemetry": {
+      "types": "./dist/telemetry-entry.d.ts",
+      "default": "./dist/telemetry-entry.js"
+    },
+    "./artifacts": {
+      "types": "./dist/artifacts-entry.d.ts",
+      "default": "./dist/artifacts-entry.js"
+    },
     "./schema/*.json": "./dist/schema/*.json",
     "./desktop-contract": {
       "types": "./dist/desktop-contract.d.cts",

@@ -3,7 +3,7 @@ import {
   dedupeGaps,
   instrumentationGap,
   type InstrumentationGap,
-} from '@reticlehq/core';
+} from '@reticlehq/core/artifacts';
 
 /**
  * The gaps ONE action revealed, derived from facts the act path already holds.

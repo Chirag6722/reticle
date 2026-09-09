@@ -11,7 +11,7 @@
  */
 
 import { probeDevServers, probeDevServerStates } from './dev-server-probe.js';
-import type { NoSessionReason } from '@reticlehq/core';
+import type { NoSessionReason } from '@reticlehq/core/telemetry';
 import { explainNoSession } from './no-session-diagnosis.js';
 import type { NoSessionFacts } from './no-session-diagnosis.js';
 import { detectDevCommand } from './dev-command.js';

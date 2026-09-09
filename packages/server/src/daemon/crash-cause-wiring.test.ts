@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { CrashPort, TelemetryEventKind } from '@reticlehq/core';
+import { CrashPort, TelemetryEventKind } from '@reticlehq/core/telemetry';
 import type { TelemetryExtra } from '../telemetry/telemetry.js';
 
 const emit = vi.fn((_kind: TelemetryEventKind, _extra?: TelemetryExtra) => Promise.resolve(true));

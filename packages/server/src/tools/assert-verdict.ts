@@ -3,7 +3,7 @@ import { gapsForAction } from '../honesty/instrumentation-gaps.js';
 import { noteSessionGaps } from '../honesty/gap-ledger.js';
 import { declaresState } from '../events/predicate-asks.js';
 import { isStateUnwatched } from '../honesty/blind-spots.js';
-import type { InstrumentationGap, JournalVerdictEffect } from '@reticlehq/core';
+import type { InstrumentationGap, JournalVerdictEffect } from '@reticlehq/core/artifacts';
 import type { Predicate } from '../events/predicate.js';
 import type { Session } from '../session/session.js';
 import { findContradictions, type Contradiction } from '../events/contradictions.js';
