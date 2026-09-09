@@ -39,7 +39,7 @@ const CDN_SDK_URL = `https://cdn.jsdelivr.net/npm/@reticlehq/browser@${RETICLE_V
  * The connect argument literal: a non-default port adds a `url`, and a projectId is always passed
  * (so the app is identifiable across port changes). Empty string only when neither applies.
  */
-function connectArg(port: number | undefined, projectId?: string): string {
+export function connectArg(port: number | undefined, projectId?: string): string {
   const parts: string[] = [];
   if (port !== undefined && port !== RETICLE_DEFAULT_PORT) {
     parts.push(`url: '${bridgeWsUrl(port)}'`);
@@ -115,10 +115,12 @@ function frameworkPluginExample(uiLibrary: UiLibrary): string {
 export function viteManual(
   port: number | undefined,
   uiLibrary: UiLibrary = UiLibrary.UNKNOWN,
+  inject = true,
   sourceMapping = true,
 ): string {
   const options = [
     ...(port === undefined ? [] : [`port: ${String(port)}`]),
+    ...(false === inject ? ['inject: false'] : []),
     ...(sourceMapping ? [] : ['sourceMapping: false']),
   ];
   const call = 0 === options.length ? 'reticle()' : `reticle({ ${options.join(', ')} })`;
@@ -139,13 +141,52 @@ Keep \`reticle()\` LAST so it sees the output of your other plugins. It only app
 (dev) — it is dropped from \`vite build\`.${note}`;
 }
 
+/**
+ * The electron-vite recipe: the plugin belongs in `renderer`, never in `main` or `preload`.
+ *
+ * `desktop: true` is load-bearing. Without it the plugin is serve-only, so a packaged renderer
+ * (a production build with no dev server) ships with no connect() at all.
+ */
+export function electronViteManual(
+  port: number | undefined,
+  uiLibrary: UiLibrary = UiLibrary.UNKNOWN,
+): string {
+  const extras =
+    port === undefined
+      ? 'desktop: true, captureNetworkBodies: true'
+      : `desktop: true, port: ${String(port)}, captureNetworkBodies: true`;
+  return `Add the Reticle plugin to the \`renderer\` block of electron.vite.config, not \`main\`:
+
+  import { reticle } from '@reticlehq/vite-plugin';
+
+  export default defineConfig({
+    main: { /* unchanged */ },
+    preload: { /* unchanged */ },
+    renderer: {
+      plugins: [${frameworkPluginExample(uiLibrary)}, reticle({ ${extras} })],
+    },
+  });
+
+\`desktop: true\` is required: a packaged renderer is a production build with no dev server, so the
+default serve-only plugin is dropped from \`vite build\` and the shipped app never connects.
+
+Also add \`import '@reticlehq/electron/preload'\` as the first line of your preload, and
+\`installReticleCapture(win)\` in main after you construct the BrowserWindow.`;
+}
+
 /** Next.js config wrap — always printed (we never auto-rewrite next.config). */
-export function nextConfigManual(configFile: string): string {
+export function nextConfigManual(configFile: string, sourceMapping = true): string {
+  const options = sourceMapping ? '' : ', { sourceMapping: false }';
+  const note = sourceMapping
+    ? ''
+    : `\n\n\`sourceMapping: false\` because this app renders through a non-DOM React renderer, where a
+lowercase JSX tag is not an element. Stamping one crashes the app at commit time. You lose source
+pointers, not the app.`;
   return `Wrap your ${configFile} export with withReticle (keeps SWC, dev-only):
 
   import { withReticle } from '@reticlehq/next';
 
-  export default withReticle(nextConfig);`;
+  export default withReticle(nextConfig${options});${note}`;
 }
 
 /**
@@ -437,6 +478,11 @@ ${storeBlock}
 
 /** Where that module goes. Matches @reticlehq/vite-plugin's convention list. */
 export const VITE_DEV_MODULE_PATH = 'src/reticle-dev.ts';
+/**
+ * electron-vite's renderer Vite root is `src/renderer`, so the plugin looks for
+ * `src/renderer/src/reticle-dev.ts` — not the package-root path a plain Vite app uses.
+ */
+export const ELECTRON_VITE_DEV_MODULE_PATH = 'src/renderer/src/reticle-dev.ts';
 
 /** Default root-layout path, used when no layout was found on disk (reporting only). */
 export const NEXT_LAYOUT_PATH = 'app/layout.tsx';
@@ -617,6 +663,9 @@ export function unverifiedUiLibraryNote(library: string): string {
 
 export const UNVERIFIED_FRAMEWORK_NOTE =
   'Reticle has no SvelteKit app and no CI gate for one, so this wiring is untested — it may work, but nothing proves it and nothing will tell us if it breaks. Supported and gated today: Vite + React, Next.js, Remix and Astro. If the hook does not register a session, please open an issue.';
+
+export const UNVERIFIED_TANSTACK_START_NOTE =
+  'Reticle has no TanStack Start app and no CI gate for one, so this wiring is untested — it may work, but nothing proves it and nothing will tell us if it breaks. Supported and gated today: Vite + React, Next.js, Remix and Astro. If the client effect does not register a session, please open an issue.';
 
 /**
  * Dev-only client hook that connects Reticle in a SvelteKit app. SvelteKit renders through app.html and

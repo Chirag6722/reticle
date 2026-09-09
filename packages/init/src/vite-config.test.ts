@@ -180,17 +180,27 @@ describe('the plugin call init writes', () => {
     if (r.kind !== VitePatchKind.APPLY) return;
     expect(r.code).toContain('captureNetworkBodies: true');
   });
+
+  it('bakes inject: false when the framework cannot use HTML injection', () => {
+    const r = patchViteConfig(BASIC, undefined, false, false);
+    expect(r.kind).toBe(VitePatchKind.APPLY);
+    if (r.kind !== VitePatchKind.APPLY) return;
+    expect(r.code).toContain('reticle({ inject: false })');
+  });
 });
 
 describe('source mapping off for a non-DOM React renderer', () => {
   it('writes sourceMapping: false into the call', () => {
-    const r = patchViteConfig(BASIC, undefined, false, false);
+    // Positional, and `inject` now sits between: the true/false pair either side of it is exactly
+    // the swap the options object inside `patchViteConfig` exists to prevent, and it is why these
+    // arguments are named in a comment rather than left as four bare booleans.
+    const r = patchViteConfig(BASIC, undefined, false, true, false);
     if (r.kind !== VitePatchKind.APPLY) throw new Error('expected apply');
     expect(r.code).toContain('reticle({ sourceMapping: false })');
   });
 
   it('keeps the port and the option together, in that order', () => {
-    const r = patchViteConfig(BASIC, 4400, false, false);
+    const r = patchViteConfig(BASIC, 4400, false, true, false);
     if (r.kind !== VitePatchKind.APPLY) throw new Error('expected apply');
     expect(r.code).toContain('reticle({ port: 4400, sourceMapping: false })');
   });

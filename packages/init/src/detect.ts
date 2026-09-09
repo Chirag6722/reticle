@@ -15,6 +15,12 @@ export const Framework = {
   NUXT: 'nuxt',
   VITE: 'vite',
   /**
+   * electron-vite is Vite-based but its config holds three build configs (main/preload/renderer)
+   * and only the renderer has a DOM. The generic Vite path patches the FIRST plugins array, which
+   * is main's — wiring the SDK where there is no document, and reporting success.
+   */
+  ELECTRON_VITE: 'electron-vite',
+  /**
    * React Router in FRAMEWORK mode (v7's `@react-router/dev`, the successor to Remix).
    *
    * Vite-based, and it renders HTML through its own request handler — so the Vite plugin's
@@ -31,6 +37,19 @@ export const Framework = {
    * path.
    */
   REACT_ROUTER: 'react-router',
+  /**
+   * TanStack Start SSRs `<html>` from `src/routes/__root.tsx` and never sends Vite's index.html, so
+   * the plugin's `transformIndexHtml` injection never fires. It used to fall through to
+   * `Framework.VITE`, where `init` wired the plugin, reported every step green ("also injects
+   * connect()"), and produced zero sessions — confirmed in the field as ~13 minutes of "still
+   * verifying" against a daemon showing none (#773).
+   *
+   * Keyed on `@tanstack/react-start` or the older `@tanstack/start`, never on
+   * `@tanstack/react-query` or `@tanstack/react-router` alone — those are libraries on a Vite SPA
+   * whose index.html the plugin does reach. Not `@tanstack/solid-start` either: that would install
+   * the React kit into a Solid app.
+   */
+  TANSTACK_START: 'tanstack-start',
   SVELTEKIT: 'sveltekit',
   ASTRO: 'astro',
   /** Create React App. No config file exists, so `react-scripts` in the dependencies is the signal. */
@@ -105,7 +124,7 @@ export interface Detection {
    * `data-reticle-source` stamp must be switched off for the whole app.
    *
    * React is a reconciler interface, not a renderer. A lowercase JSX tag is a host element in
-   * every renderer, but only in React DOM is a host instance a node that takes attributes. The
+   * every renderer, but only in React DOM is a host element a node that takes attributes. The
    * babel plugin's allowlist keeps the stamp off `<mesh>` and `<group>`, and it cannot help with
    * the tags that COLLIDE: `<line>` is both SVG's and `THREE.Line`, `<audio>` is both. R3F's
    * `applyProps` reads any dashed prop as a pierced property path, walks `data` -> `reticle` on a
@@ -127,6 +146,12 @@ export interface Detection {
 
 const NEXT_CONFIGS = ['next.config.js', 'next.config.mjs', 'next.config.ts', 'next.config.cjs'];
 const VITE_CONFIGS = ['vite.config.js', 'vite.config.ts', 'vite.config.mjs', 'vite.config.mts'];
+const ELECTRON_VITE_CONFIGS = [
+  'electron.vite.config.ts',
+  'electron.vite.config.js',
+  'electron.vite.config.mjs',
+  'electron.vite.config.mts',
+];
 const SVELTE_CONFIGS = ['svelte.config.js', 'svelte.config.ts', 'svelte.config.mjs'];
 const REACT_ROUTER_CONFIGS = [
   'react-router.config.ts',
@@ -167,7 +192,22 @@ export interface FrameworkSignals {
   readonly deps: readonly string[];
   /** Root config-file basenames that name it when the dependency is absent. */
   readonly configs: readonly string[];
+  /**
+   * Root files whose PRESENCE disproves the config-file signal (the dependency signal is
+   * conclusive either way).
+   *
+   * SvelteKit is the only user: a plain Svelte + Vite SPA ships `svelte.config.js` too, for
+   * `@sveltejs/vite-plugin-svelte`'s preprocessor options and with no `kit` block. Reading the
+   * config file alone misclassified a real project, and `init` wrote a SvelteKit-only
+   * `src/hooks.client.ts` bootstrap that nothing on that project could ever import. SvelteKit
+   * renders through `src/app.html` and never ships a root `index.html`, where a plain Vite SPA
+   * always has one.
+   */
+  readonly configsUnless?: readonly string[];
 }
+
+/** The root document a plain Vite SPA serves — and a framework that SSRs its own HTML never has. */
+const VITE_INDEX_HTML = 'index.html';
 
 /**
  * The detection half of the per-framework table.
@@ -186,13 +226,30 @@ export interface FrameworkSignals {
 export const FRAMEWORK_SIGNALS: Record<Framework, FrameworkSignals> = {
   [Framework.NEXT]: { deps: ['next'], configs: NEXT_CONFIGS },
   [Framework.NUXT]: { deps: ['nuxt'], configs: NUXT_CONFIGS },
-  [Framework.SVELTEKIT]: { deps: ['@sveltejs/kit'], configs: SVELTE_CONFIGS },
+  [Framework.SVELTEKIT]: {
+    deps: ['@sveltejs/kit'],
+    configs: SVELTE_CONFIGS,
+    configsUnless: [VITE_INDEX_HTML],
+  },
   [Framework.ASTRO]: { deps: ['astro'], configs: ASTRO_CONFIGS },
   /**
    * `@react-router/dev` or a `react-router.config.*`, never `react-router` itself — library mode is
    * a plain Vite app whose index.html the plugin does reach.
    */
   [Framework.REACT_ROUTER]: { deps: ['@react-router/dev'], configs: REACT_ROUTER_CONFIGS },
+  /**
+   * electron-vite's config holds three build configs (main/preload/renderer) and only the renderer
+   * has a DOM, so it must never fall through to the generic Vite path.
+   */
+  [Framework.ELECTRON_VITE]: { deps: ['electron-vite'], configs: ELECTRON_VITE_CONFIGS },
+  /**
+   * The Start packages, never Query or Router alone — those stay on the Vite path. Start has no
+   * config file of its own to key on.
+   */
+  [Framework.TANSTACK_START]: {
+    deps: ['@tanstack/react-start', '@tanstack/start'],
+    configs: [],
+  },
   [Framework.VITE]: { deps: ['vite'], configs: VITE_CONFIGS },
   /** CRA has no config file at all, so the dependency is the only signal. */
   [Framework.CRA]: { deps: ['react-scripts'], configs: [] },
@@ -214,7 +271,9 @@ export const DETECTION_ORDER: readonly Framework[] = [
   Framework.NUXT,
   Framework.SVELTEKIT,
   Framework.ASTRO,
+  Framework.ELECTRON_VITE,
   Framework.REACT_ROUTER,
+  Framework.TANSTACK_START,
   Framework.VITE,
   Framework.CRA,
 ];
@@ -273,7 +332,12 @@ function detectFramework(input: DetectInput): Framework {
   for (const framework of DETECTION_ORDER) {
     const signals = FRAMEWORK_SIGNALS[framework];
     if (signals.deps.some((d) => depVersion(input.pkg, d) !== undefined)) return framework;
-    if (hasAnyConfig(input.configFiles, signals.configs)) return framework;
+    if (
+      hasAnyConfig(input.configFiles, signals.configs) &&
+      !hasAnyConfig(input.configFiles, signals.configsUnless ?? [])
+    ) {
+      return framework;
+    }
   }
   return Framework.HTML;
 }

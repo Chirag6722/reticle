@@ -46,6 +46,7 @@ import {
   reactRouterEntryFile,
   reactRouterEntryPatch,
   REACT_ROUTER_ENTRY_PATH,
+  UNVERIFIED_TANSTACK_START_NOTE,
   htmlManual,
 } from './snippets.js';
 import { hasOptOut, OPT_OUT_MARKER } from './init-opt-out.js';
@@ -53,6 +54,7 @@ import { StepStatus, type PlanInput, type Step } from './plan.js';
 import { RETICLE_DEFAULT_PORT } from '@reticlehq/core';
 import { CSP_STEP_TITLE } from './csp-check.js';
 import { StepTitle } from './connect-steps.js';
+import { tanstackStartManual, TANSTACK_START_ROOT_PATH } from './tanstack-start.js';
 import { FRAMEWORK_ADAPTERS } from './framework-adapter.js';
 import { diagnoseWebCsp } from './csp-doctor.js';
 import { patchNuxtConfig } from './nuxt-patch.js';
@@ -75,6 +77,15 @@ export const VITE_PLUGIN_DETAIL = {
    * back with no file:line at all.
    */
   REACT_ROUTER: 'add reticle() to plugins (stamps data-reticle-source in .tsx components)',
+  /**
+   * TanStack Start SSRs its own HTML, so the plugin's HTML injection never fires and connect()
+   * comes from a client effect instead. `inject: false` is load-bearing honesty: leaving the
+   * default would keep reporting "also injects connect()" for a transform that never runs.
+   * The plugin is still required for the same reason it is under SvelteKit: without it every
+   * verdict on the app comes back with no file:line at all.
+   */
+  TANSTACK_START:
+    'add reticle({ inject: false }) to plugins (stamps data-reticle-source; Start SSRs its own HTML so connect() cannot come from the plugin)',
 } as const;
 
 const CAPABILITIES_TITLE = StepTitle.CAPABILITIES;
@@ -136,12 +147,12 @@ function needsManualStore(hints: readonly string[], wired: readonly unknown[]): 
   return hints.length > 0 && 0 === wired.length;
 }
 
-function capabilitiesStep(input: PlanInput): Step[] {
+export function capabilitiesStep(input: PlanInput, path: string = VITE_DEV_MODULE_PATH): Step[] {
   if (true === input.viteDevModuleExists) {
     return [
       {
         title: CAPABILITIES_TITLE,
-        target: VITE_DEV_MODULE_PATH,
+        target: path,
         status: StepStatus.ALREADY,
         detail: 'file exists, left alone, it is yours to edit',
       },
@@ -173,7 +184,7 @@ function capabilitiesStep(input: PlanInput): Step[] {
   return [
     {
       title: CAPABILITIES_TITLE,
-      target: VITE_DEV_MODULE_PATH,
+      target: path,
       status: StepStatus.APPLY,
       detail: `${found}; ${
         wired.length > 0
@@ -183,7 +194,7 @@ function capabilitiesStep(input: PlanInput): Step[] {
             : 'no state library detected'
       }`,
       write: {
-        path: VITE_DEV_MODULE_PATH,
+        path,
         content: viteDevModuleFile(testids, stores, wired, input.detection.uiLibrary),
       },
       dependsOnInstall: true,
@@ -200,24 +211,32 @@ function capabilitiesStep(input: PlanInput): Step[] {
       ? [
           {
             title: CAPABILITIES_TODO_TITLE,
-            target: VITE_DEV_MODULE_PATH,
+            target: path,
             status: StepStatus.NOTICE,
-            detail: capabilitiesTodo(VITE_DEV_MODULE_PATH, stores),
+            detail: capabilitiesTodo(path, stores),
           } satisfies Step,
         ]
       : []),
   ];
 }
 
-export function viteSteps(input: PlanInput, detail: string = VITE_PLUGIN_DETAIL.VITE): Step[] {
+export function viteSteps(
+  input: PlanInput,
+  detail: string = VITE_PLUGIN_DETAIL.VITE,
+  inject = true,
+): Step[] {
   // Capabilities are independent of whether the config needed patching. Attaching them to the APPLY
   // branch meant a re-run on an already-wired app silently never created the module.
-  return [...viteConfigSteps(input, detail), ...capabilitiesStep(input)];
+  return [...viteConfigSteps(input, detail, inject), ...capabilitiesStep(input)];
 }
 
-function viteConfigSteps(input: PlanInput, detail: string): Step[] {
+function viteConfigSteps(input: PlanInput, detail: string, inject = true): Step[] {
   const cfg = input.viteConfig;
   const port = input.options.port;
+  // Stamp `data-reticle-source` unless this app renders through a non-DOM React reconciler, where a
+  // lowercase JSX tag is not an element and the stamp crashes the app at commit time. See
+  // `Detection.customReconciler`.
+  const stampSource = true !== input.detection?.customReconciler;
   // An explicit "not here" is not an invitation. `init` runs unattended in a repo it has just met,
   // and it was reported adding the plugin to an app whose config said Reticle was deliberately
   // excluded. A NOTICE rather than a ⚠: opting out is a decision, not something to go and fix.
@@ -237,11 +256,7 @@ function viteConfigSteps(input: PlanInput, detail: string): Step[] {
         title: StepTitle.VITE_PLUGIN,
         target: 'vite.config',
         status: StepStatus.MANUAL,
-        detail: viteManual(
-          port,
-          input.detection.uiLibrary,
-          true !== input.detection.customReconciler,
-        ),
+        detail: viteManual(port, input.detection.uiLibrary, inject, stampSource),
       },
     ];
   }
@@ -249,7 +264,8 @@ function viteConfigSteps(input: PlanInput, detail: string): Step[] {
     cfg.source,
     port,
     true === input.captureBodies,
-    true !== input.detection.customReconciler,
+    inject,
+    stampSource,
   );
   if (patch.kind === VitePatchKind.ALREADY) {
     return [
@@ -267,7 +283,7 @@ function viteConfigSteps(input: PlanInput, detail: string): Step[] {
         title: StepTitle.VITE_PLUGIN,
         target: cfg.path,
         status: StepStatus.MANUAL,
-        detail: `${patch.reason}\n\n${viteManual(port, input.detection.uiLibrary, true !== input.detection.customReconciler)}`,
+        detail: `${patch.reason}\n\n${viteManual(port, input.detection.uiLibrary, inject, stampSource)}`,
       },
     ];
   }
@@ -287,7 +303,7 @@ function viteConfigSteps(input: PlanInput, detail: string): Step[] {
  * Turn a conservative source patch into a step: applied when it patched, already when the wiring is
  * there, and the hand-edit instructions when the file shape wasn't one we recognise.
  */
-function patchStep(
+export function patchStep(
   title: StepTitle,
   path: string,
   patch: SourcePatch,
@@ -420,7 +436,7 @@ export function nextSteps(input: PlanInput): Step[] {
       configFile,
       configPatch,
       'wrap the export in withReticle (source mapping, dev-only)',
-      nextConfigManual(configFile),
+      nextConfigManual(configFile, true !== input.detection?.customReconciler),
     ),
     patchStep(
       StepTitle.MOUNT_RETICLE_DEV,
@@ -681,6 +697,30 @@ export function reactRouterSteps(input: PlanInput): Step[] {
           write: { path: REACT_ROUTER_ENTRY_PATH, content: patched },
           dependsOnInstall: true,
         },
+  ];
+}
+
+/**
+ * TanStack Start: the client-document connect, printed rather than written.
+ *
+ * `src/routes/__root.tsx` is the document Start SSRs. A static import of the SDK on that module
+ * 500s, so writing one is worse than a documented manual step. See `tanstackStartManual`.
+ */
+export function tanstackStartSteps(input: PlanInput): Step[] {
+  const root = input.tanstackStartRoot ?? TANSTACK_START_ROOT_PATH;
+  return [
+    {
+      title: StepTitle.TANSTACK_START_UNVERIFIED,
+      target: root,
+      status: StepStatus.NOTICE,
+      detail: UNVERIFIED_TANSTACK_START_NOTE,
+    },
+    {
+      title: StepTitle.CONNECT_SNIPPET_TANSTACK_START,
+      target: root,
+      status: StepStatus.MANUAL,
+      detail: tanstackStartManual(input.options.port, input.options.projectId, root),
+    },
   ];
 }
 

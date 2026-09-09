@@ -40,6 +40,7 @@ const RETICLE_MARKER = '@reticlehq/vite-plugin';
 function reticlePluginCall(opts: PluginCallOptions): string {
   const options = [
     ...(opts.port === undefined ? [] : [`port: ${String(opts.port)}`]),
+    ...(false === opts.inject ? ['inject: false'] : []),
     ...(opts.captureBodies ? ['captureNetworkBodies: true'] : []),
     ...(opts.sourceMapping ? [] : ['sourceMapping: false']),
   ];
@@ -53,6 +54,12 @@ function reticlePluginCall(opts: PluginCallOptions): string {
 interface PluginCallOptions {
   port: number | undefined;
   captureBodies: boolean;
+  /**
+   * Let the plugin inject `connect()` into `index.html`. False for a framework that SSRs its own
+   * document and never serves Vite's — TanStack Start, Remix — where only the injection half is
+   * inapplicable and the stamping half still earns its place.
+   */
+  inject: boolean;
   /**
    * Stamp `data-reticle-source`. Written as `sourceMapping: false` for an app whose React renderer
    * is not React DOM — see `Detection.customReconciler`, where the whole argument lives. The plugin
@@ -126,12 +133,13 @@ export function patchViteConfig(
   source: string,
   port?: number,
   captureBodies = false,
+  inject = true,
   sourceMapping = true,
 ): VitePatch {
   if (source.includes(RETICLE_MARKER)) {
     return { kind: VitePatchKind.ALREADY };
   }
-  const call = reticlePluginCall({ port, captureBodies, sourceMapping });
+  const call = reticlePluginCall({ port, captureBodies, inject, sourceMapping });
   if (PLUGINS_ARRAY.test(source)) {
     return { kind: VitePatchKind.APPLY, code: insertImport(insertPlugin(source, call)) };
   }

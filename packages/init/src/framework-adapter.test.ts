@@ -148,6 +148,10 @@ describe('the tables the registry deliberately does not own', () => {
   const APP_DEP_COVERAGE: Record<Framework, readonly string[] | string> = {
     [Framework.NEXT]: ['next'],
     [Framework.VITE]: ['vite'],
+    [Framework.ELECTRON_VITE]: ['electron-vite'],
+    [Framework.TANSTACK_START]:
+      'reached by the vite.config check, which `looksLikeApp` runs before the deps — Start is a ' +
+      'Vite app and always ships one',
     [Framework.NUXT]:
       'a Nuxt app always has a dev script, which `looksLikeApp` already accepts; adding `nuxt` here ' +
       'would widen the monorepo redirect with nothing to prove it against',
@@ -183,8 +187,12 @@ describe('the tables the registry deliberately does not own', () => {
   const CSP_COVERAGE: Record<Framework, readonly string[] | string> = {
     [Framework.NEXT]: ['next.config.mjs', 'middleware.ts', 'app/layout.tsx', 'pages/_document.tsx'],
     [Framework.VITE]: ['index.html'],
+    [Framework.ELECTRON_VITE]: ['src/renderer/index.html'],
     [Framework.CRA]: ['public/index.html'],
     [Framework.HTML]: ['index.html'],
+    [Framework.TANSTACK_START]:
+      'Start SSRs its document from `__root.tsx`, so a policy lives in that route module rather ' +
+      'than in a file this module can regex',
     [Framework.NUXT]:
       'Nuxt declares CSP as structured `routeRules` headers in nuxt.config, which needs a parser — ' +
       'a regex over that file would report on config that is not a policy',

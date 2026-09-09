@@ -14,6 +14,7 @@ import {
   type FlowStepResult,
   type ReticleEvent,
 } from '@reticlehq/core';
+import { haltedFrom } from './replay-halt.js';
 import { asRecord, asString } from '../tools/tools-helpers.js';
 import { routeOfEvent, routeOfUrl } from '../events/predicate-route.js';
 import type { ArrivalClock } from '../tools/navigate-arrival.js';
@@ -412,6 +413,9 @@ export async function replayNamedFlow(
     FLOW_SIGNAL_TIMEOUT_MS,
     true === args['confirmDangerous'],
   );
+  // Computed HERE, before the synthetic success row is appended below: once that row is pushed,
+  // `steps.length` no longer counts only the flow's own steps and the arithmetic is wrong.
+  const halted = haltedFrom(steps, loaded.value.steps.length);
   // "green means intent satisfied": when every step ran clean, assert the flow's success
   // end-condition as a real consequence. A signal/net success that never fires FAILS the replay
   // even though all locators resolved — the regression a healed-but-wrong locator ships green.
@@ -501,6 +505,7 @@ export async function replayNamedFlow(
     return errored;
   }
   const result: FlowReplayResult = { name, status, steps };
+  if (halted !== undefined) result.halted = halted;
   if (knows !== undefined) result.knows = knows;
   // A green that cannot go red is not a pass. `reticle_flow_verify` already refuses to count these,
   // via this same function -- a single-flow caller saw a bare `ok` and had no way to learn the flow

@@ -241,3 +241,28 @@ export function patchRootLayout(source: string): SourcePatch {
   const mounted = `${source.slice(0, insertAt)}${RETICLE_DEV_MOUNT}${source.slice(insertAt)}`;
   return { kind: PatchKind.APPLY, code: `${RETICLE_DEV_IMPORT}\n${mounted}` };
 }
+
+/**
+ * Root-layout candidates, App Router only. `--src-dir` apps keep theirs under `src/app`, and the
+ * ReticleDev component has to land NEXT TO the layout or the relative import it generates is dead.
+ */
+export const NEXT_LAYOUT_CANDIDATES = [
+  'app/layout.tsx',
+  'app/layout.jsx',
+  'app/layout.js',
+  'src/app/layout.tsx',
+  'src/app/layout.jsx',
+  'src/app/layout.js',
+];
+/**
+ * Pages Router mount points, checked only when there is no App Router layout. A Pages app has no
+ * `app/` directory at all, so writing the component there produced a file nothing imported.
+ */
+export const NEXT_PAGES_APP_CANDIDATES = [
+  'pages/_app.tsx',
+  'pages/_app.jsx',
+  'pages/_app.js',
+  'src/pages/_app.tsx',
+  'src/pages/_app.jsx',
+  'src/pages/_app.js',
+];

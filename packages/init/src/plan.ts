@@ -212,6 +212,12 @@ export interface PlanInput {
     readonly { id: McpClient; configPath: string; existing: string | null }[] | undefined;
   /** Discovered Vite config: its path + source, or null if none found. */
   viteConfig: { path: string; source: string } | null;
+  /** Discovered electron-vite config: its path + source, or null if none found. */
+  electronViteConfig?: { path: string; source: string } | null | undefined;
+  /** Electron preload source we can patch, or null when none was found. */
+  electronPreload?: { path: string; source: string } | null | undefined;
+  /** Electron main-process source we can patch, or null when none was found. */
+  electronMain?: { path: string; source: string } | null | undefined;
   /** Discovered Astro config: its path + source, or null if none found. */
   astroConfig?: { path: string; source: string } | null | undefined;
   /**
@@ -275,6 +281,13 @@ export interface PlanInput {
   nuxtHasAppDir?: boolean | undefined;
   /** Whether the Nuxt client plugin already exists (idempotency — the file is the owner's to edit). */
   nuxtPluginExists?: boolean | undefined;
+  /**
+   * TanStack Start's document module, when found (`src/routes/__root.tsx` or `app/routes/__root.tsx`).
+   *
+   * The recipe is printed rather than written either way — a static import on that file SSRs and
+   * 500s — but the path has to be the one that actually exists, not a guess.
+   */
+  tanstackStartRoot?: string | undefined;
   /** CRA's bundled entry (src/index.tsx or .js) — where the connect import has to go. */
   craEntry?: { path: string; source: string } | null;
   /** Existing .env.development.local, so an unrelated variable in it survives. */

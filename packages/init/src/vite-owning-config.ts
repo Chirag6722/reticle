@@ -16,6 +16,7 @@
  */
 
 import { ReticleDir } from '@reticlehq/core';
+import { blockAfter } from './brace-scan.js';
 import { PatchKind, type SourcePatch } from './patch-kind.js';
 
 /** What differs between one Vite-owning framework and the next. */
@@ -170,26 +171,6 @@ function mergeIntoViteBlock(
 
 function insertAt(source: string, at: number, text: string): string {
   return `${source.slice(0, at)}${text}${source.slice(at)}`;
-}
-
-/**
- * The text from just inside an opening brace to its match — a brace count, not a parser.
- *
- * Enough for the one question asked of it (does THIS object literal already declare `include`), and
- * honest about its limit: a `{` or `}` inside a string literal in someone's Vite config would fool
- * it. That only ever shortens or lengthens the window we search for `include:` in, so the worst case
- * is the same duplicate-key merge we would have done before, never a corrupted file.
- */
-function blockAfter(source: string, at: number): string {
-  let depth = 1;
-  for (let i = at; i < source.length; i++) {
-    if ('{' === source[i]) depth += 1;
-    else if ('}' === source[i]) {
-      depth -= 1;
-      if (0 === depth) return source.slice(at, i);
-    }
-  }
-  return source.slice(at);
 }
 
 /** The optimizeDeps inner minus our `include:` line, for when the app already has one to join. */

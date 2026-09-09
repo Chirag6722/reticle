@@ -20,6 +20,7 @@ import {
 import type { EvalResult, Predicate } from '../events/predicate.js';
 import { asRecord, asString } from '../tools/tools-helpers.js';
 import { replayActionArgs, ambiguousTestidNote, queryRefs } from './replay.js';
+import { anchorFieldName } from './flow-secret-field.js';
 import {
   degradedStepResult,
   isDegradedAnchor,
@@ -404,9 +405,11 @@ async function runTestidStep(
     act = await session.command(ReticleCommand.ACT, {
       ref,
       action: step.action ?? '',
-      // `value` is the anchor's own name — the field this step types into — so a redacted fill can
-      // be supplied from RETICLE_SECRET_<FIELD> without the flow carrying the secret.
-      args: replayActionArgs(step.args, confirmDangerous, value),
+      // The field this step types into — from the anchor, so a redacted fill can be supplied from
+      // RETICLE_SECRET_<FIELD> without the flow carrying the secret. The testid runner used to pass
+      // the testid string here and the other two runners passed nothing, so a role-anchored login
+      // typed the literal placeholder.
+      args: replayActionArgs(step.args, confirmDangerous, anchorFieldName(step.anchor)),
     });
   } finally {
     session.finishAction?.();

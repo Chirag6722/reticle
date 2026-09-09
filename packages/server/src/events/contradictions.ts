@@ -361,6 +361,16 @@ export interface ContradictionOptions {
    * one: a caller that cannot say which page is under test gets the behaviour it had before this.
    */
   appOrigin?: string | undefined;
+  /**
+   * The traffic the assertion actually named — `urlContains` from each net clause, `''` for a clause
+   * that named the whole channel.
+   *
+   * Used only by `duplicate-request`, to tell "the write you asked about fired twice" from "some
+   * other endpoint is busy". Undefined disables the split and every duplicate is reported as it was
+   * before, which is what a caller with no predicate (a bare `observe`) should get: with nothing
+   * declared, nothing is unrelated.
+   */
+  namedNetUrls?: readonly string[] | undefined;
 }
 
 /** Net-shaped events — the only ones that carry a URL a dev-tooling channel could occupy. */
@@ -869,6 +879,17 @@ function findWindowContradictions(
       if (false !== call.ok) entry.landed += 1;
       writeTimes.set(key, entry);
     }
+    /**
+     * Did the assertion name this endpoint?
+     *
+     * `undefined` means the caller declared nothing (a bare `observe`), and with nothing declared
+     * nothing is unrelated — every duplicate keeps the behaviour it had. An empty-string entry is a
+     * net clause with no `urlContains`, which named the whole channel and therefore matches
+     * everything.
+     */
+    const named = options.namedNetUrls;
+    const wasNamed = (label: string): boolean =>
+      named === undefined || named.some((u) => label.includes(u));
     for (const [, { label, times, landed }] of writeTimes) {
       if (times.length < 2) continue;
       // A DOUBLE SUBMIT is a write that landed twice. Two attempts of which one failed is a RETRY,
@@ -883,9 +904,18 @@ function findWindowContradictions(
       // assertion that had already seen its consequence come back `unknown` behind writes that
       // were the app working correctly (#673).
       if (isSteadyCadence(times)) continue;
+      // A burst the assertion never mentioned is still worth telling the caller about -- a retry
+      // loop or a bursty beacon is a real finding -- but it is not evidence about the consequence
+      // they declared, so it is reported and decides nothing. The named case keeps its downgrade:
+      // "the write you asked about fired twice" is exactly what this rule is for.
+      const related = wasNamed(label);
       found.push({
-        kind: ContradictionKind.DUPLICATE_REQUEST,
-        claim: 'one user action was performed',
+        kind: related
+          ? ContradictionKind.DUPLICATE_REQUEST
+          : ContradictionKind.DUPLICATE_REQUEST_UNRELATED,
+        claim: related
+          ? 'one user action was performed'
+          : 'the assertion did not name this endpoint',
         counter: `the same write fired ${String(times.length)} times`,
         detail: `${label} ×${String(times.length)}`,
       });

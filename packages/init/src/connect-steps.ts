@@ -29,6 +29,11 @@ export const StepTitle = {
   NUXT_CONFIG: 'Nuxt config (token + watcher)',
   NUXT_RESTART: 'Restart the Nuxt dev server',
   CONNECT_SNIPPET_REACT_ROUTER: 'Connect snippet (React Router)',
+  CONNECT_SNIPPET_TANSTACK_START: 'Connect snippet (TanStack Start)',
+  ELECTRON_VITE_PLUGIN: 'Vite plugin (electron-vite renderer)',
+  ELECTRON_PRELOAD: 'Electron preload (IPC shim)',
+  ELECTRON_CAPTURE: 'Electron capture (screenshots)',
+  TANSTACK_START_UNVERIFIED: 'TanStack Start is UNVERIFIED',
   SVELTEKIT_UNVERIFIED: 'SvelteKit is UNVERIFIED',
   CLIENT_HOOK: 'Reticle client hook',
   CONNECT_SNIPPET_ASTRO: 'Connect snippet (Astro)',
@@ -60,6 +65,7 @@ export const CONNECT_STEP_TITLES: ReadonlySet<StepTitle> = new Set<StepTitle>([
   // localhost. A plugin written beside an unpatched config is a guaranteed non-connection.
   StepTitle.NUXT_CONFIG,
   StepTitle.CONNECT_SNIPPET_REACT_ROUTER,
+  StepTitle.CONNECT_SNIPPET_TANSTACK_START,
   StepTitle.CLIENT_HOOK,
   StepTitle.CONNECT_MODULE,
   StepTitle.RETICLE_DEV_COMPONENT,
@@ -81,6 +87,9 @@ export const CONNECT_STEP_TITLES: ReadonlySet<StepTitle> = new Set<StepTitle>([
   // not, and `gate:install` scaffolds no CRA app, so that change would ship with no coverage of the
   // path it changes. It is worth doing, and worth doing with a scaffold behind it.
   StepTitle.VITE_PLUGIN,
+  // electron-vite's connect IS the renderer plugin. Without it the SDK never injects, and the
+  // preload/capture steps are not enough to produce a session.
+  StepTitle.ELECTRON_VITE_PLUGIN,
 ]);
 
 /** True when this step is what makes the app dial the daemon. */

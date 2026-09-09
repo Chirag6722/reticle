@@ -30,8 +30,10 @@ import {
   nuxtSteps,
   reactRouterSteps,
   svelteKitSteps,
+  tanstackStartSteps,
   viteSteps,
 } from './plan-framework.js';
+import { electronViteSteps } from './plan-electron-vite.js';
 import type { PlanInput, Step } from './plan.js';
 
 // An app dev installs exactly the audience-scoped browser-side dependencies — never the retired
@@ -43,6 +45,8 @@ export const RETICLE_REACT_KIT = '@reticlehq/react';
 export const RETICLE_BROWSER_SDK = '@reticlehq/browser';
 export const RETICLE_VITE_PLUGIN = '@reticlehq/vite-plugin';
 export const RETICLE_NEXT_PLUGIN = '@reticlehq/next';
+/** The Electron main/preload helper — what makes IPC and screenshots exist at all. */
+export const RETICLE_ELECTRON = '@reticlehq/electron';
 
 export interface FrameworkAdapter {
   /**
@@ -138,6 +142,28 @@ export const FRAMEWORK_ADAPTERS: Record<Framework, FrameworkAdapter> = {
     steps: astroSteps,
     connectStepTitles: [StepTitle.CONNECT_SNIPPET_ASTRO],
     carriesOwnUnverifiedNote: false,
+  },
+  [Framework.ELECTRON_VITE]: {
+    // Same kit + Vite plugin as a plain Vite app, plus the Electron main/preload helper. The plugin
+    // still stamps and injects; `@reticlehq/electron` is what makes IPC and screenshots exist.
+    packages: (kit) => [kit, RETICLE_VITE_PLUGIN, RETICLE_ELECTRON],
+    steps: electronViteSteps,
+    // electron-vite's connect IS the renderer plugin. The preload and capture steps add IPC and
+    // screenshots to a session; without the plugin there is no session to add them to.
+    connectStepTitles: [StepTitle.ELECTRON_VITE_PLUGIN],
+    carriesOwnUnverifiedNote: false,
+  },
+  [Framework.TANSTACK_START]: {
+    // Start IS a Vite app, so the plugin still stamps `data-reticle-source` — only the connect
+    // injection is inapplicable, and that is the plan's business (`inject: false`).
+    packages: (kit) => [kit, RETICLE_VITE_PLUGIN],
+    steps: (input) => [
+      ...tanstackStartSteps(input),
+      ...viteSteps(input, VITE_PLUGIN_DETAIL.TANSTACK_START, false),
+    ],
+    connectStepTitles: [StepTitle.CONNECT_SNIPPET_TANSTACK_START, StepTitle.VITE_PLUGIN],
+    // The Start recipe carries its own UNVERIFIED line; a second generic notice would argue with it.
+    carriesOwnUnverifiedNote: true,
   },
   [Framework.CRA]: {
     // react-scripts owns its webpack config and cannot be extended without ejecting, so there is no

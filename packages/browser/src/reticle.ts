@@ -370,7 +370,12 @@ export class Reticle {
     // plugin that says nothing is never reported as having turned the stamp off.
     this.#sourceMapping =
       'boolean' === typeof options.sourceMapping ? options.sourceMapping : undefined;
-    this.#teardowns = installAllObservers(emit, { captureBodies: this.#captureBodies });
+    this.#teardowns = installAllObservers(emit, {
+      captureBodies: this.#captureBodies,
+      ...(options.captureErrorBodies === undefined
+        ? {}
+        : { captureErrorBodies: options.captureErrorBodies }),
+    });
 
     if (true === options.overlay) {
       this.#overlay = installOverlay();
