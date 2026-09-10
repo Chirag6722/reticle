@@ -43,7 +43,11 @@ import {
 import { cspStep, frameworkSteps } from './plan-framework.js';
 import { FRAMEWORK_ADAPTERS, RETICLE_BROWSER_SDK, RETICLE_REACT_KIT } from './framework-adapter.js';
 import { join } from 'node:path';
-import { reticleConfigContent, unverifiedUiLibraryNote } from './snippets.js';
+import {
+  reticleConfigContent,
+  unverifiedUiLibraryNote,
+  WEBGL_CANVAS_LIMIT_NOTE,
+} from './snippets.js';
 import { configWithInstallSource } from './install-source-config.js';
 import { existingConfigProblem, projectIdOf, RETICLE_CONFIG_FILE } from './existing-config.js';
 
@@ -950,6 +954,22 @@ function uiLibraryStep(input: PlanInput): Step[] {
   ];
 }
 
+/**
+ * Say the WebGL gap out loud at install time. Without it, init looks fully green on an R3F app
+ * while the canvas — often the product — stays a blank rectangle to every look and act tool (#880).
+ */
+function webGlCanvasStep(input: PlanInput): Step[] {
+  if (true !== input.detection.webGlSubtree) return [];
+  return [
+    {
+      title: 'WebGL canvas is not observable',
+      target: 'package.json',
+      status: StepStatus.NOTICE,
+      detail: WEBGL_CANVAS_LIMIT_NOTE,
+    },
+  ];
+}
+
 export function buildPlan(input: PlanInput): Plan {
   const steps: Step[] = [
     ...cspStep(input),
@@ -957,6 +977,7 @@ export function buildPlan(input: PlanInput): Plan {
     ...agentRuleSteps(input),
     ...slashCommandSteps(input),
     ...uiLibraryStep(input),
+    ...webGlCanvasStep(input),
     installStep(input),
     ...reticleConfigSteps(input),
   ];
