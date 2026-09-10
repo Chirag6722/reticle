@@ -8,9 +8,15 @@
  *
  * The backend's failure does NOT always name a timeout. The same hung `browser_click` arrives as
  * `TimeoutError: browserBackend.callTool:` on one run and as a bare `Error: browserBackend.callTool:
- * Error:` on the next, and only the first was ever retried — so `network-timeout/playwright` was
- * lost twice running while `broken-form-validation/playwright`, the same rig noise with the luckier
- * wording, was retried. Match the FAILING CALL, not the adjective in front of it.
+ * Error:` on the next, so matching only the word "timeout" retried the rig noise that happened to be
+ * worded luckily and abandoned the rest. Match the FAILING CALL instead.
+ *
+ * With ONE exception, and it is the reason this rule earns its keep rather than hiding things: a
+ * strict-mode violation is the backend telling us the selector matched more than one element. That
+ * is deterministic, it is the scenario's fault, and retrying it converts a defect the grid should
+ * report into a slow NOT MEASURED. It cost three runs of exactly that here — the retry was widened
+ * first, and only the fuller message it surfaced showed the fixture was shipping a duplicate of the
+ * element the injector adds.
  */
 export function isObservationRetryable(error) {
   const msg = String(error);
@@ -18,6 +24,6 @@ export function isObservationRetryable(error) {
     /timeout after \d+ms on /i.test(msg) ||
     /TimeoutError/i.test(msg) ||
     /cell exceeded \d+ms/i.test(msg) ||
-    /browserBackend\.callTool/i.test(msg)
+    (/browserBackend\.callTool/i.test(msg) && !/strict mode violation|Error: strict/i.test(msg))
   );
 }

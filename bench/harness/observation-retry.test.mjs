@@ -36,6 +36,18 @@ describe('isObservationRetryable', () => {
     ).toBe(true);
   });
 
+  // Deterministic and the scenario's fault: the selector matched more than one element. Retrying it
+  // turns a defect the grid should report into a slow NOT MEASURED.
+  it('does not retry a strict-mode violation — that is the scenario, not the machine', () => {
+    expect(
+      isObservationRetryable(
+        new Error(
+          'tool browser_click failed: ### Error\nError: browserBackend.callTool: Error: strict mode violation',
+        ),
+      ),
+    ).toBe(false);
+  });
+
   it('does not retry a missing tool — that is a real miss', () => {
     expect(isObservationRetryable(new Error('Tool browser_click not found'))).toBe(false);
   });
