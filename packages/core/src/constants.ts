@@ -599,6 +599,12 @@ export const ActionWarning = {
    */
   CLICK_OCCLUDED:
     'target is visually occluded by another element; a real user could not click it (synthetic dispatch still delivered the event) — dismiss the overlay or scroll the target clear',
+  /**
+   * A document-key press (Escape, Tab, a modifier shortcut) was dispatched at the focused
+   * element or the document. No named target was given, so the effect must not claim one.
+   */
+  GLOBAL_PRESS:
+    'press landed on the focused element or document — no named target was given, so this effect does not claim one',
 } as const;
 export type ActionWarning = (typeof ActionWarning)[keyof typeof ActionWarning];
 

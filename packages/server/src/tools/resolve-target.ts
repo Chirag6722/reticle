@@ -10,9 +10,10 @@ interface TargetCandidate {
   states?: unknown;
 }
 
-/** What the resolution produced: a ref to act on, or the reason there isn't one. */
+/** What the resolution produced: a ref to act on, a document-key press, or the reason there isn't one. */
 export type TargetResolution =
   | { readonly kind: 'ref'; readonly ref: string }
+  | { readonly kind: 'global'; readonly ref: '' }
   | { readonly kind: 'error'; readonly message: string };
 
 /**
