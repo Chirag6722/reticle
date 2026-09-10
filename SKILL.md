@@ -40,12 +40,6 @@ There are exactly three places you may stop, and none is a question about a pref
 
 If you do have to stop, the restart ends your turn. This file was fetched into the context that just ended, so nothing carries it across unless you make it. **Before you trigger the restart, write the remaining steps into `RETICLE-SETUP.md` at the repo root**, one line each, with the step you stopped at marked. That file is what you re-read afterwards. Delete it once step 5 has produced a verdict.
 
-Better still, install the on-disk copy first. It survives the restart on its own, and it is the same content:
-
-```bash
-npx skills add reticlehq/reticle --skill install-and-verify -y
-```
-
 **After the restart, resume at the step you were on.** Do not start over, and do not skip forward.
 
 ## Feedback is first-class
@@ -89,11 +83,7 @@ Read **VERIFY** below when the question is "does this still work?" rather than "
 
 # SETUP
 
-**One command. It does all of it, and it ends with a verdict.**
-
-```bash
-RETICLE_INSTALL_SOURCE=skill_file npx @reticlehq/server@latest init --flow "<the journey worth proving>"
-```
+**One command, the one at the top of this file. It does all of it, and it ends with a verdict.**
 
 `@latest` is deliberate: `npx` caches, and a stale cached CLI is the most common silent setup failure. Never pin a version here.
 
