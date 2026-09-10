@@ -34,6 +34,15 @@ import { remainingSteps, type Progress } from './remaining-steps.js';
 import { AppShape, isDesktop, policyFor } from './desktop-shape.js';
 
 /** Where a run got to, and why it stopped if it did. */
+/**
+ * How long to keep asking whether the SDK has reached the page before giving up on opening a window.
+ * Bounded by the connect budget, so a short budget is never overrun by the readiness check.
+ */
+const SDK_READY_WINDOW_MS = 15_000;
+
+/** The wait left when no browser was opened: only a tab that is ALREADY loaded can still appear. */
+const NO_BROWSER_GRACE_MS = 3_000;
+
 export const SetupPhase = {
   DEV_SERVER: 'dev-server',
   CONNECT: 'connect',
@@ -237,10 +246,23 @@ export async function runSetupPhases(input: SetupInput, fx: SetupEffects): Promi
   // Only the browser is gated. The wait below still runs: something else may connect (an already
   // open tab, a desktop window), and the probe is a statement about one fetch of the document, not
   // proof that nothing can ever dial in.
+  const budgetMs = input.connectBudgetMs ?? Math.max(input.phaseTimeoutMs, policy.connectBudgetMs);
+  let openedBrowser = false;
   if (input.openBrowser && policy.openBrowser) {
-    const finding = readPage(await fx.probePage(url));
+    // ASKED UNTIL READY, not once. A dev server announces itself the moment it can answer, which is
+    // not the moment its page carries the SDK: after a config edit Vite restarts and re-optimises,
+    // and the first document it serves can still be the old one. A single probe at that instant
+    // reads SDK_MISSING for an install that is perfectly fine a second later — and then declines to
+    // open the only window that would ever have produced a session.
+    const readyBy = fx.now() + Math.min(SDK_READY_WINDOW_MS, budgetMs);
+    let finding = readPage(await fx.probePage(url));
+    while (PageFinding.SDK_PRESENT !== finding && fx.now() < readyBy) {
+      await fx.sleep(input.pollMs);
+      finding = readPage(await fx.probePage(url));
+    }
     if (PageFinding.SDK_PRESENT === finding) {
       await fx.openBrowser(url);
+      openedBrowser = true;
     } else {
       note(describePage(finding, url));
       note(
@@ -249,8 +271,17 @@ export async function runSetupPhases(input: SetupInput, fx: SetupEffects): Promi
       );
     }
   }
+  // Waiting the full budget for a session when nothing was opened to create one is dead time, and
+  // it used to be over two minutes of it: the browser is the session source on web, so declining to
+  // open it and then waiting as if we had is a promise to the reader that cannot be kept. Something
+  // else may still dial in — a tab the user already has open, a desktop window — and the existing
+  // diagnosis says such a session "will appear within a second of the page loading", so a short
+  // grace is the honest wait. A run that DID open a browser keeps the whole budget.
   const deadline =
-    fx.now() + (input.connectBudgetMs ?? Math.max(input.phaseTimeoutMs, policy.connectBudgetMs));
+    fx.now() +
+    (openedBrowser || !(input.openBrowser && policy.openBrowser)
+      ? budgetMs
+      : Math.min(NO_BROWSER_GRACE_MS, budgetMs));
   let session: CandidateSession | null = null;
   for (;;) {
     // On a desktop app, only the desktop window counts. AppShape and the runtime a page reports use

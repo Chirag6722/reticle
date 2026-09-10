@@ -297,7 +297,11 @@ describe('the connect wait honours an explicit budget', () => {
     const fx = world({
       listSessions: () => Promise.resolve([]),
       now: () => (last += 1000),
-      probePage: () => Promise.resolve({ served: false, sdkInPage: false }),
+      // Served, WITH the SDK: this measures which budget is chosen, so the run has to be one that
+      // opens a browser and therefore earns the full wait. A page that never serves now gets a
+      // deliberate short grace instead (see "opening the browser at the moment the app can be
+      // driven"), which would make these numbers a measurement of that rule rather than this one.
+      probePage: () => Promise.resolve({ served: true, sdkInPage: true }),
     });
     // A supplied url skips the dev-server phase, so what this measures is the CONNECT wait and
     // nothing else. Without it the numbers came from the dev-server loop and said nothing about the
@@ -355,5 +359,47 @@ describe('a desktop setup is only satisfied by the desktop window', () => {
       world({ listSessions: () => Promise.resolve([onUrl('tab', 'web')]) }),
     );
     expect(outcome.ok).toBe(true);
+  });
+});
+
+/**
+ * The window is what the person watching actually sees, so WHEN it opens is the feature.
+ *
+ * Both halves of this were wrong in opposite directions within a day. First the browser opened
+ * before anything checked the page, so a mis-wired app put a real window in front of someone and
+ * then did nothing for the whole connect budget. Gating it on one probe fixed that and introduced
+ * this: the probe runs the instant the dev server answers, which is NOT the instant its page
+ * carries the SDK — after a config edit Vite restarts and re-optimises — so a perfectly good
+ * install could read SDK_MISSING, open no window, and then wait out the entire budget for a session
+ * that nothing was left to create.
+ */
+describe('opening the browser at the moment the app can be driven', () => {
+  it('waits for the SDK to reach the page rather than judging on the first fetch', async () => {
+    let fetches = 0;
+    const fx = world({
+      // Ready on the third look: the shape of a dev server that answered before its bundle caught up.
+      probePage: () => {
+        fetches += 1;
+        return Promise.resolve({ served: true, sdkInPage: fetches >= 3 });
+      },
+    });
+    await runSetupPhases({ ...INPUT }, fx);
+    expect(fx.opened, 'a window that would have worked was never opened').toEqual([
+      'http://localhost:5173',
+    ]);
+  });
+
+  it('does not spend the whole connect budget waiting when it opened nothing', async () => {
+    let now = 0;
+    const fx = world({
+      probePage: () => Promise.resolve({ served: true, sdkInPage: false }),
+      listSessions: () => Promise.resolve([]),
+      now: () => (now += 100),
+    });
+    const outcome = await runSetupPhases({ ...INPUT, connectBudgetMs: 600_000, drive: false }, fx);
+    expect(fx.opened, 'nothing should have been opened').toEqual([]);
+    // The budget was ten minutes. A run that opened no window must not have burned it.
+    expect(now, 'waited as if a browser had been opened').toBeLessThan(60_000);
+    expect(outcome.reachedPhase).toBe(SetupPhase.CONNECT);
   });
 });
