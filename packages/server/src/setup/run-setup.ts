@@ -167,7 +167,8 @@ export async function runSetupPhases(input: SetupInput, fx: SetupEffects): Promi
         // "stop here rather than invent one" is the SKILL.md rule, and the words are the contract —
         // inventing a dev command is how a setup script runs the wrong thing and reports success.
         'No dev command: the project names no dev, start or serve script, and there is no --url. ' +
-          'Stopping here rather than invent one — pass --dev-cmd or --url to say what serves this app.',
+          'Stopping here rather than invent one — start the app yourself and pass --url to say ' +
+          'where it is serving, or add a dev/start/serve script to package.json and re-run.',
       );
       return stop(input, SetupPhase.DEV_SERVER, {}, notes);
     }
