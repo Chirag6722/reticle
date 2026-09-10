@@ -86,6 +86,75 @@ describe('the whole sequence, when everything works', () => {
   });
 });
 
+/**
+ * `init` started a second Vite on 5174 while 5173 was already serving the same project, leaving
+ * three sessions and no way to pick. The judgement already existed (`ALREADY_SERVING`); the spawn
+ * path never asked it. Prefer the live server this project announced over starting another.
+ */
+describe('it never starts a second server for this project', () => {
+  const EXISTING = 'http://localhost:5173';
+
+  it('uses the running server instead of starting another', async () => {
+    let started = false;
+    const fx = world({
+      startDevServer: () => {
+        started = true;
+        return Promise.resolve();
+      },
+      existingAppUrl: () => Promise.resolve(EXISTING),
+    });
+    const r = await runSetupPhases(INPUT, fx);
+    expect(started, 'must not spawn a second Vite beside the one that is up').toBe(false);
+    expect(r.url).toBe(EXISTING);
+    expect(r.notes.join(' ')).toMatch(/already running/i);
+  });
+
+  it('drives the tab that is already connected, and does not open another', async () => {
+    const fx = world({
+      existingAppUrl: () => Promise.resolve(EXISTING),
+      listSessions: () => Promise.resolve([{ sessionId: 'already-there', url: EXISTING }]),
+    });
+    const r = await runSetupPhases({ ...INPUT, drive: false }, fx);
+    expect(fx.opened, 'a second tab is how three sessions appear').toEqual([]);
+    expect(r.sessionId).toBe('already-there');
+    expect(r.ok).toBe(true);
+  });
+
+  it('still starts one when nothing for this project is up', async () => {
+    let started = false;
+    const fx = world({
+      startDevServer: () => {
+        started = true;
+        return Promise.resolve();
+      },
+      existingAppUrl: () => Promise.resolve(undefined),
+    });
+    await runSetupPhases(INPUT, fx);
+    expect(started).toBe(true);
+  });
+
+  it('still opens a tab when the server is up but nothing has connected', async () => {
+    const fx = world({
+      existingAppUrl: () => Promise.resolve(EXISTING),
+      listSessions: () => Promise.resolve([]),
+    });
+    const r = await runSetupPhases({ ...INPUT, drive: false }, fx);
+    expect(fx.opened).toEqual([EXISTING]);
+    expect(r.ok).toBe(false);
+    expect(r.reachedPhase).toBe(SetupPhase.CONNECT);
+  });
+
+  it('still refuses a session that is not on this app', async () => {
+    const fx = world({
+      existingAppUrl: () => Promise.resolve(EXISTING),
+      listSessions: () => Promise.resolve([{ sessionId: 'other', url: 'http://localhost:9999/' }]),
+    });
+    const r = await runSetupPhases({ ...INPUT, drive: false }, fx);
+    expect(r.ok).toBe(false);
+    expect(r.sessionId).toBeUndefined();
+  });
+});
+
 describe('when it cannot continue, it says what is left', () => {
   // Writing files is not an install, so none of these may report ok.
   it('stops rather than inventing a dev command', async () => {
