@@ -1,0 +1,13 @@
+### Fixed
+
+- **`@reticlehq/server` — `reticle init` opened a browser onto a page that could not connect, then waited two minutes in front of it.** The window appeared before anything had checked whether the SDK was in the page, so a mis-wired app put a real browser in front of you and did nothing for the whole connect budget — which reads as "Reticle is broken" rather than "the dev server is still serving the bundle it built before the config was edited". `init` now checks the page first and opens the window at the moment the app becomes drivable, polling for up to 15 seconds because a dev server answers before its page carries the SDK. When it declines to open one it says why in a sentence, and stops waiting after three seconds instead of spending the full budget on a session that nothing was left to create.
+
+- **`@reticlehq/server` — `init --relaunch` accepted the flag and did nothing when combined with `--files-only`.** It exited zero and printed not a word. `--files-only` is the mode you use when the app is already running, which is exactly the situation where you need to know how to get the tools loaded, so the one route that most needed the answer was the only route that could not reach it.
+
+- **`@reticlehq/server` — a project with no dev script was told to pass `--dev-cmd`, which is not a flag.** Following the one instruction given to someone already stuck lands on `unknown argument '--dev-cmd'`. The refusal now names `--url`, and says the other real way out: add a `dev`, `start` or `serve` script. A guard now reads every flag named in a setup message and asks the parser about each, so an invented flag fails when it is written rather than when somebody follows it.
+
+### Changed
+
+- **`reticle init` is the install path in the README and the docs, rather than the fourth option.** The install prompt led with the Claude Code plugin and the skills CLI and buried `init` under "Or via CLI". Neither of those touches your app — they register the MCP server, and you still run `init` afterwards to instrument anything — so the shortest documented route was also the slowest. `init` now leads, and the plugin, the skills CLI and a bare MCP registration are grouped as what they are: alternatives to the registration half.
+
+- **`init --relaunch` is documented, and says what it actually does.** It prints the exact command that restarts the conversation you are in with the tools loaded; it never opens a terminal itself. It refuses when the session id has no transcript behind it, because `--resume` on an empty id opens a blank conversation that looks exactly like it worked.
