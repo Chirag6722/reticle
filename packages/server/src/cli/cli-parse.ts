@@ -36,6 +36,11 @@ export const CLI_USAGE = `usage:  npx @reticlehq/server <command>   (or \`reticl
                 Repeatable, and a value may contain spaces and equals signs
                 --files-only writes the files and stops, which is what init did before it
                 learned to boot the app and prove the install works
+                --relaunch prints the exact command that restarts THIS conversation with
+                the tools loaded, so the restart is not a chore handed to a human. It
+                refuses when the session id has no transcript behind it, because
+                --resume on an empty id opens a blank conversation that looks like
+                success. Works with --files-only
                 --license writes the key to .env and keeps .env out of git
                 --json puts the result on stdout, so an agent reads one object
                 --no-drive / --no-open / --no-agents / --url / --timeout / --drive-model
