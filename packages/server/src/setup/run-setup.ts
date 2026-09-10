@@ -250,26 +250,34 @@ export async function runSetupPhases(input: SetupInput, fx: SetupEffects): Promi
   const budgetMs = input.connectBudgetMs ?? Math.max(input.phaseTimeoutMs, policy.connectBudgetMs);
   let openedBrowser = false;
   if (input.openBrowser && policy.openBrowser) {
-    // ASKED UNTIL READY, not once. A dev server announces itself the moment it can answer, which is
-    // not the moment its page carries the SDK: after a config edit Vite restarts and re-optimises,
-    // and the first document it serves can still be the old one. A single probe at that instant
-    // reads SDK_MISSING for an install that is perfectly fine a second later — and then declines to
-    // open the only window that would ever have produced a session.
+    // SERVED is the precondition, not SDK_PRESENT: a url that answers nothing is the only state
+    // where a window is certainly useless. Whether the SDK is in the served HTML is a DIFFERENT
+    // question — Vite injects a marker, while Nuxt, React Router, Astro, SvelteKit and CRA deliver
+    // the connect in the JS BUNDLE, so their HTML never carries it. Gating on presence failed five
+    // of ten scaffolds in the install gate: no window, so no bundle, so no session, so exit 1 on a
+    // correct install. page-probe.ts says it is a diagnostic for a connect that already failed; the
+    // same signal as a precondition deadlocks every case it is wrong about.
+    //
+    // So presence decides only WHEN: open the moment it appears (the fast path for the frameworks
+    // that inline it), otherwise once the short readiness window is out.
     const readyBy = fx.now() + Math.min(SDK_READY_WINDOW_MS, budgetMs);
     let finding = readPage(await fx.probePage(url));
-    while (PageFinding.SDK_PRESENT !== finding && fx.now() < readyBy) {
+    while (PageFinding.SDK_MISSING === finding && fx.now() < readyBy) {
       await fx.sleep(input.pollMs);
       finding = readPage(await fx.probePage(url));
     }
-    if (PageFinding.SDK_PRESENT === finding) {
-      await fx.openBrowser(url);
-      openedBrowser = true;
-    } else {
+    if (PageFinding.NOT_SERVED === finding || PageFinding.TLS_REFUSED === finding) {
       note(describePage(finding, url));
       note(
-        'Not opening a browser: the page it would show does not carry the SDK yet, so it could ' +
-          'only sit there. Fix the line above and re-run — `init` is idempotent.',
+        'Not opening a browser: nothing answered that url, so the window could only show an error ' +
+          'page. Fix the line above and re-run — `init` is idempotent.',
       );
+    } else {
+      // Said BEFORE the window appears, so somebody watching a page that stays inert has already
+      // been told which of the two it is.
+      if (PageFinding.SDK_MISSING === finding) note(describePage(finding, url));
+      await fx.openBrowser(url);
+      openedBrowser = true;
     }
   }
   // Waiting the full budget for a session when nothing was opened to create one is dead time, and

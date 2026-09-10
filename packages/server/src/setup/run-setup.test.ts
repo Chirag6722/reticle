@@ -389,14 +389,39 @@ describe('opening the browser at the moment the app can be driven', () => {
     ]);
   });
 
+  /**
+   * The install gate caught this on Nuxt and React Router in the same run, and it is the reason the
+   * presence check decides WHEN to open and never WHETHER. Nuxt's connect is a `.client.ts` plugin,
+   * React Router's is a module in the route tree: both are delivered in the JS bundle, so the served
+   * HTML never carries the SDK and never will. Gating the window on that signal meant the app was
+   * never loaded, no session could appear, and `init` exited 1 on a correct install.
+   */
+  it('still opens for a framework that delivers the SDK in the bundle, not the HTML', async () => {
+    const fx = world({
+      // Served, forever without the SDK in the document — the Nuxt/React Router shape.
+      probePage: () => Promise.resolve({ served: true, sdkInPage: false }),
+    });
+    const outcome = await runSetupPhases({ ...INPUT, drive: false }, fx);
+    expect(fx.opened, 'the window that loads the bundle was never opened').toEqual([
+      'http://localhost:5173',
+    ]);
+    expect(outcome.ok, 'a correct install reported failure').toBe(true);
+  });
+
   it('does not spend the whole connect budget waiting when it opened nothing', async () => {
     let now = 0;
     const fx = world({
-      probePage: () => Promise.resolve({ served: true, sdkInPage: false }),
+      // Nothing answers: the only case where a window is certainly useless.
+      probePage: () => Promise.resolve({ served: false, sdkInPage: false }),
       listSessions: () => Promise.resolve([]),
       now: () => (now += 100),
     });
-    const outcome = await runSetupPhases({ ...INPUT, connectBudgetMs: 600_000, drive: false }, fx);
+    // A supplied url skips the dev-server phase, so `served: false` speaks only to the browser
+    // decision under test rather than stalling the readiness wait ahead of it.
+    const outcome = await runSetupPhases(
+      { ...INPUT, suppliedUrl: 'http://localhost:5173', connectBudgetMs: 600_000, drive: false },
+      fx,
+    );
     expect(fx.opened, 'nothing should have been opened').toEqual([]);
     // The budget was ten minutes. A run that opened no window must not have burned it.
     expect(now, 'waited as if a browser had been opened').toBeLessThan(60_000);
