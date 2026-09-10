@@ -4,6 +4,10 @@ All notable changes to the **`@reticlehq/*`** packages are documented here (each
 
 ## [Unreleased]
 
+### Changed
+
+- **`@reticlehq/server` — an ambiguous target refusal ranks its candidates.** The refusal itself is unchanged (an action still must not guess), but the listed refs are ordered in-viewport then by role, and each entry says whether it is in-viewport, off-screen, visible, or hidden. A header CTA and an empty-state CTA sharing one name no longer cost a snapshot turn to pick between. Multi-match `QUERY` results stamp `inViewport` onto the described prefix so the ranker has the fact. Closes [#886](https://github.com/reticlehq/reticle/issues/886).
+
 ### Added
 
 - **`@reticlehq/server` — opt-in `uploadRoots` in `.reticle.json`.** Upload-by-path stays sandboxed to the project root by default. Declaring `"uploadRoots": ["~/Downloads", "/Volumes/fixtures"]` additionally allows files under those directories (tilde-expanded), so CAD and similar apps do not have to copy third-party binaries into the repo for flow replay. A refusal still names every allowed root; the sensitive-file deny-list still applies. Closes [#878](https://github.com/reticlehq/reticle/issues/878).
