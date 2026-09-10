@@ -21,7 +21,7 @@ import {
   isInViewport,
   isVisible,
 } from './a11y.js';
-import { isIgnored } from './dom-ignore.js';
+import { isIgnored, isReticleOverlay } from './dom-ignore.js';
 import { isSensitiveKey } from '../security/serialization.js';
 import { declaredTestids } from '../registry/capabilities.js';
 import { identifyComponent } from '../registry/adapters.js';
@@ -542,6 +542,9 @@ function buildPresentRegions(query: ElementQuery): PresentRegion[] {
   for (const role of CONTAINER_ROLES) {
     const containers = queryByRoleAndName(container, role, undefined);
     for (const el of containers) {
+      // Reticle's HUD is not the app's modal layer — listing it here sent agents to dismiss a panel
+      // that was never the problem (#783).
+      if (isReticleOverlay(el)) continue;
       const name =
         el.getAttribute('aria-label') ??
         resolveLabelledBy(el) ?? // aria-labelledby is an element ID - resolve it to the referenced TEXT
