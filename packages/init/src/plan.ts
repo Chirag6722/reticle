@@ -128,8 +128,16 @@ export interface Step {
   target: string;
   status: StepStatus;
   detail: string;
-  /** Present only when status is APPLY and a file must be written. */
-  write?: { path: string; content: string };
+  /**
+   * Present only when status is APPLY and a file must be written.
+   *
+   * `expect` is what must be READABLE BACK from the file afterwards, for a step whose write is a
+   * PATCH of somebody else's file rather than a file we own outright. Existence is enough to
+   * confirm a file we generated whole; it confirms nothing about a config we edited in place, and
+   * that gap is what #882 cost: `vite.config.ts` never received `reticle()`, the tick printed
+   * anyway, and the SDK was absent from the bundle with nothing pointing at the config.
+   */
+  write?: { path: string; content: string; expect?: readonly string[] };
   /** Present only when status is APPLY and a subprocess must run (the dependency install). */
   exec?: { command: string; args: string[]; fallback: string };
   /**
