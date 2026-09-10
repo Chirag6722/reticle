@@ -193,13 +193,13 @@ Work down this list and stop at the first row that fits. Do not hand-drive a flo
 | "Does this new behaviour work?" | `reticle_act_sequence` for the setup, then ONE `reticle_act_and_wait` | 2 |
 | No MCP available at all | `npx @reticlehq/server verify <url>` in the shell | 1, no MCP |
 
-`reticle_verify` and `reticle_flow_replay` are **not on the advertised tool list**: they are reached through `reticle_run` exactly as written above. That is the supported call shape, not a workaround, and it is why you have to be told they exist at all.
+`reticle_verify` IS on the advertised tool list, so call it directly. `reticle_flow_replay` is not: it is reached through `reticle_run` exactly as written above. That is the supported call shape, not a workaround, and it is why you have to be told it exists at all.
 
 `reticle_verify {action:"change"}` answers `unknown` when no saved flow covers the files you changed. That is the honest answer and not a failure. Nothing ran, so nothing was proved. It is also the signal to record one. Never read it as a pass.
 
 ## Two more you have to be told about
 
-Same story as `reticle_verify`: extended surface, so they are not in the tool list you were handed, and reached through `reticle_run`.
+Extended surface, so they are not in the tool list you were handed, and reached through `reticle_run`.
 
 **Context compacted, a turn starting, or a sub-agent taking over?** Ask what this run already established, instead of re-snapshotting to rediscover what you already knew:
 
@@ -252,8 +252,6 @@ reticle_act_and_wait({ sessionId, ref, action: "click", until: { kind: "allOf", 
 ```
 
 Prefer `reticle_act_and_wait({ ref, action, until })`. It names the expected consequence **before** the action, which is the difference between a check and a rationalisation.
-
-A verdict of `verified: "unknown"` is not a pass. It means Reticle drove the app and could not tell what happened. Report it as unknown. `verified: "no-fault"` is not a pass either. It means the page settled and no channel reported a problem, but nothing was declared to prove, so assert a consequence the action CHANGES. **Never weaken a check to make it pass.**
 
 Then report what you drove, what it produced, and the `file:line` for anything broken.
 
