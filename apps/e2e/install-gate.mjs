@@ -212,6 +212,17 @@ const ONLY = process.argv.includes('--only')
 const REGISTRY_PORT = Number(process.env.INSTALL_GATE_REGISTRY_PORT ?? '4873');
 const REGISTRY = `http://localhost:${String(REGISTRY_PORT)}`;
 
+/**
+ * The registry the gate publishes into, PINNED.
+ *
+ * `verdaccio@latest` re-resolved on every cell of a 20-cell matrix, so a publish of the upstream
+ * package mid-run could give two cells different registries, and a bad `npx` fetch takes the cell
+ * down before any Reticle code has run — which is how a Windows cell died with ERR_MODULE_NOT_FOUND
+ * on a diff that had not touched the gate. A version here also lets npx hit its cache instead of
+ * re-fetching per cell. Bump it deliberately.
+ */
+const VERDACCIO_VERSION = '6.10.3';
+
 async function startLocalRegistry() {
   await freePortSafely(REGISTRY_PORT);
   // The paths scripts/verdaccio.yaml actually uses. Resetting BOTH matters: leave the htpasswd file
@@ -235,7 +246,7 @@ async function startLocalRegistry() {
       .replace('/tmp/reticle-verdaccio-storage', storage.split('\\').join('/'))
       .replace('/tmp/reticle-verdaccio-htpasswd', htpasswd.split('\\').join('/')),
   );
-  const verdaccio = pm('npx', ['--yes', 'verdaccio@latest', '--config', config]);
+  const verdaccio = pm('npx', ['--yes', `verdaccio@${VERDACCIO_VERSION}`, '--config', config]);
   const proc = spawn(verdaccio.cmd, verdaccio.args, {
     cwd: ROOT,
     detached: !WIN,
