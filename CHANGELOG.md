@@ -15,6 +15,8 @@ All notable changes to the **`@reticlehq/*`** packages are documented here (each
 
 ### Changed
 
+- **`@reticlehq/browser` is 45% smaller: 1,015,916 bytes unpacked, now 556,271.** This SDK is embedded in your app, so its size is bytes in your bundle. About 43% of the package was COMMENTS — 320KB in the shipped JavaScript and 114KB more copied into the `.d.ts`. This repo writes long explanatory comments on purpose and that is right for the source and useless in the artefact, where nobody reads them. They are stripped from this package's build output only; the source is unchanged, and so is every export, type and runtime behaviour. Nothing you write against it changes.
+
 - **`@reticlehq/server` — `buildNodeIo(cwd)` now takes a host: `buildNodeIo(cwd, host)`.** Only relevant if you drive `runInit` as a library. The scaffolder no longer reaches into the daemon for the release version, the tracer, the telemetry reporter, the bridge pairing token or the declared install channel; all five arrive through an `InitHost` you pass in. `SILENT_HOST` is exported for callers with nothing to report. Every `init/*` module that was importable from `@reticlehq/server` now lives behind `@reticlehq/init`'s single entry point.
 - **`@reticlehq/init` is a package.** `reticle init` was 8,289 LOC inside the 174k-LOC server package, so a typo in a connect snippet republished the MCP server and every MCP user downloaded a scaffolder they run once. It now ships separately and the runtime depends on it.
 - **`init` writes the connect file for Nuxt and React Router.** Both previously ended on a `⚠` telling you to hand-edit — Nuxt exited 1 — so neither could be gated. React Router framework mode is where #678 happened.
