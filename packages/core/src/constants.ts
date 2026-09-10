@@ -153,6 +153,8 @@ export const ReticleEnv = {
    * shortening it. A budget nobody can reach in a test is a budget nobody tests.
    */
   RECONNECT_ATTEMPTS: 'RETICLE_RECONNECT_ATTEMPTS',
+  /** Quiet window before an abandoned MCP stdio proxy exits; `0` disables the watcher. */
+  MCP_PROXY_IDLE: 'RETICLE_MCP_PROXY_IDLE_MS',
 } as const;
 
 /** Hard transport bounds shared by the browser and bridge. */
