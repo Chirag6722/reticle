@@ -262,6 +262,21 @@ try {
     JSON.stringify(calls.slice(0, 3)),
   );
 
+  // The app has to have LOADED before "a passing assert still passes" means anything, and this
+  // waits for that rather than assuming it. `reticle_assert` evaluates ONCE by default — documented,
+  // deliberate, and the right default for a verdict — so asserting here raced the 120ms IPC round
+  // trip that fills the status line and lost every time. It failed deterministically rather than
+  // flakily, which is why it read like a product defect: the preceding wait watches the NETWORK, and
+  // the page's own subresources are observed long before the todos come back over IPC.
+  //
+  // reticle_wait_for is the tool that spends a budget (4000ms), so it establishes the precondition;
+  // the assert below is then left exactly as it was, evaluating once, which is the behaviour under
+  // test. Waiting for the app is not the same as weakening the check.
+  const ready = await blind.tool('reticle_wait_for', {
+    predicate: { kind: 'text', contains: '2 todos' },
+  });
+  chk('the un-instrumented app finishes its own IPC load', ready.pass === true);
+
   const green = await blind.tool('reticle_assert', {
     predicate: { kind: 'text', contains: '2 todos' },
   });
