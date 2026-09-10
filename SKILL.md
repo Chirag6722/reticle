@@ -38,6 +38,8 @@ There are exactly three places you may stop, and none is a question about a pref
 2. **Your host asks the human to approve a command.** That prompt belongs to the host. Never bypass or suppress it, and take a refusal as the answer. `init` writing a pre-approval rule for the `reticle` server is not that: it is a scoped, announced config change the human asked for by running the command, and it covers only Reticle's own tools.
 3. **Only if no agent CLI exists on the machine at all**, the client restart that loads the MCP tools (step 2). If `claude`, `codex`, `cursor-agent` or `gemini` is installed, you do NOT stop. Step 2 shows you how to drive from a child process instead, and that path is measured to be the difference between a verdict and a dead end.
 
+**On Claude Code and Codex, do not ask the human to restart at all.** `npx @reticlehq/server init --relaunch` restarts the client itself and resumes this work on the other side, so run it rather than handing the person a chore. Everywhere else the restart genuinely is theirs: name the one step for their client and ask for that alone.
+
 If you do have to stop, the restart ends your turn. This file was fetched into the context that just ended, so nothing carries it across unless you make it. **Before you trigger the restart, write the remaining steps into `RETICLE-SETUP.md` at the repo root**, one line each, with the step you stopped at marked. That file is what you re-read afterwards. Delete it once step 5 has produced a verdict.
 
 **After the restart, resume at the step you were on.** Do not start over, and do not skip forward.

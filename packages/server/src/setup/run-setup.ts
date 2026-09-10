@@ -29,7 +29,7 @@ import { waitProgressLine } from './wait-progress.js';
 const WINDOWS_QUIET_MEANS_HUNG_MS = 3 * 60_000;
 const WINDOWS_QUIET_MEANS_HUNG_MS_APPLIES = 'win32' === process.platform;
 import { pickSession, type CandidateSession } from './session-pick.js';
-import { readPage, describePage, type PageProbe } from './page-probe.js';
+import { readPage, describePage, PageFinding, type PageProbe } from './page-probe.js';
 import { remainingSteps, type Progress } from './remaining-steps.js';
 import { AppShape, isDesktop, policyFor } from './desktop-shape.js';
 
@@ -226,9 +226,29 @@ export async function runSetupPhases(input: SetupInput, fx: SetupEffects): Promi
   // Through `note`, not `fx.note`: a caller reading the result should see it too.
   if (undefined !== policy.note) note(policy.note);
   const before = new Set((await fx.listSessions()).map((s) => s.sessionId));
-  // Never for a desktop app: its own window is the client, and a browser tab would be a SECOND
-  // session that is not the app.
-  if (input.openBrowser && policy.openBrowser) await fx.openBrowser(url);
+  // Do not put a window in front of somebody until the page behind it can actually do something.
+  //
+  // The probe that says whether the SDK is even IN the page used to run only in the failure branch
+  // below, AFTER the browser was already open. So a mis-wired app opened a real window onto a page
+  // that was never going to connect, and the person watching it saw a browser appear and then
+  // nothing happen for the whole connect budget — which reads as "Reticle is broken" rather than
+  // "the bundle predates the config edit". One fetch, before the window, turns that into a sentence.
+  //
+  // Only the browser is gated. The wait below still runs: something else may connect (an already
+  // open tab, a desktop window), and the probe is a statement about one fetch of the document, not
+  // proof that nothing can ever dial in.
+  if (input.openBrowser && policy.openBrowser) {
+    const finding = readPage(await fx.probePage(url));
+    if (PageFinding.SDK_PRESENT === finding) {
+      await fx.openBrowser(url);
+    } else {
+      note(describePage(finding, url));
+      note(
+        'Not opening a browser: the page it would show does not carry the SDK yet, so it could ' +
+          'only sit there. Fix the line above and re-run — `init` is idempotent.',
+      );
+    }
+  }
   const deadline =
     fx.now() + (input.connectBudgetMs ?? Math.max(input.phaseTimeoutMs, policy.connectBudgetMs));
   let session: CandidateSession | null = null;
