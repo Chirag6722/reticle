@@ -8,12 +8,12 @@ import {
   type ReticleEvent,
 } from '@reticlehq/core';
 import { describeObserved } from './observed-in-window.js';
+import { netEvidence } from './net-evidence.js';
 import {
   checkRequestBody,
   newRequestBodyState,
   requestBodyVerdict,
 } from './predicate-request-body.js';
-import { withoutUrlRaw } from './event-filters.js';
 export { evalConsole } from './predicate-console.js';
 import type { Predicate } from './predicate-schema.js';
 
@@ -232,10 +232,6 @@ function observedNetCalls(
     return url.includes(REDACTED_VALUE) || url.includes(encoded);
   });
   return redacted ? `${base}; ${REDACTED_PATH_HINT}` : base;
-}
-
-function netEvidence(data: Record<string, unknown>): unknown {
-  return (withoutUrlRaw({ data }) as { data: unknown }).data;
 }
 
 /**
@@ -696,7 +692,7 @@ export function evalNet(
     };
   }
   return hit !== undefined
-    ? { pass: true, evidence: netEvidence(hit.data) }
+    ? { pass: true, evidence: netEvidence(hit.data, p) }
     : {
         pass: false,
         failureReason: `no network call matched ${JSON.stringify(p)}${0 === since ? PRE_ATTACH_CAVEAT : ''}`,
