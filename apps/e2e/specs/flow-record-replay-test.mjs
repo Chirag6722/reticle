@@ -2,6 +2,7 @@ import { chromium } from 'playwright';
 import os from 'node:os'; import path from 'node:path'; import nfs from 'node:fs';
 import { start, TOOLS, BaselineStore, RecordingStore, FlowStore, ProjectStore, AnnotationStore, createNodeFileSystem } from '@reticlehq/server';
 import { waitForSession } from '../wait-for-session.mjs';
+import { replayIsGreen, replayNotGreen } from '../replay-is-green.mjs';
 const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
 let pass=0,fail=0; const chk=(l,o,d='')=>{console.log(`   ${o?'✅':'❌'} ${l}${d?'  — '+d:''}`);o?pass++:fail++;};
 const reticleRoot=path.join(os.tmpdir(),`reticle-flow-record-${process.pid}`,'.reticle');
@@ -20,6 +21,12 @@ console.log('\n=== record → .reticle/ flow → replay → drift (real browser)
 // record + save
 await T('reticle_record',{action:'start',recordingName:'addtask'});
 await T('reticle_act',{ref:await refOf('testid','add-task'),action:'click'});
+// A CONSEQUENCE, or this flow cannot fail and replaying it proves nothing. The sibling self-heal
+// spec learned this the hard way; this one was recording a bare click and grading the replay on
+// fields the result does not have, so nothing said the flow was hollow. The page registers its
+// state with useReticleStore, so the item count is a source of truth no DOM read can reach.
+const annotated=await T('reticle_annotate',{flow:'addtask',kind:'success-state',statePath:'items',store:'page'});
+chk('the flow is given an observable consequence, so a replay of it can fail', annotated.ok!==false, JSON.stringify(annotated).slice(0,120));
 await T('reticle_record',{action:'stop',recordingName:'addtask'});
 const saved=await T('reticle_flow_save',{flowName:'addtask'});
 const flowFile=path.join(reticleRoot,'flows','addtask.json');
@@ -30,7 +37,7 @@ const list=await T('reticle_flow',{action:'list'});
 chk('reticle_flow_list returns the saved flow', JSON.stringify(list).includes('addtask'));
 // replay happy path
 const rep=await T('reticle_flow_replay',{flowName:'addtask'});
-chk('reticle_flow_replay re-resolves anchors + runs green', (rep.ok!==false)&&!rep.drift, JSON.stringify(rep).slice(0,90));
+chk('reticle_flow_replay re-resolves anchors + runs green', replayIsGreen(rep), replayNotGreen(rep) ?? `${rep.steps.length} step(s) ran`);
 // drift: corrupt the testid, replay, expect legible drift with nearest match
 nfs.writeFileSync(flowFile, raw.replaceAll('add-task','add-tassk'));
 const drift=await T('reticle_flow_replay',{flowName:'addtask'});

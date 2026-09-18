@@ -1,3 +1,6 @@
+// The trace shape is asserted across the WHOLE registry, including tools no capped surface
+// advertises, so this reaches them through reticle_run. That needs the extended surface: the
+// default is the nine-tool one, which has no dispatch hatch by design.
 // The trace is produced on every RETICLE_TRACE=1 run and then thrown away. This reads it.
 //
 // `runTool` opens one `tool.handler` root span per call and every stage underneath inherits its
@@ -57,12 +60,13 @@ process.chdir(ROOT);
 await freePortSafely(Number(PORT));
 const before = sizeOf(DAEMON_LOG);
 
-const client = new McpStdioClient('node', ['packages/server/dist/cli.js', 'mcp', '--port', PORT], {
+const client = new McpStdioClient('node', ['server/dist/command/cli.js', 'mcp', '--port', PORT], {
   RETICLE_PORT: PORT,
   RETICLE_TRACE: '1',
   RETICLE_TELEMETRY: '0',
   // The gate owns this daemon for the whole spec — see apps/e2e/harness-rules.md.
   RETICLE_IDLE_SHUTDOWN_MS: '0',
+  RETICLE_ADVERTISE_ALL_TOOLS: '1',
 });
 await client.start();
 

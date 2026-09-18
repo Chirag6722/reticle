@@ -6,7 +6,7 @@ icon: file-contract
 
 > For anyone (human or agent) adding a tool, an event, a finding kind, or a failure path to Reticle.
 >
-> The rules here are enforced by `packages/server/src/telemetry/telemetry-contract.test.ts`. If you break one, that test tells you which and where. This page is why.
+> The rules here are enforced by `server/src/telemetry/telemetry-contract.test.ts`. If you break one, that test tells you which and where. This page is why.
 
 ## Why this has its own contract
 
@@ -41,7 +41,7 @@ So every `bug_found` carries **`repeat`**: false the first time a KIND is seen i
 
 The denominator is **`verification_completed`**, which fires per verdict with `via`, `verified`, `passed` and `falseGreenCaught`. Defects per verification is the honest rate; raw defect counts grow with usage and say nothing on their own.
 
-**And `repeat` only means anything if the session remembers.** `SessionMetrics.reset()` runs at every periodic flush and used to clear the seen-kinds set with the window counters, so the same defect, re-found after a flush, reported `repeat: false` again. Sessions in the data run to 11.5 hours. Window counters zero on a flush; session-lifetime memory does not. (`session-window.test.ts`)
+**And `repeat` only means anything if the session remembers.** `SessionMetrics.reset()` runs at every periodic flush and used to clear the seen-kinds set with the window counters, so the same defect, re-found after a flush, reported `repeat: false` again. Sessions can run many hours. Window counters zero on a flush; session-lifetime memory does not. (`session-window.test.ts`)
 
 Two rules follow, and both are gated:
 
@@ -92,7 +92,7 @@ The single exception is `daemon_stopped`, which is **awaited**, because the proc
 | --- | --- | --- |
 | `reticle_installed` | first-ever run on a machine | install count, and the new-user curve |
 | `cli_command_run` | a human ran a `reticle` subcommand | human intent: `verify`/`gate` mean something very different from `status`. Never emitted for the internal `_daemon` spawn |
-| `daemon_started` | the daemon came up | active sessions, DAU/WAU/MAU |
+| `daemon_started` | the daemon came up | active sessions |
 | `daemon_stopped` | clean exit | the rich session roll-up. **Count sessions with this one**; see below |
 | `session_progress` | periodic flush from a LIVE daemon | same payload, `final: false`. Sum work across both |
 | `verification_completed` | a verdict was produced | the product's reason to exist: was an app actually verified |
@@ -105,6 +105,7 @@ The single exception is `daemon_stopped`, which is **awaited**, because the proc
 | `app_instrumented` | the first app carrying the SDK reached this daemon | **the funnel step everything turns on**; see below |
 | `mcp_connection_lost` | the proxy lost its daemon | **the transport-stability metric.** The disconnect that makes a user reopen `/mcp` is invisible without it |
 | `init_completed` | `reticle init` finished | does install actually work, outside the fixtures gate |
+| `onboarding_step` | each step of install / onboard / first run | WHERE people stop, which no other kind can answer |
 | `bug_found` | a defect was detected in the app under test | the value delivered, as opposed to the work done |
 | `tool_refused` | a tool could not do what was asked | WHY the largest cohort in the funnel goes quiet. See below |
 
@@ -217,13 +218,13 @@ A licensed deployment reports which licence it is running under, so per-customer
 
 **The organisation name never goes on the wire.** It is free text somebody typed when the key was signed, so it falls under rule 3. The id is opaque; the map from id to company is a local ledger. An analytics-side breach therefore cannot expose who is evaluating Reticle.
 
-Resolution reads the EVENT's clock, not one captured at daemon start: sessions here run to eleven hours, and a key that expires mid-session has to start reporting `expired` from the event it expired on.
+Resolution reads the EVENT's clock, not one captured at daemon start: sessions can run many hours, and a key that expires mid-session has to start reporting `expired` from the event it expired on.
 
 > **This changes what a licensed deployment sends, so it is a contract term, not a quiet addition.** The enterprise agreement has to say that licensed deployments report usage attributed to their licence id, and list these fields. `RETICLE_TELEMETRY=0` and `DO_NOT_TRACK` still switch it off exactly as they switch off everything else. There is no exception for licensed installs, and adding one would put a hole in the kill switch that a security review is entitled to find.
 
 ## Why they stopped: `tool_refused`
 
-The refusal path computes a precise diagnosis, hands it to the agent as prose, and throws it away. So the biggest cohort in the funnel, the users who attach an agent and never drive, emitted nothing at all and was reachable only by subtracting two other numbers. Half of issue #172.
+The refusal path computes a precise diagnosis, hands it to the agent as prose, and throws it away. So an agent that attaches and never drives emitted nothing at all, and was reachable only by subtracting two other numbers. Half of issue #172.
 
 - `refusal_tool`: which tool, from our own fixed namespace. Never app data.
 - `refusal_reason`: the closed `RefusalReason`: `no_session` | `no_match` | `unsupported` | `bad_args` | `not_ready` | `other`. Four different owners, and one undifferentiated "they stopped" number is actionable by none of them.
@@ -252,7 +253,7 @@ Capped at 50 per daemon run. Volume is part of this taxonomy's design and a stuc
 
 What it does **not** answer: whether the agent surfaced the nudge to its human. Nothing on this side of the envelope can see that, and inferring it from a later upgrade would credit the nudge for a `reticle update` somebody ran for their own reasons -- which is precisely the credit `nudge-credit.ts` bounds to a seven-day window rather than claiming outright.
 
-One edge to know when querying: `updateNudged` reads the delivery flag, and `armUpdateNudgeFrom` re-arms it when a newer manifest lands mid-session. On a long session that spans a release it therefore reports the LAST arming's state, not "was ever shown". Sessions in the data run to eleven hours, so this is reachable; it is rare, and it errs toward `false`.
+One edge to know when querying: `updateNudged` reads the delivery flag, and `armUpdateNudgeFrom` re-arms it when a newer manifest lands mid-session. On a long session that spans a release it therefore reports the LAST arming's state, not "was ever shown". Sessions can run many hours, so this is reachable; it is rare, and it errs toward `false`.
 
 ## Which route brought them in: `installSource`
 
@@ -362,7 +363,7 @@ One deliberate exception to the rules above: `RETICLE_TELEMETRY_FILE` keeps tele
 | You are adding | Do this | Enforced by |
 | --- | --- | --- |
 | **A tool** | Add it to `TOOLS`. Nothing else. If its name implies a verdict (`assert`/`verify`), also add it to `VERDICT_TOOLS` | `telemetry-contract.test.ts` |
-| **A verdict-producing tool** | Add it to `VERDICT_TOOLS` (`packages/server/src/tools/feedback-tools.ts`). Otherwise it emits no `verification_completed` and stops counting toward the product's headline metric | ✓ |
+| **A verdict-producing tool** | Add it to `VERDICT_TOOLS` (`server/src/surface/tools/feedback-tools.ts`). Otherwise it emits no `verification_completed` and stops counting toward the product's headline metric | ✓ |
 | **A contradiction / anomaly kind** | Add it to core's enum only. `bug-found.ts` derives from it | ✓ |
 | **A new finding shape** in a tool result | Teach `bugsInResult` the field. Add a case to the contract test | ✓ |
 | **A failure path** (connect, install, crash) | Classify it into an enum with an explicit `OTHER` bucket; a classifier that cannot say "I don't know" lies instead | ✓ |
@@ -388,3 +389,24 @@ The second is the one that matters. It drives the real built modules against a r
 ## The privacy line, in one sentence
 
 We measure **that** something happened and **what class** of thing it was, never **what** it was, in whose app, or containing what.
+
+## The setup funnel: `onboarding_step`
+
+One kind for every step of every phase, rather than an event name per step. A name per step means that every funnel query names the steps it spans, so moving, renaming or inserting one silently breaks the query that was watching it. A `phase` + `step` pair keeps the funnel a `GROUP BY` instead of a union, and a new step arrives in the existing chart rather than beside it.
+
+```
+install    script_started → runtime_ready → cli_installed → agents_detected → mcp_registered
+onboard    tour_started → concept_shown → first_look → first_act → first_verdict
+first_run  project_detected → instrumented → app_connected → driven → flow_recorded → verdict_produced
+```
+
+Four decisions are written into the shape, and each exists because the alternative loses something:
+
+- **`instrumented` and `app_connected` are separate steps.** Files written is not a page that dialled the bridge, and every silent install bug so far has lived in exactly that gap.
+- **Both tours end at a verdict.** `verdict_produced` is THE conversion event: everything before it is setup that proved nothing, and `init_completed` fires minutes earlier when files are written.
+- **`abandoned` is distinct from `failed`.** With one losing status both read as "never got there", and only one of them is our bug.
+- **`skipped` is a real answer.** No coding agent on the machine, or a drive that declared no consequence worth saving, is not a failure, counting it as one hides the failures that are.
+
+`step` is a CLOSED SET, validated against the funnel's own vocabulary. It was `z.string().max(48)` with a comment promising it was never user text, and a cap is not a promise: `/Users/someone/secret/ project` is 28 characters and validated cleanly. That is a rule-3 leak from the one payload a person can edit, the installer's breadcrumb file, on disk, in their own home directory.
+
+`elapsedMs` absent means NOT MEASURED, never zero. A zero enters every average as a real duration and drags it toward a number nobody experienced.

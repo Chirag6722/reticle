@@ -60,14 +60,15 @@ artifact) is transport-agnostic; every consumer hits the same core:
 - **Modes:** *explore* (surf/research a running app) · *discover* (read the app's capability contract)
   · *verify* (replay flows → verdict).
 - **Multi-agent concurrency:** a single headless Chromium leases **isolated contexts** (separate
-  cookies/storage/DOM) to N concurrent agents via `reticle_lease { action: "acquire" | "release" }`; the pool
+  cookies/storage/DOM) to N concurrent agents (`reticle open <url>`, or `reticle_run { tool: "reticle_lease" }`
+  for an agent that needs the lease directly, since the 9-tool surface does not advertise it); the pool
   caps at `min(8, cores−1)`, queues over-cap work FIFO, and auto-reclaims a lease from any hung/crashed
   agent. A fleet verifies in parallel with no per-agent browser and no cross-talk.
 
-**Which tools actually produce a verdict.** The default MCP surface is 18 tools, but only
+**Which tools actually produce a verdict.** The default MCP surface is 9 tools, but only
 `reticle_act_and_wait` and `reticle_assert` return a pass/fail — `reticle_act` performs an action and
 reports no verdict. An agent that only calls `act` has verified nothing, which was the single largest
-cause of un-verified sessions in the field. `reticle_act_sequence` collapses a multi-step flow (a login
+cause of un-verified sessions. `reticle_act { steps: [...] }` collapses a multi-step flow (a login
 form, a checkout) into one call instead of one round trip per click. A returned `verified: "unknown"`
 is **not** a pass — it means Reticle could not tell.
 
@@ -89,7 +90,7 @@ wires it unattended and (b) whether a DOM node maps back to the component and so
   React, monorepo sub-packages.
 - **Auto-wired, no source mapping:** Create React App, SvelteKit, Astro, standalone Svelte. Every
   tool works — refs, roles, test-ids, network, console, storage, state, assertions, verdicts — but
-  `reticle_query` cannot say *which component* rendered a node, because that needs a build plugin.
+  `reticle_look { action: "find" }` cannot say *which component* rendered a node, because that needs a build plugin.
 - **Auto-wired, flagged UNVERIFIED by `init` itself:** Vue 3, Preact.
 - **Not auto-detected:** Angular (open issue). Anything else works via a manual `connect()` call.
 
@@ -107,13 +108,25 @@ Svelte stores, Pinia. Anything else works through the generic `pushStore`.
 
 ## How it's used (four ways)
 
-1. **Agent, on your own app (the default).** Paste one line to your agent:
-   `Follow https://raw.githubusercontent.com/reticlehq/reticle/main/SKILL.md`
-   The skill runs a setup wizard once (build plugin + a ~10-line dev-only `reticle.connect()` + MCP
-   config), then verifies on every change. (Or `npx @reticlehq/server init`.)
-   On Claude Code the shortest route is the plugin, which registers the MCP server and the skill in
-   one step: `/plugin marketplace add reticlehq/reticle` then `/plugin install reticle@reticlehq`.
-   For Cursor, Codex, Copilot and Gemini: `npx skills add reticlehq/reticle`.
+1. **Agent, on your own app (the default).** Two steps, in this order, and the order matters.
+
+   First, ONCE PER MACHINE, in a terminal before any coding agent is open:
+   `curl -fsSL https://raw.githubusercontent.com/reticlehq/reticle/main/install/install.sh | sh`
+   (`irm https://raw.githubusercontent.com/reticlehq/reticle/main/install/install.ps1 | iex` on
+   Windows). That installs the CLI and registers the MCP server with every coding agent it can reach,
+   so the `reticle_*` tools are present the next time one starts. A coding agent reads its MCP server
+   list once at startup, so installing while it is closed is what removes the restart: registering
+   from inside a running agent cannot make the tools appear until it comes back, which strands the
+   setup half-done. Codex CLI keeps a TOML config Reticle will not rewrite, and the installer prints
+   the lines to paste instead of claiming it registered.
+
+   Then, ONCE PER PROJECT, in the repo: `npx @reticlehq/server init`. This is the per-project step in
+   the sense `npm init` is: it installs the dev-only SDK, wires the build config, restarts the dev
+   server and opens the app to prove a session connected.
+
+   On Claude Code the plugin does the machine step and the skill together:
+   `/plugin marketplace add reticlehq/reticle` then `/plugin install reticle@reticlehq`.
+   For other agents the skills CLI works: `npx skills add reticlehq/reticle`.
 2. **One-shot CLI / CI.** `reticle verify <preview-url>` drives the app, replays the saved flows, prints
    the verdict, exits non-zero on fail. No MCP, no human — ideal for CI or an AI app-builder pipeline.
 3. **HTTP from a pipeline.** `reticle serve --http` exposes `POST /verify` returning the same artifact.
@@ -149,8 +162,8 @@ structurally SEE?), and **Playwright MCP** / **Chrome DevTools MCP** agent-drive
 COST?). Tested on a controlled toy app AND a real production app, with both results published,
 including where Reticle loses. Full from-scratch explainer: `docs/benchmarks.md`.
 
-**88-bug head-to-head vs a Playwright script (the largest, least model-dependent measurement;
-re-run on the 2.9.0 branch — figures below are that run, not an older recorded one):**
+**88-bug head-to-head vs a Playwright script (the largest, least model-dependent measurement,
+re-run for this release rather than quoted from an older one):**
 - **Bugs caught: Reticle 85/88 vs Playwright script 59/88**, both with **zero false alarms** on the
   clean build. A catch requires the check to fail on the broken build AND pass on the clean one.
 - **False greens (broken, reported OK): Reticle 1 vs 29.** Two of Reticle's three non-catches are the
@@ -245,7 +258,7 @@ package that re-exports the others) ·
 - **Skill file (paste this URL to your agent):** https://raw.githubusercontent.com/reticlehq/reticle/main/SKILL.md
 - **Docs site (start here):** https://docs.reticle.sh — a page per tool, per CLI command, per
   package, with every command captured from a real run.
-  - Quickstart: https://docs.reticle.sh/quickstart · Every tool: https://docs.reticle.sh/tools-overview
+  - Quickstart: https://docs.reticle.sh/quickstart · Every tool: https://docs.reticle.sh/tools/overview
     · Every command: https://docs.reticle.sh/cli · Troubleshooting: https://docs.reticle.sh/troubleshooting
     · Desktop apps: https://docs.reticle.sh/desktop
 - **Reading as an agent — fetch:** https://docs.reticle.sh/llms.txt lists every page, and appending

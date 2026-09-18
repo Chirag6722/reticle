@@ -21,7 +21,7 @@ The rows are kept as a record of what was run. They are not a baseline. **Record
 
 ## What in here is live — every script, executed 2026-08-11
 
-`harness/` holds 39 files and only twelve are driven by a suite. The rest are **kept one-off studies**: each produced a number in a published scorecard, and deleting one would leave that claim with no reproduction. That is deliberate, and the cost is that "a file exists in `harness/`" told you nothing about whether it still ran.
+`harness/` is the largest directory here and only a minority are driven by a suite. The rest are **kept one-off studies**: each produced a number in a published scorecard, and deleting one would leave that claim with no reproduction. That is deliberate, and the cost is that "a file exists in `harness/`" told you nothing about whether it still ran.
 
 So they were all run. **Every script below passes.** The two defects that surfaced are fixed:
 
@@ -60,7 +60,7 @@ Run during this sweep, it silently redrew the detection chart with Chrome DevToo
 
 `clock-timetravel.mjs` failed on `reticle_clock {reset:true}` with `TypeError: Illegal invocation`. The cause was in the SDK, not the bench: `resetClock()` re-armed the app's pending timers by calling the captured natives off a plain object (`natives.setTimeout(...)`), so the DOM received a foreign `this` and refused. An early return when nothing is pending meant it fired **only** when the app had actually queued work during the freeze — the exact case the function exists to serve.
 
-Every unit test passed throughout, because jsdom does not enforce the receiver. Only a real browser does, and in this repo the things that drive a real browser are the e2e battery and this directory. That is the argument for keeping `bench/` alive even though it gates nothing: it is one of the few places a jsdom-invisible defect can surface. Fixed in `packages/browser/src/timers/clock.ts`, with three tests that install a WebIDL-faithful strict double and go red without the fix.
+Every unit test passed throughout, because jsdom does not enforce the receiver. Only a real browser does, and in this repo the things that drive a real browser are the e2e battery and this directory. That is the argument for keeping `bench/` alive even though it gates nothing: it is one of the few places a jsdom-invisible defect can surface. Fixed in `adapters/realm/browser/src/timers/clock.ts`, with three tests that install a WebIDL-faithful strict double and go red without the fix.
 
 ## Layout
 
@@ -87,7 +87,7 @@ artifacts/                charts + diagrams (SVG + PNG) + screens/ (real PNGs + 
 
 - Node v22+, pnpm, `python3` with `tiktoken` (proxy tokenizer; harness degrades gracefully without it).
 - Playwright Chromium installed (`pnpm exec playwright install chromium`), local Chrome (DevTools MCP).
-- `@reticlehq/server` built: `pnpm build` (the harness runs `node packages/server/dist/cli.js mcp`).
+- `@reticlehq/server` built: `pnpm build` (the harness runs `node server/dist/command/cli.js mcp`).
 
 ## Run it
 
@@ -167,7 +167,7 @@ pgrep -f chrome-headless-shell | wc -l   # browsers still attached
 **Clean up:**
 
 ```bash
-node packages/server/dist/cli.js stop --port 4460 --quiet   # the polite way, first
+node server/dist/command/cli.js stop --port 4460 --quiet   # the polite way, first
 pkill -f "cli.js _daemon"                                   # then anything that ignored it
 pkill -f chrome-headless-shell
 ```

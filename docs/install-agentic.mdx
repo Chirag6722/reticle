@@ -1,15 +1,24 @@
 ---
 title: 'Agentic install: let the agent do it'
 sidebarTitle: Agentic install
-description: One command wires Reticle into your project, boots the app, proves a session connected and drives one flow to a verdict. What it changes, what you pass it, and how to read what it returns.
+description: One command wires Reticle into your project, boots the app and proves a session connected. What it changes, what you pass it, and how to read what it returns.
 icon: wand-magic-sparkles
 ---
 
-**Run `npx @reticlehq/server init` in your project root.** It registers the MCP server for every agent it finds, installs the SDK, wires your build config, writes the agent rule files, and prints a plan you can read. It is idempotent, so running it twice is safe.
+**Run `npx @reticlehq/server init` in your project root.** It installs the SDK, wires your build config, writes the agent rule files, boots the app, and prints a plan you can read. It is idempotent, so running it twice is safe.
 
 ```bash
 npx @reticlehq/server init
 ```
+
+<Note>
+  This is the PROJECT step. The machine step comes first and is one command in a terminal, `curl
+  -fsSL https://raw.githubusercontent.com/reticlehq/reticle/main/install/install.sh | sh`, which
+  registers the MCP server with every agent it can reach so the tools are there when you open your
+  agent. `init` will register the server itself if nobody has, but doing it from inside an agent
+  that has already read its server list means the tools cannot appear until that agent restarts.
+  Terminal first, then open the agent, then `init`. See the [quickstart](/quickstart).
+</Note>
 
 The install is designed for the agent to run rather than you. The agent is about to be the primary user of this tool, so it may as well set up its own workspace.
 
@@ -199,14 +208,13 @@ Three of these are answers only the caller has. `init` reads your repository; it
 
 | Flag | When you want it |
 | --- | --- |
-| `--flow "<what>"` | **Name the journey worth proving.** `init` can list the buttons on a page; it cannot know that checkout matters and the theme toggle does not. Naming it is the difference between a drive that finishes and one that spends its budget looking for something to do. |
+| `persona: "<what>"` | **Name the journey worth proving**, on the FIRST RUN (`reticle_verify { action: "explore", persona: "<the journey worth proving>" }`), not on `init`, which does not drive. Reticle can list the buttons on a page; it cannot know that checkout matters and the theme toggle does not. Naming it is the difference between a drive that finishes and one that spends its budget looking for something to do. |
 | `--env KEY=VALUE` | What the app needs to reach a usable state: the key from `.env.example`, the mock backend, the variable that skips an auth wall. Repeatable, and a value may contain spaces and equals signs. Without it a real app sits on a login screen and there is no flow to drive. |
 | `--app <dir>` | Monorepos. `init` can find the apps that are servable; only your request says which one you are working in. |
 | `--license <key>` | Writes `RETICLE_LICENSE_KEY` to `.env` and keeps `.env` out of git. Do not do those two by hand. |
 | `--json` | One object on stdout: what was wired, what connected, the verdict, and an `agentTodo` array. For agents. |
 | `--files-only` | Write the files, register the MCP server with every agent on the machine, pre-approve Reticle's tools, and stop: no dev server, no drive. What `init` did before it learned to boot the app, and the upgrade path for a machine that installed Reticle on an earlier version. |
 | `--no-open` | Do not open a browser: CI, a container, an SSH session, or a tab you already have. |
-| `--no-drive` | Stop once a session connects and leave the verdict to you. The only honest way to skip it. |
 | `--dry-run` | See the plan before anything is written. |
 | `--no-mcp` | Your MCP config is managed elsewhere (dotfiles, a team template). |
 | `--no-install` | You want to add the dependencies yourself, at your own versions. |

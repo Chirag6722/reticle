@@ -62,11 +62,14 @@ const REGRESSIONS = {
     files: [F.store],
     apply() {
       // The new-deploy button can never open the modal.
-      replaceOnce(
-        F.store,
-        '  setNewDeploy: (newDeployOpen) => {\n    set({ newDeployOpen });',
-        '  setNewDeploy: (newDeployOpen) => {\n    set({ newDeployOpen: false });',
-      );
+      //
+      // The anchor was the two lines `setNewDeploy: (newDeployOpen) => {` and `set({ newDeployOpen })`
+      // ADJACENT. A bench-app fix put an early return between them — `if (get().newDeployOpen ===
+      // newDeployOpen) return;` — and this scenario stopped injecting, silently: the benchmark would
+      // have scored seven planted regressions against a denominator of eight and read as a DETECTION
+      // regression. Anchored on the single `set` line now, which is unique in the file and does not
+      // care what sits above it.
+      replaceOnce(F.store, '    set({ newDeployOpen });', '    set({ newDeployOpen: false });');
     },
   },
   'broken-form-validation': {

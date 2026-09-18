@@ -3,7 +3,7 @@ name: reticle
 description: Install, instrument and verify this running web app from the inside (DOM, network, routing, console and framework state) instead of screenshots or guessing. Drives one real flow end to end and returns a verdict with the file:line to fix. Use when the user asks to set up or install Reticle, when a user-facing change needs proving before you call it done, when a test passes but the UI is broken, or when the user types /reticle.
 license: Apache-2.0
 metadata:
-  version: 2.14.0
+  version: 3.1.0
   homepage: https://www.reticle.sh
   repository: https://github.com/reticlehq/reticle
 ---
@@ -38,21 +38,29 @@ Either way you are finished only when `reticle_act_and_wait` or `reticle_assert`
 
 # ONBOARD
 
-**One command. It does all of it, and it ends with a verdict.**
+**One command wires the project. A second one proves a flow.**
 
 ```bash
-npx @reticlehq/server@latest init --flow "<the journey worth proving>"
+npx @reticlehq/server@latest init
 ```
 
-It detects the framework and package manager, wires the build config, installs the SDK, registers the MCP server, starts the dev server, opens the app, waits for a session to connect from inside it, drives one flow, and saves it so every later check is one call with no model in the loop. It exits non-zero if no verdict was produced, and prints exactly what is left to do.
+It detects the framework and package manager, wires the build config, installs the SDK, registers the MCP server, starts the dev server, opens the app, and waits for a session to connect from inside it. That connection IS the proof onboarding worked: the SDK is in the page and the tools have something to talk to. It exits non-zero if nothing connected, and prints exactly what is left to do.
+
+**Then prove a flow. That is the FIRST RUN, and it is a separate call:**
+
+```
+reticle_verify { action: "explore", persona: "<who does what>" }
+```
+
+It drives the app with a model inside the daemon and RECORDS what it drove, so every later check replays that flow with no model in the loop.
 
 ## What YOU decide, and pass in
 
-The command reads the repository. It cannot read the request, and three things live only there.
+The command reads the repository. It cannot read the request, and these live only there.
 
 | flag | what only you know |
 | --- | --- |
-| `--flow "<what>"` | which journey proves the thing the user asked for. Code can list the buttons; it cannot know checkout matters and the theme toggle does not. |
+| `persona: "<what>"` (on the FIRST RUN, not on `init`) | which journey proves the thing the user asked for. Code can list the buttons; it cannot know checkout matters and the theme toggle does not. |
 | `--env KEY=VALUE` | what the app needs to reach a usable state: the key from `.env.example`, the mock backend, the variable that skips an auth wall. Repeatable. |
 | `--app <dir>` | which app in a monorepo. It can list the servable ones; only the request says which is being worked on. |
 
@@ -91,7 +99,7 @@ Stop at the first row that fits.
 | --- | --- | --- |
 | "Did my edit break anything?" | `reticle_run({ tool: "reticle_verify", args: { action: "change", files: ["src/App.tsx"] } })` | 1 |
 | "Does this known journey still work?" | `reticle_run({ tool: "reticle_flow_replay", args: { flowName: "login" } })` | 1 |
-| "Does this new behaviour work?" | `reticle_act_sequence` for the setup, then ONE `reticle_act_and_wait` | 2 |
+| "Does this new behaviour work?" | `reticle_act { steps: [...] }` for the setup, then ONE `reticle_act_and_wait` | 2 |
 | No MCP reachable at all | `npx @reticlehq/server verify <url>` in the shell | 1, no MCP |
 
 `reticle_verify` and `reticle_flow_replay` are **not on the advertised tool list**. They are reached through `reticle_run` exactly as written, which is the supported call shape and why you have to be told they exist. `reticle_verify {action:"change"}` answers `unknown` when no saved flow covers the files you changed: nothing ran, so nothing was proved. That is the honest answer and the signal to record one, never a pass.
@@ -100,10 +108,10 @@ Stop at the first row that fits.
 
 Four calls for a login, not fourteen. Every call is a full model turn, and in a client that approves each one it is also a click.
 
-1. `reticle_snapshot({ mode: "interactive" })` **once**, for the whole flow. Elements are addressable by role and name, so you do not need to add `data-testid` anywhere.
-2. `reticle_act_sequence` for the setup: every fill and every intermediate click in ONE call.
+1. `reticle_look({ action: "page", mode: "interactive" })` **once**, for the whole flow. Elements are addressable by role and name, so you do not need to add `data-testid` anywhere.
+2. `reticle_act { steps: [...] }` for the setup: every fill and every intermediate click in ONE call.
 3. `reticle_act_and_wait({ ref, action, until })` for the final step only. `until` names the expected consequence **before** the action fires, which is the difference between a check and a rationalisation.
-4. `reticle_state()` once at the end. If it comes back empty or `hasCapabilities` is false, the capabilities file `init` generated registered nothing, which is what its `ℹ AGENT: finish the capabilities file` line was telling you. Finish it yourself before you drive: open `src/reticle-dev.*`, register the app's store if it has one, and list the `testids` the flow you picked actually touches. Do not offer, and do not ask; it is a few lines in a file `init` already wrote for you. Never report a clean install over an empty state read.
+4. `reticle_look({ action: "state" })` once at the end. If it comes back empty or `hasCapabilities` is false, the capabilities file `init` generated registered nothing, which is what its `ℹ AGENT: finish the capabilities file` line was telling you. Finish it yourself before you drive: open `src/reticle-dev.*`, register the app's store if it has one, and list the `testids` the flow you picked actually touches. Do not offer, and do not ask; it is a few lines in a file `init` already wrote for you. Never report a clean install over an empty state read.
 
 Assert what the app _did_, not what it _shows_. A UI that renders the value it just sent, rather than the value the server returned, passes every DOM-level check ever written:
 
@@ -136,7 +144,7 @@ Never echo the key back in your reply, and never put it in a commit, a comment, 
 Reticle is built for agents. You are its user, and your experience is the only signal that decides what gets built or fixed, and it disappears when your context does. The moment Reticle breaks, lies, cannot see something you needed, costs too many calls, or gives you trouble during setup:
 
 ```
-reticle_feedback { kind, text }
+reticle_session { action: "feedback" } { kind, text }
 ```
 
 `kind` is one of `bug`, `gap`, `ambiguity`, `feature_request`, `improvement`. One call, then carry on. If the tools are unreachable, file the same report from the shell:

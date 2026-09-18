@@ -3,7 +3,7 @@ name: install-and-verify
 description: Verify that a web app change actually works by driving the running app from the inside (DOM, network, routing, console, framework state) instead of screenshots or guessing. Use after any user-facing change, when a fix is claimed but unproven, when a test passes but the UI is broken, or when you need a real verdict rather than "looks right". Also use to install and wire up Reticle in a project that does not have it yet.
 license: Apache-2.0
 metadata:
-  version: 2.14.0
+  version: 3.1.0
   homepage: https://www.reticle.sh
   repository: https://github.com/reticlehq/reticle
 ---
@@ -19,7 +19,7 @@ Everything not in this file is at `https://docs.reticle.sh`, and it is built to 
 ```bash
 curl https://docs.reticle.sh/llms.txt                  # every page title and URL, small enough to read whole
 curl https://docs.reticle.sh/cli/doctor.md             # one CLI command: flags, real output, exit codes
-curl https://docs.reticle.sh/tools-act-and-wait.md     # one tool: arguments and what a verdict means
+curl https://docs.reticle.sh/tools/act-and-wait.md     # one tool: arguments and what a verdict means
 curl https://docs.reticle.sh/troubleshooting.md        # the failures people actually hit
 ```
 
@@ -35,6 +35,15 @@ cat .reticle.json 2>/dev/null || echo NOT_FOUND
 
 - `NOT_FOUND` → **SETUP** below.
 - File exists → **VERIFY** below. If `reticle_sessions` then returns an empty list, go to [references/troubleshooting.md](references/troubleshooting.md); do not restart setup.
+
+Both paths are about THIS PROJECT. The machine step is separate and comes first: one command that puts the CLI on PATH and registers the MCP server with every agent it can reach.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/reticlehq/reticle/main/install/install.sh | sh     # macOS, Linux
+irm https://raw.githubusercontent.com/reticlehq/reticle/main/install/install.ps1 | iex          # Windows PowerShell
+```
+
+**If you can see `reticle_*` tools, that already happened and you can ignore it.** If you cannot, hand the user that one line to run in a terminal and stop there. `init` can register the MCP server itself, but doing it from inside a client that has already read its server list means the tools cannot appear until the client restarts, which ends your turn in the middle of setup. The terminal-first order is what removes that step, so do not work around it.
 
 ## Read this before you touch SETUP
 
@@ -66,21 +75,29 @@ Setup requires a client restart, which ends your turn. This skill survives that 
 
 # SETUP
 
-**One command. It does all of it, and it ends with a verdict.**
+**One command wires the project. A second one proves a flow.**
 
 ```bash
-RETICLE_INSTALL_SOURCE=npx_skill npx @reticlehq/server@latest init --flow "<the journey worth proving>"
+RETICLE_INSTALL_SOURCE=npx_skill npx @reticlehq/server@latest init
 ```
 
-It detects the framework and package manager, wires the build config, installs the SDK, registers the MCP server, starts the dev server, opens the app, waits for a session to connect from inside it, drives one flow, and saves it so every later check is one call with no model in the loop. It exits non-zero if no verdict was produced, and prints exactly what is left to do.
+It detects the framework and package manager, wires the build config, installs the SDK, registers the MCP server, starts the dev server, opens the app, and waits for a session to connect from inside it. That connection IS the proof onboarding worked: the SDK is in the page and the tools have something to talk to. It exits non-zero if nothing connected, and prints exactly what is left to do.
+
+**Then prove a flow. That is the FIRST RUN, and it is a separate call:**
+
+```
+reticle_verify { action: "explore", persona: "<who does what>" }
+```
+
+It drives the app with a model inside the daemon and RECORDS what it drove, so every later check replays that flow with no model in the loop.
 
 ## What YOU decide, and pass in
 
-The command reads the repository. It cannot read the request, and three things live only there.
+The command reads the repository. It cannot read the request, and these live only there.
 
 | flag | what only you know |
 | --- | --- |
-| `--flow "<what>"` | which journey proves the thing the user asked for. Code can list the buttons; it cannot know checkout matters and the theme toggle does not. |
+| `persona: "<what>"` (on the FIRST RUN, not on `init`) | which journey proves the thing the user asked for. Code can list the buttons; it cannot know checkout matters and the theme toggle does not. |
 | `--env KEY=VALUE` | what the app needs to reach a usable state: the key from `.env.example`, the mock backend, the variable that skips an auth wall. Repeatable. |
 | `--app <dir>` | which app in a monorepo. It can list the servable ones; only the request says which is being worked on. |
 
@@ -153,7 +170,7 @@ Reticle is built for agents. You are its user, and your experience is the only s
 The moment Reticle breaks, lies, cannot see something you needed, costs too many calls, or gives you trouble during setup:
 
 ```
-reticle_feedback { kind, text }
+reticle_session { action: "feedback", kind, text }
 ```
 
 `kind` is one of `bug`, `gap`, `ambiguity`, `feature_request`, `improvement`. One call, then carry on with the task.

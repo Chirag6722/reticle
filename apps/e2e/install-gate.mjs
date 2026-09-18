@@ -124,7 +124,7 @@ function pm(cmd, args = []) {
 }
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const CLI = join(ROOT, 'packages/server/dist/cli.js');
+const CLI = join(ROOT, 'server/dist/command/cli.js');
 /** Private ports, so this never fights the battery or a developer's own daemon. */
 /**
  * Separate port ranges for the self-test, which runs FIRST in CI and in the same job.
@@ -349,7 +349,13 @@ async function publishInto(proc) {
     `registry=${REGISTRY}\n//localhost:${String(REGISTRY_PORT)}/:_authToken=${token}\n`,
   );
   const auth = { npm_config_userconfig: npmrc, NPM_CONFIG_USERCONFIG: npmrc };
-  run('pnpm', ['-r', 'publish', '--registry', REGISTRY, '--no-git-checks'], ROOT, auth);
+  run(
+    'pnpm',
+    ['-r', 'publish', '--registry', REGISTRY, '--no-git-checks'],
+    ROOT,
+    auth,
+    PUBLISH_TIMEOUT_MS,
+  );
   return { proc, auth, stop: () => killTree(proc.pid) };
 }
 
@@ -402,7 +408,7 @@ const INIT_DEV_PORTS = {
 /**
  * NOT `INSTALL_PROBE_TESTID`, and the difference is load-bearing.
  *
- * `domTestids` (packages/browser/src/registry/auto-testids.ts) drops every observed testid whose
+ * `domTestids` (adapters/realm/browser/src/registry/auto-testids.ts) drops every observed testid whose
  * name begins `reticle-`, because Reticle's own overlay stamps testids and they are not the host
  * app's surface. The stamped probe id starts with exactly that, so a `reticle-install-probe` in the
  * DOM is filtered out and `hasCapabilities` stays false — measured on astro, which failed this way
@@ -464,7 +470,7 @@ const CRA_FILES = {
  * `hasCapabilities: false` — connected and unverifiable.
  *
  * A testid in the DOM is the other half of the same question, and the product answers it
- * deliberately: `hasCapabilities()` (packages/browser/src/registry/capabilities.ts) counts LIVE
+ * deliberately: `hasCapabilities()` (adapters/realm/browser/src/registry/capabilities.ts) counts LIVE
  * testids as well as declared ones, precisely so an app with a testable surface is not reported as
  * having none just because nobody typed the facts into a config file. So this is the realistic
  * probe, not a weakened one — the assertion still requires a session that connects AND advertises
@@ -732,17 +738,31 @@ function dumpEvidence(consoleLines, bridgePort, failedResponses = [], wsAttempts
   }
 }
 
-const run = (cmd, args, cwd, extraEnv = {}) => {
+const run = (cmd, args, cwd, extraEnv = {}, timeoutMs = 600_000) => {
   const it = pm(cmd, args);
   return execFileSync(it.cmd, it.args, {
     cwd,
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
     env: { ...process.env, ...extraEnv },
-    timeout: 600_000,
+    timeout: timeoutMs,
     ...it.shellOpts,
   });
 };
+
+/**
+ * The workspace publish gets its own, much larger budget.
+ *
+ * Every package's `prepack` runs `tsc -b --force`, so this builds the whole workspace from cold
+ * before a single scaffold exists. MEASURED on Windows: the identical publish via
+ * `scripts/local-registry.sh` took ~32 minutes, against the shared 10-minute budget — so the gate
+ * died in its own setup with `spawnSync C:\WINDOWS\system32\cmd.exe ETIMEDOUT` and reported
+ * `0/1 scaffolds`, which reads as an install failure and is not one.
+ *
+ * Generous on purpose, and a bound rather than a measurement: this is the harness paying for a
+ * build, not a claim about how fast a build should be.
+ */
+const PUBLISH_TIMEOUT_MS = 45 * 60_000;
 
 async function reachable(url) {
   try {
@@ -943,7 +963,7 @@ async function driveScaffold(scaffold, index) {
     const pkgPath = join(app, 'package.json');
     const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
     // `dev` OR `start`: CRA's own template names the script `start`, and `init` accepts either
-    // (DEV_SCRIPT_NAMES in packages/init/src/dev-script.ts). Requiring `dev` here would
+    // (DEV_SCRIPT_NAMES in init/src/dev-script.ts). Requiring `dev` here would
     // fail a CRA app for being shaped exactly like every CRA app.
     chk(
       'the scaffold is a real app',
@@ -991,7 +1011,7 @@ async function driveScaffold(scaffold, index) {
     try {
       report = run(
         'node',
-        [CLI, 'init', '--port', String(SELF_TEST ? bridgePort + 1 : bridgePort), '--no-mcp', '--no-drive'],
+        [CLI, 'init', '--port', String(SELF_TEST ? bridgePort + 1 : bridgePort), '--no-mcp'],
         initFrom,
         {
           npm_config_registry: REGISTRY,

@@ -1,8 +1,11 @@
 # Local registry config for testing @reticlehq/* in a real external app without publishing to npm.
-storage: /tmp/reticle-verdaccio-storage
+# Relative to THIS file, so it resolves the same on every OS. Absolute `/tmp/...` did not: a
+# Windows verdaccio read it as C:\tmp while the shell script cleaning up read it as the Git Bash
+# /tmp, so the "FRESH" reset never happened and run two died on "username is already registered".
+storage: ./.local-registry/storage
 auth:
   htpasswd:
-    file: /tmp/reticle-verdaccio-htpasswd
+    file: ./.local-registry/htpasswd
 uplinks:
   npmjs:
     url: https://registry.npmjs.org/

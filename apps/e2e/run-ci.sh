@@ -31,6 +31,31 @@ if [ ! -s "$TOKEN_FILE" ]; then
   chmod 600 "$TOKEN_FILE"
 fi
 
+# Build first, because the battery drives `dist` and nothing else here does.
+#
+# CI builds in the job before this script runs, so it was never wrong there. A developer typing
+# `pnpm test:e2e` got whatever `dist` happened to be on disk — which means a green battery can be
+# green about code that is not the code in the working tree, and a red one can be red about a bug
+# already fixed. Both happened while fixing the contract-skew defect: 22 of 39 specs failed against
+# a daemon compiled before the fix, and `core/dist` did not contain the new constant at all.
+#
+# Turbo makes this nearly free when nothing changed, and the alternative is a class of run that
+# cannot be trusted either way.
+echo "==> building (the battery runs against dist)"
+pnpm build > /dev/null || { echo "build failed — the battery would run against a stale dist"; exit 1; }
+
+# 4400 is the per-spec BRIDGE port, and it belongs here for a reason measured rather than guessed.
+#
+# `drive-launch-test` spawns a daemon with `--drive` and that daemon OUTLIVES the battery: three runs
+# in a row then failed with `EADDRINUSE 127.0.0.1:4400`, each time in a different spec, and
+# `gate:conformance` failed the same way straight afterwards. It reads as a flake because the victim
+# moves; it is a leak, and the leaked process was still there minutes later
+# (`_daemon --port 4400 --drive http://localhost:4310/`).
+#
+# Listed here so the EXIT trap reaps it, and in the pre-flight wait below so a run refuses to start
+# against one somebody else left behind rather than failing halfway through.
+E2E_PORTS='8787 4310 3100 4400'
+
 # Wait for the ports to be FREE before binding them.
 #
 # The cleanup below kills the listeners, but a killed process does not release its port the instant
@@ -39,7 +64,7 @@ fi
 # api that "died during boot". Twice in one afternoon, on a green tree. Polling here is the fix
 # because the failure is timing, not state: nothing needs killing, only waiting for.
 echo "==> waiting for the battery's ports to be free"
-for port in 8787 4310 3100; do
+for port in $E2E_PORTS; do
   for _ in $(seq 1 30); do
     lsof -nP -iTCP:"$port" -sTCP:LISTEN -t > /dev/null 2>&1 || break
     sleep 1
@@ -75,7 +100,6 @@ NEXT=$!
 # it, silently, and the process that would have logged the death is the one that died. This file
 # had the unsafe form while `gate-harness.mjs` documented it as the trap to avoid, which is how a
 # rule written down in one place gets broken in another.
-E2E_PORTS='8787 4310 3100'
 cleanup() {
   kill "$API" "$DEMO" "$NEXT" 2>/dev/null || true
   sleep 1

@@ -30,7 +30,7 @@ Measured against the bench dashboard (`apps/bench-app`) **with a 1,000-item list
 
 After the first snapshot, pass `reticle_snapshot({ diff: true })` to get back **only what changed** since your last look of the same scope/mode (`mode:delta` with added/removed lines, or `mode:unchanged`). A route change auto-resets to a full snapshot, so you never read a misleading cross-page diff.
 
-Measured on a representative 150-row dashboard (the shipped regression benchmark `packages/server/src/tools/snapshot-cost.test.ts`, char/4 proxy):
+Measured on a representative 150-row dashboard (the shipped regression benchmark `server/src/surface/tools/snapshot-cost.test.ts`, char/4 proxy):
 
 | Payload                            |    Tokens |
 | ---------------------------------- | --------: |
@@ -57,7 +57,7 @@ Measured live, all servers in one run, same tokenizer (`bench/harness/schema-tax
 
 _Measured 2026-08-12 (`bench/raw/schema-tax.json`). Reticle's default surface has gained a tool since, so treat the first row as a floor._
 
-There is one tool surface: the verify loop advertised directly, plus two meta-tools (`reticle_tools`, `reticle_run`) that reach every other tool on demand. Nothing is unreachable; the cold tail simply is not re-sent every turn.
+The default surface is the verify loop plus `reticle_tools`, and it is CLOSED: those nine names are the whole of what can be called. There is no `reticle_run` dispatch hatch on it, so the cold tail is not merely un-advertised, it is unreachable until the daemon is started with `RETICLE_ADVERTISE_ALL_TOOLS=1`.
 
 `RETICLE_ADVERTISE_ALL_TOOLS=1` advertises everything WITH output schemas. It is a verification switch for suites that call by name, not a mode to run agents in. It is roughly 7x the per-turn cost, which is why it is opt-in.
 
