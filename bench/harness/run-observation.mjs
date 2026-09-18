@@ -5,7 +5,7 @@
 import { writeFileSync } from 'node:fs';
 import { makeAdapter, NAV } from './adapters.mjs';
 import { inject, revert, revertAll } from './inject.mjs';
-import { isObservationRetryable } from './observation-retry.mjs';
+import { isObservationRetryable, isRetryableMiss } from './observation-retry.mjs';
 import { RETICLE_URL_PARAM } from '@reticlehq/core';
 import { BENCH_URL } from './ports.mjs';
 
@@ -709,6 +709,34 @@ for (const sc of list) {
             _obsTokens: regr.cycle.at(-1)?.tokens_o200k ?? null,
           };
         });
+        // A MISS on a scenario that exists to be caught gets one more attempt, for the same reason
+        // a timeout does: see isRetryableMiss. A real regression misses twice, so this cannot hide
+        // one -- it only stops a single degraded run from being read as a verdict about the product.
+        if (attempt < maxAttempts && isRetryableMiss(sc, row.detected_issue)) {
+          console.log(
+            JSON.stringify({
+              s: sc.id,
+              t: tool,
+              v: 'RETRY-MISS',
+              n: 'expected detect, found none',
+            }),
+          );
+          if (openAdapter !== null) {
+            try {
+              await openAdapter.stop();
+            } catch {
+              /* already gone */
+            }
+          }
+          if (sc.regression) {
+            try {
+              revert(sc.regression);
+            } catch {
+              /* */
+            }
+          }
+          continue;
+        }
         break;
       } catch (e) {
         // Best-effort: an abandoned cell leaves its browser up, and 36 cells of leaked Chrome would
