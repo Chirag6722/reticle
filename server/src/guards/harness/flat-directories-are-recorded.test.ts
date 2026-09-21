@@ -51,7 +51,11 @@ const FLAT_FILE_LIMIT = 10;
  *                                   public-subpaths-are-pinned.test.ts.
  */
 const OVER_THE_LINE: Readonly<Record<string, number>> = {
-  'adapters/build/vite/src': 11,
+  // 12 since `stamping.ts`: which module ids get a source stamp, by which stamper, and the per-file
+  // opt-out -- split out of `index.ts` when that file crossed the 1000-line cap gaining the opt-out.
+  // Raised deliberately. The grouping this directory still wants is a `stamping/` subdirectory
+  // holding it beside `svelte-source.ts`, the other stamper, which is its own commit.
+  'adapters/build/vite/src': 12,
   'adapters/realm/browser/src/dom': 12,
   'adapters/realm/browser/src/observers': 23,
   // 17 since the HUD's position primitives left `presenter-drag.ts` for their own leaf: the drag
