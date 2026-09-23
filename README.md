@@ -19,6 +19,11 @@ It drives your real running app, reads what actually happened, and hands back **
 
 <br/>
 
+<a href="https://reticle.sh"><img src="assets/readme/demo-montage.webp" width="820"
+     alt="Reticle in action: an agent verifying a real running app from the inside, returning pass/fail verdicts with evidence and the file:line to fix" /></a>
+
+<br/>
+
 <a href="https://www.youtube.com/watch?v=XCC0wST0rJA&loop=1&playlist=XCC0wST0rJA">
   <img src="https://img.youtube.com/vi/XCC0wST0rJA/maxresdefault.jpg" width="800"
        alt="Watch: an agent drives a real app, reads the network and the store, and returns a verdict with the file:line to fix" />
@@ -130,6 +135,11 @@ npx skills add reticlehq/reticle
 
 You never write test syntax. You say what should be true, in plain English.
 
+<p align="center">
+  <img src="assets/readme/hero.gif" width="760"
+       alt="An agent driving a real app through Reticle: it clicks, reads what actually happened, and returns a verdict." />
+</p>
+
 **Verify what you just built**
 
 > "I changed checkout. Verify it with Reticle before you tell me it's done."
@@ -203,6 +213,13 @@ flowchart LR
     style A fill:#15131f,stroke:#3a3550,color:#fff
     style C fill:#1c2433,stroke:#2f3d57,color:#fff
 ```
+
+<p align="center">
+  <img src="assets/readme/file-line-fix.png" width="700"
+       alt="A failed verdict naming the exact source file and line to fix, rather than a screenshot to squint at." />
+</p>
+
+<sub align="center">A verdict points at the line that caused it. That pointer is the difference between "something broke" and a fix.</sub>
 
 One call checks many things at once. Say _"save that as a flow"_ and it replays on every later edit with no model in the loop, so today's fix can't quietly break last week's feature.
 
