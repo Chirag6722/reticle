@@ -12,11 +12,18 @@
  */
 
 import { z } from 'zod';
-import { ReticleTool } from '@reticlehq/core';
+import { ReticleTool, asRecord } from '@reticlehq/core';
 import { stepCountSchema } from './args/numeric-bounds.js';
 import type { ToolDef, ToolDeps } from './tool-kit.js';
-import { exploreApp, harnessAvailable, MSG_NO_HARNESS_KEY } from './harness-explore.js';
-import { StopReason } from '@/features/harness/harness.js';
+import {
+  exploreApp,
+  harnessAvailable,
+  withLinkedCredential,
+  MSG_NO_HARNESS_KEY,
+} from './harness-explore.js';
+import { DRIVER_NAMES } from '@/features/harness/drivers.js';
+import { describeDrive, replayedFlows } from '@/features/harness/drive-report.js';
+import { StopReason, type HarnessResult } from '@/features/harness/harness.js';
 
 export const EXPLORE_TOOLS: ToolDef[] = [
   {
@@ -35,6 +42,12 @@ export const EXPLORE_TOOLS: ToolDef[] = [
         .describe(
           'Ceiling on model turns. Bounds cost, not value — the drive is graded however it ends.',
         ),
+      driver: z
+        .enum(DRIVER_NAMES)
+        .optional()
+        .describe(
+          'Which model drives. An unconfigured one is an error, never a substitution, so an A/B cannot measure the same driver twice. Omit for the default.',
+        ),
       sessionId: z
         .string()
         .optional()
@@ -45,9 +58,24 @@ export const EXPLORE_TOOLS: ToolDef[] = [
     // Everything the handler returns has to be declared, or a schema-aware client never sees it.
     outputSchema: {
       stopReason: z.string(),
+      /** Which driver actually drove, so a comparison can never misattribute its own result. */
+      driver: z.string(),
       steps: z.number(),
       savedFlows: z.array(z.string()),
-      /** The model's own account of what it drove. NOT a verdict — the flows are the evidence. */
+      /** Flows that already existed and were driven and written again. A second run's ordinary result. */
+      rewroteFlows: z.array(z.string()),
+      /**
+       * What the drive set out to do, read from `.reticle` BEFORE it started — every recorded
+       * journey with the consequence that must still hold, and the declared intent nobody has
+       * tested. Returned so the caller can see the drive was aimed rather than wandering.
+       */
+      plan: z.object({ summary: z.string(), steps: z.array(z.unknown()) }),
+      /**
+       * What the drive did, derived from the calls it made and the verdicts the engine returned.
+       *
+       * Not the driver's narration. A driver that cannot write a sentence used to leave this empty,
+       * and a driver that can is the one witness with a reason to round "unknown" up to "worked".
+       */
       summary: z.string(),
       /** Present when the drive broke: a model that would not answer, a wedged browser. */
       error: z.string().optional(),
@@ -62,27 +90,80 @@ export const EXPLORE_TOOLS: ToolDef[] = [
       note: z.string().optional(),
     },
     handler: async (deps: ToolDeps, args: Record<string, unknown>) => {
-      if (!harnessAvailable(process.env)) throw new Error(MSG_NO_HARNESS_KEY);
+      // The credential `reticle link` already filed counts as configured, so somebody who has
+      // signed in and linked does not also have to export a key by hand.
+      const env = await withLinkedCredential(deps, process.env);
+      if (!harnessAvailable(env)) throw new Error(MSG_NO_HARNESS_KEY);
       const persona = args['persona'];
       const maxSteps = args['maxSteps'];
       const sessionId = args['sessionId'];
-      const { drive, savedFlows } = await exploreApp(deps, process.env, {
+      const driver = args['driver'];
+      const { drive, savedFlows, rewroteFlows, driverName, plan } = await exploreApp(deps, env, {
         ...('string' === typeof persona ? { focus: persona } : {}),
         ...('number' === typeof maxSteps ? { maxSteps } : {}),
         ...('string' === typeof sessionId ? { sessionId } : {}),
+        ...('string' === typeof driver ? { driverName: driver } : {}),
       });
       return {
         stopReason: drive.stopReason,
+        driver: driverName,
         steps: drive.steps,
         savedFlows: [...savedFlows],
-        summary: drive.summary,
+        rewroteFlows: [...rewroteFlows],
+        plan: { summary: plan.summary, steps: [...plan.steps] },
+        // Derived, not narrated. The driver's own `summary` is appended only when it said
+        // something — it is the one part of this a model authored, so it goes last and is labelled.
+        summary: [
+          describeDrive(drive.toolCalls, [...savedFlows, ...rewroteFlows]),
+          ...(0 === drive.summary.length ? [] : [`The driver's own account: ${drive.summary}`]),
+        ].join('\n'),
         ...(drive.error === undefined ? {} : { error: drive.error }),
         usage: drive.usage,
-        ...(0 === savedFlows.length ? { note: NOTHING_RECORDED[drive.stopReason] } : {}),
+        // The note only fires when the drive left NOTHING behind. A rewritten flow is a flow: it
+        // replays, it proves what it asserts, and telling its author that "nothing will replay" is
+        // a lie this tool used to tell on every second run.
+        /*
+         * The note fires only when the run left NOTHING behind — and a run that REPLAYED left
+         * plenty. Sixteen recorded journeys re-proved for zero model tokens is the cheap half of
+         * the plan doing its job, and telling its author to "raise maxSteps" reads as a failure.
+         */
+        ...(0 === savedFlows.length &&
+        0 === rewroteFlows.length &&
+        0 === replayedFlows(drive.toolCalls).length
+          ? { note: `${NOTHING_RECORDED[drive.stopReason]}${failureDetail(drive)}` }
+          : {}),
       };
     },
   },
 ];
+
+/**
+ * The tool failure behind an empty drive, when there was one.
+ *
+ * "The drive ran out of steps before saving a flow" is true of a drive that explored happily and ran
+ * long, and ALSO of one that reached its save and was refused — and those need opposite responses.
+ * Without this the two are indistinguishable from outside the daemon, which cost a full debugging
+ * session: a driver whose `reticle_record{stop}` was rejected for a missing argument retried until
+ * the budget ended, and the only thing the caller ever saw was the advice to raise `maxSteps`.
+ */
+function failureDetail(drive: HarnessResult): string {
+  const failed = drive.toolCalls.filter((call) => call.isError);
+  const last = failed[failed.length - 1];
+  if (last !== undefined) {
+    const message = asRecord(last.result)['error'];
+    return ` ${String(failed.length)} tool call(s) failed during the drive; the last was ${last.name}: ${'string' === typeof message ? message : 'no message'}`;
+  }
+  // Nothing threw, so the interesting case left is a save that was ACCEPTED and wrote nothing —
+  // an empty recording reports success, and from outside the daemon that is indistinguishable from
+  // a drive that never reached its save at all.
+  const saves = drive.toolCalls.filter((call) => ReticleTool.FLOW_SAVE === call.name);
+  const save = saves[saves.length - 1];
+  if (save !== undefined) {
+    const result = asRecord(save.result);
+    return ` The flow save was accepted but kept nothing: ${JSON.stringify({ stepCount: result['stepCount'], empty: result['empty'], warning: result['warning'] })}.`;
+  }
+  return ` The drive never reached a flow save (${String(drive.toolCalls.length)} tool calls made).`;
+}
 
 /**
  * What an empty drive means, said rather than left for the caller to infer.

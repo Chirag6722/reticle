@@ -28,6 +28,9 @@ RETICLE_PKG="@reticlehq/server"
 # The floor the package declares in `engines`. Repeated here because nothing can read package.json
 # before Node exists; `engines` stays the source of truth and this is the pre-Node echo of it.
 NODE_MIN_MAJOR=20
+# The MINOR matters too: `engines.node` on the published server is >=20.11, so 20.0-20.10 clears a
+# major-only check and then fails at `npm i` with EBADENGINE, after the installer has said yes.
+NODE_MIN_MINOR=11
 STATE_DIR="${RETICLE_STATE_DIR:-$HOME/.reticle}"
 
 say() { printf '%s\n' "$*" >&2; }
@@ -64,10 +67,15 @@ Reticle does not install a runtime for you. A piped script that puts a language 
 machine without asking is not something you should run, from us or from anybody."
   }
   major="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"
+  minor="$(node -p 'process.versions.node.split(".")[1]' 2>/dev/null || echo 0)"
   [ "$major" -ge "$NODE_MIN_MAJOR" ] || {
     note_failure runtime_ready node_too_old
-    die "Node $major is too old -- Reticle needs $NODE_MIN_MAJOR or newer."
+    die "Node $major is too old -- Reticle needs $NODE_MIN_MAJOR.$NODE_MIN_MINOR or newer."
   }
+  if [ "$major" -eq "$NODE_MIN_MAJOR" ] && [ "$minor" -lt "$NODE_MIN_MINOR" ]; then
+    note_failure runtime_ready node_too_old
+    die "Node $major.$minor is too old -- Reticle needs $NODE_MIN_MAJOR.$NODE_MIN_MINOR or newer."
+  fi
 }
 
 install_cli() {
@@ -79,7 +87,11 @@ install_cli() {
   # and `dash` swallowed the expansion whole -- the line printed "Installing " and two broken bytes.
   # bash was fine with it, which is exactly how a `curl | sh` bug reaches users: the author's shell
   # is not the one it runs in.
+  # npm draws its progress bar only onto a TTY, and under `curl | sh` there is never one -- so it
+  # prints nothing at all between here and its final summary. A cold cache makes that a silent
+  # minute on the first thing anybody runs, reported from a real install as "sticks for a while".
   say "Installing ${RETICLE_PKG}..."
+  say "  npm prints nothing until it finishes. First run on a cold cache takes a minute."
   npm install -g "$RETICLE_PKG" >&2 || {
     note_failure cli_installed npm_install
     die "npm could not install $RETICLE_PKG. Its output above says why."

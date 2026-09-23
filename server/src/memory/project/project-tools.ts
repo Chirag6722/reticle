@@ -1,5 +1,7 @@
 import { z } from 'zod';
-import { ProjectReadError, RunStatus, type RunRecord } from '@reticlehq/core';
+import { sessionRoot } from './session-root.js';
+import { projectForRoot } from './project-for-root.js';
+import { type ProjectId, ProjectReadError, RunStatus, type RunRecord } from '@reticlehq/core';
 import { ReticleTool } from '@reticlehq/core';
 import { countSchema } from '@/surface/tools/args/numeric-bounds.js';
 import { sessionIdShape } from '@/surface/tools/tool-kit.js';
@@ -62,7 +64,7 @@ function numericDelta(before: number | undefined, after: number | undefined): nu
 async function cloudRegression(deps: ToolDeps, sessionId: string | undefined): Promise<unknown> {
   const config = resolveCloudConfig(process.env);
   if (null === config) return undefined;
-  let projectId: string | undefined;
+  let projectId: ProjectId | undefined;
   try {
     projectId = deps.sessions.resolve(sessionId).projectId;
   } catch {
@@ -90,9 +92,13 @@ function lastTwoFor(runs: RunRecord[], name: string): [RunRecord, RunRecord] | u
  * The per-flow diff between the two most-recent verification ARTIFACTS (.reticle/runs), or undefined when
  * fewer than two exist. Never throws — a missing/unreadable artifact must not break reading run history.
  */
-async function lastTwoRunArtifacts(deps: ToolDeps): Promise<VerificationRunDiff | undefined> {
+async function lastTwoRunArtifacts(
+  deps: ToolDeps,
+  /** The session's root — the same address `persistAndSyncVerificationRun` wrote the pair to. */
+  root: string,
+): Promise<VerificationRunDiff | undefined> {
   try {
-    const pair = await new RunStore(deps.fs, deps.reticleRoot).latestTwo();
+    const pair = await new RunStore(deps.fs, root).latestTwo();
     return pair === undefined ? undefined : diffVerificationRuns(pair[0], pair[1]);
   } catch {
     return undefined;
@@ -135,7 +141,8 @@ export const PROJECT_TOOLS: ToolDef[] = [
       const cloud = await cloudRegression(deps, asString(args['sessionId']));
       const withCloud = <T extends object>(obj: T): T =>
         cloud === undefined ? obj : { ...obj, cloud };
-      const read = await deps.project.read();
+      const project = projectForRoot(deps, sessionRoot(deps, asString(args['sessionId'])));
+      const read = await project.read();
       if (!read.ok) {
         return withCloud({
           error:
@@ -163,14 +170,17 @@ export const PROJECT_TOOLS: ToolDef[] = [
           learned: read.file.learned,
         });
       }
-      const lastRun = await deps.project.lastRun(name);
+      const lastRun = await project.lastRun(name);
       const pair = lastTwoFor(read.file.runs, name);
       //: the RICH run diff (per-flow duration deltas past a noise floor, status changes, new/removed
       // flows, verdict change) over the last two verification ARTIFACTS. That lives alongside — not
       // instead of — the lightweight RunRecord diff above: `diff` answers "did this named run behave like
       // last time?" from project.json, while `runDiff` answers "what changed between the last two full
       // verification runs?" from .reticle/runs. Best-effort: no artifacts simply means no runDiff.
-      const runDiff = await lastTwoRunArtifacts(deps);
+      const runDiff = await lastTwoRunArtifacts(
+        deps,
+        sessionRoot(deps, asString(args['sessionId'])),
+      );
       const forName = read.file.runs.filter((r) => r.name === name);
       return withCloud({
         runs: recent(forName),

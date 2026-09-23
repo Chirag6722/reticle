@@ -152,7 +152,33 @@ const DIST_ENTRY = join(PACKAGE_ROOT, 'dist', 'index.js');
  * `@reticlehq/core` and wants deciding rather than doing under a size guard — but it is the
  * reason this ceiling keeps climbing, and every raise borrows against it.
  */
-const MAX_FIRST_LOAD_BYTES = 239_100;
+/*
+ * 239_100 -> 240_100, for the harness offer on the impact snapshot. 18 B measured.
+ *
+ * The HUD advertises the free harness months, which means the snapshot schema it parses has to carry
+ * whether they have been claimed. The schema lives in `core` and rides the first load; the CARD —
+ * markup, copy and styles — lives in the panel and stays deferred, which is why this is eighteen
+ * bytes and not two kilobytes. Anything more than a few fields of it appearing here would mean the
+ * advert had leaked onto every page load of every user, and that is the thing this guard should
+ * refuse.
+ *
+ * Raised by 1,000 rather than to the measurement, per the note above.
+ */
+/*
+ * 240_100 -> 241_100, for the request-body shape fingerprint. 104 B measured.
+ *
+ * `duplicate-request` accused two legitimate sequential writes to one endpoint of being a double
+ * submit, because method plus URL is all it had: the body that tells them apart is not captured by
+ * default, and capturing it would put passwords and tokens on the wire for every request. The page
+ * instead hashes the body's SHAPE — sorted key names, value types, total length — which is a
+ * hundred bytes of recursion over a parsed body and no new dependency.
+ *
+ * Every page load pays it, and it buys something every page load uses: the rule runs on every
+ * action window, and its false positives were degrading otherwise-clean verdicts to unknown.
+ *
+ * Raised by 1,000 rather than to the measurement, per the note above.
+ */
+const MAX_FIRST_LOAD_BYTES = 241_100;
 /*
  * Raised a fifth time, 233_300 -> 233_400, for a route to be assertable in a SAVED flow. 57 B.
  *

@@ -161,6 +161,53 @@ export const AccountStateSchema = z.object({
 });
 export type AccountState = z.infer<typeof AccountStateSchema>;
 
+/**
+ * The standing offer on the autonomous harness, as the daemon last heard it from the platform.
+ *
+ * `claimed` is the only field that decides whether anything is shown, and ABSENCE of this whole
+ * object means "we do not know" — never "not claimed". That distinction is the difference between
+ * an offer and a nag: a machine that is offline, unlinked, or paired with an older daemon has not
+ * told us the person still needs this, and advertising at them anyway is how a dev-only HUD gets
+ * switched off for good. The account field beside this one already carries that warning; it applies
+ * here with more force, because this one is marketing.
+ */
+export const HarnessOfferSchema = z.object({
+  /** True once this org has claimed. A claimed offer is shown as remaining time, never as a pitch. */
+  claimed: z.boolean(),
+  /** When the free period ends, epoch ms. Absent when nothing has been claimed. */
+  expiresAt: z.number().optional(),
+  /** Whole days left, already computed — the HUD has no clock worth trusting for this. */
+  daysRemaining: z.number().optional(),
+  /** Where claiming happens. Absent ⇒ the HUD shows nothing, because a pitch with no door is noise. */
+  claimUrl: z.string().optional(),
+  /**
+   * Whether claiming would still grant anything.
+   *
+   * Carried separately because `claimed` is "running RIGHT NOW", and an expired free period reads
+   * `claimed: false` — the same as never having taken it. Without this the HUD would advertise a
+   * three-month offer to the one group of people who can never accept it again, which is worse than
+   * saying nothing at all. Absent ⇒ treated as still offerable: an older platform that does not
+   * report it also has no expiries to get wrong.
+   */
+  eligible: z.boolean().optional(),
+});
+export type HarnessOffer = z.infer<typeof HarnessOfferSchema>;
+
+/**
+ * What the platform says about autonomous driving for this project.
+ *
+ * Mirrors `PlatformModelConfig` on the server side; both are the same wire answer read by different
+ * layers. Kept here because it crosses daemon -> browser, which is what makes it a wire type.
+ */
+export const HarnessConfigSchema = z.object({
+  provider: z.string(),
+  /** The switch somebody set. The platform's default is on. */
+  harnessEnabled: z.boolean(),
+  /** Whether this workspace may drive on OUR model spend. Never folded into the switch. */
+  harnessEntitled: z.boolean(),
+});
+export type HarnessConfig = z.infer<typeof HarnessConfigSchema>;
+
 export const ImpactSnapshotSchema = z.object({
   schemaVersion: z.number().int().positive(),
   project: ImpactScopeSchema,
@@ -179,6 +226,24 @@ export const ImpactSnapshotSchema = z.object({
    * kind of nag that gets a dev-only HUD switched off for good.
    */
   account: AccountStateSchema.optional(),
+  /**
+   * The harness offer, when the daemon knows it. Absent is "unknown" and shows nothing — see
+   * `HarnessOfferSchema` for why that asymmetry is deliberate.
+   */
+  harnessOffer: HarnessOfferSchema.optional(),
+  /**
+   * The harness switch and whether this workspace may drive on our spend.
+   *
+   * Two fields, never one, and the HUD renders them differently: `harnessEnabled` is a switch the
+   * person owns, `harnessEntitled` is a fact about their account. A panel that collapsed them would
+   * show "off" to somebody whose free months lapsed and invite them to turn on something they no
+   * longer have.
+   *
+   * Absent means the daemon has not heard -- an offline machine, an unlinked project, an older
+   * platform -- and the panel shows no control at all rather than guessing. Showing a switch that
+   * cannot be honoured is worse than showing none.
+   */
+  harnessConfig: HarnessConfigSchema.optional(),
 });
 export type ImpactSnapshot = z.infer<typeof ImpactSnapshotSchema>;
 

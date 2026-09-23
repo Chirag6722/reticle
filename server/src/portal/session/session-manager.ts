@@ -9,6 +9,7 @@ import { Session, type SessionInfo } from './session.js';
 import { AttachmentHistory } from './presence/attachment-history.js';
 import type { NoSessionNextAction } from './no-session-next-action.js';
 import { pickDocumentSuccessor, type SessionIdentity } from './session-successor.js';
+import { SESSION_DISCONNECTED_REASON } from './facts/session-replaced.js';
 
 /**
  * The agent's active project, used to scope auto-selection. `projectId` is the stable build-stamped
@@ -170,7 +171,7 @@ export class SessionManager {
 
   remove(session: Session): boolean {
     if (this.#sessions.get(session.id) !== session) return false;
-    session.rejectAll('session disconnected');
+    session.rejectAll(SESSION_DISCONNECTED_REASON);
     forgetDrivenRedactionKeys(session.id);
     // Recorded, not forgotten: a session that comes back needs its gap measured, and a listing after
     // the reconnect is exactly where that matters.
@@ -280,10 +281,29 @@ export class SessionManager {
    * different branches. See no-session-watch.ts.
    */
   #noSessionReason: (() => NoSessionReason | undefined) | undefined;
+  /**
+   * The same diagnosis with the differential left off: the lead and the next action, nothing else.
+   *
+   * Two renderings because there are two readers, and only one of them can spend the words. An
+   * agent about to burn a drive on a guess wants the ranked causes, the port-scan caveat and the
+   * lease offer. The person watching `reticle init` fail wants to know what is wrong and what to
+   * type, and was instead handed roughly five hundred words in one paragraph.
+   */
+  #noSessionLead: (() => string | undefined) | undefined;
 
   /** Wire the diagnosis provider (daemon boot). Absent ⇒ the plain, static message. */
   setNoSessionHint(hint: (() => string | undefined) | undefined): void {
     this.#noSessionHint = hint;
+  }
+
+  /** Wire the short rendering. Registered from the same `explainNoSession` call as the hint. */
+  setNoSessionLead(lead: (() => string | undefined) | undefined): void {
+    this.#noSessionLead = lead;
+  }
+
+  /** The lead and the next action, for a surface a person reads. */
+  noSessionLead(): string | undefined {
+    return this.#noSessionLead?.();
   }
 
   /**

@@ -1270,3 +1270,93 @@ describe('init verifies its own wiring landed', () => {
     expect(io.lines.join('\n')).toContain('[✓] Vite plugin → vite.config.ts');
   });
 });
+
+/**
+ * A real Vite+React first run printed 46 lines, 12 of which were Reticle saying it had done
+ * nothing: six `[·] MCP server (<client>)` rows, each followed by an indented line repeating the
+ * title back ("reticle already registered with Cursor"). A first-time reader met six tool names
+ * they may not use before reaching anything about their own app.
+ *
+ * The rows stay — `apps/e2e/install-gate.mjs` reads `[mark] title → target` out of this report and
+ * diffs the shape against a baseline, so a row that vanished would take the guard with it. What
+ * goes is the second line, on every step that needs no decision from the reader.
+ */
+describe('the report is short enough to read', () => {
+  const linesOf = (io: ReturnType<typeof memoryIo>): string[] => io.lines;
+
+  it('gives a step that needs no decision one line, not two', () => {
+    const io = memoryIo(VITE_FILES);
+    runInit(OPTS, io);
+    const printed = linesOf(io);
+    const rows = printed.filter((l) => /^\s*\[.\]\s+.+\s+→\s+.+$/.test(l));
+    // Not vacuous: a run that printed no rows at all would otherwise pass this.
+    expect(rows.length).toBeGreaterThan(3);
+    for (const [i, line] of printed.entries()) {
+      if (!/^\s*\[(·|✓|–)\]\s+.+\s+→\s+.+$/.test(line)) continue;
+      expect((printed[i + 1] ?? '').startsWith('      ')).toBe(false);
+    }
+  });
+
+  it('still prints every step row, because the install gate diffs their shape', () => {
+    const io = memoryIo(VITE_FILES);
+    runInit(OPTS, io);
+    const rows = linesOf(io).filter((l) => /^\s*\[.\]\s+.+\s+→\s+.+$/.test(l));
+    expect(rows.join('\n')).toContain('Vite plugin → vite.config.ts');
+    expect(rows.join('\n')).toContain('Reticle config → .reticle.json');
+  });
+
+  it('keeps the detail on a step that asks the reader to do something', () => {
+    // The same way the vite-plugin test above manufactures a ⚠: write the file with the patch
+    // stripped, so the verify-after-write finds nothing and the step is downgraded.
+    const base = memoryIo(VITE_FILES);
+    const io = {
+      ...base,
+      writeFile: (path: string, content: string): void => {
+        base.writeFile(
+          path,
+          path.endsWith('vite.config.ts') ? content.replace(/reticle/g, 'nope') : content,
+        );
+      },
+    };
+    runInit(OPTS, io);
+    const printed = base.lines;
+    const manualAt = printed.findIndex((l) => l.includes('[⚠]'));
+    expect(manualAt).toBeGreaterThanOrEqual(0);
+    expect((printed[manualAt + 1] ?? '').startsWith('      ')).toBe(true);
+  });
+});
+
+/**
+ * Whether the agent reading this has to restart before it can call a Reticle tool.
+ *
+ * An agent client reads its MCP server list when it STARTS and never re-reads it, so the run that
+ * first registers Reticle on a machine leaves the `reticle_*` tools out of the very session that
+ * asked for them. `restartHint` says so, and is printed ONLY when init stops at the files. The
+ * full run -- the one the installer sends everybody to -- ended by telling the agent to call
+ * `reticle_act_and_wait`, in a session that had no such tool. Captured on a pristine Vite app with
+ * a fresh HOME: `[✓] MCP server (Claude, global)`, then a closing that never mentions a restart.
+ *
+ * `outcome.mcpRegistered` cannot carry this: it is true for APPLY and for ALREADY alike, and those
+ * two have opposite answers.
+ */
+describe('whether this run is the one that registered the MCP', () => {
+  it('says so when the registration was written by this run', () => {
+    const io = memoryIo(VITE_FILES);
+    const r = runInit({ ...OPTS, continuesToRuntime: true }, io);
+    expect(io.lines.join('\n')).toContain('[✓] MCP server');
+    expect(r.mcpNewlyRegistered).toBe(true);
+  });
+
+  it('stays quiet when the MCP was already registered on this machine', () => {
+    const io = memoryIo(VITE_FILES, { mcpExists: true });
+    const r = runInit({ ...OPTS, continuesToRuntime: true }, io);
+    expect(io.lines.join('\n')).not.toContain('[✓] MCP server');
+    expect(r.mcpNewlyRegistered).toBeUndefined();
+  });
+
+  it('stays quiet when this run registered nothing at all', () => {
+    const io = memoryIo(VITE_FILES);
+    const r = runInit({ ...OPTS, mcp: false, continuesToRuntime: true }, io);
+    expect(r.mcpNewlyRegistered).toBeUndefined();
+  });
+});

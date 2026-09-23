@@ -13,7 +13,8 @@ on:
   merge_group:
   # The full Windows install matrix, once a day, off the critical path.
   #
-  # A PR runs THREE Windows scaffolds, not ten (see `install_matrix` in the `changes` job). Ten
+  # A PR and a merge-queue entry run THREE Windows scaffolds, not ten (see `install_matrix` in the
+  # `changes` job). Ten
   # windows-latest runners requested at once is more than the pool hands out: measured on run
   # 35297084015, nine cells started immediately and the tenth waited 37 minutes for a machine, then
   # ran for 8 and ended the build. A third of that run's 56-minute wall clock was one cell queuing.
@@ -75,25 +76,14 @@ jobs:
       - run: pnpm install --frozen-lockfile
       # No build: prettier reads the tree, which is the entire reason this can run ahead of `verify`.
       - run: pnpm format:check
-      # A changelog entry belongs in `.changes/`, one file per entry, because every PR appends to the
-      # same `[Unreleased]` section and two PRs that do cannot both merge. `.changes/` was added for
-      # exactly that reason after a count of the open PRs editing `CHANGELOG.md`; the PR template said
-      # so and CONTRIBUTING.md still said the opposite, so it kept happening. When this landed, 20 of
-      # the 55 open pull requests were editing the file, and ten of those were mutually conflicting
-      # with each other on it alone. Docs are what tells a contributor; this is what tells a branch.
+      # The changelog rule lives in the `changelog-policy` job, NOT here.
       #
-      # Release branches DO assemble the file, so they are exempt by branch name.
-      - name: A changelog entry is a new file in .changes/, not an edit to CHANGELOG.md
-        if: github.event_name == 'pull_request' && !startsWith(github.head_ref, 'release/')
-        run: |
-          if git diff --name-only "origin/${{ github.base_ref }}"...HEAD | grep -qx 'CHANGELOG.md'; then
-            echo "::error file=CHANGELOG.md::This PR edits CHANGELOG.md. Add your own new file under .changes/ instead"
-            echo "CHANGELOG.md is assembled from .changes/ at release time (see .changes/README.md)."
-            echo "Move your entry to its own file there and drop the CHANGELOG.md change:"
-            echo "  git checkout origin/${{ github.base_ref }} -- CHANGELOG.md"
-            exit 1
-          fi
-          echo "no CHANGELOG.md edit — entries belong in .changes/"
+      # It was in both, with two different exemption lists: this copy exempted `release/` and that
+      # job exempts `release/` and `v*`. The comment here said "release branches DO assemble the
+      # file, so they are exempt by branch name" while the condition did not cover the branch names
+      # this repository actually cuts releases on, so the release PR for v3.2.0 was refused by a
+      # guard whose own stated intent exempted it. One rule enforced in two places is one rule that
+      # can disagree with itself; `changelog-policy` is in `gate`'s needs, so nothing is lost.
 
   verify:
     runs-on: ubuntu-latest
@@ -621,12 +611,29 @@ jobs:
       - id: install_matrix
         run: |
           ALL='vite-react vite-vue next-app-router next-pages-router monorepo-subdir astro sveltekit cra nuxt react-router'
-          WINDOWS_ON_A_PR='cra next-app-router vite-react'
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            WINDOWS="$WINDOWS_ON_A_PR"
-          else
-            WINDOWS="$ALL"
-          fi
+          WINDOWS_BEFORE_MERGE='cra next-app-router vite-react'
+          # A MERGE QUEUE entry gets the same short Windows list as the pull request, and for a
+          # stronger version of the same reason.
+          #
+          # `merge_group` is not `pull_request`, so it fell into the full-matrix branch and every
+          # entry asked for twenty install cells, ten of them windows-latest -- which the comment at
+          # the top of this file already records as more than the pool hands out, for ONE run. With
+          # `maximumEntriesToBuild` at five, that is a hundred install cells plus five each of e2e,
+          # multi-agent and bench, all wanting machines at once.
+          #
+          # Measured on 2026-09-22: nine jobs of the leading entry finished, the whole second wave
+          # sat queued, and after two hours with zero jobs running anywhere in the repository the
+          # queue's own one-hour check timeout expired. Entries left the queue CLEAN, with no failing
+          # check and no CI run -- #1018, #1019 and #1022 in one morning, which reads as flaky PRs
+          # and is a starved runner pool.
+          #
+          # Coverage is not reduced, it is rescheduled, exactly as it is for a pull request: the
+          # nightly schedule runs every scaffold on Windows, `workflow_dispatch` runs the full matrix
+          # on demand, and a queue entry is the same commit the PR run already graded.
+          case "${{ github.event_name }}" in
+            pull_request|merge_group) WINDOWS="$WINDOWS_BEFORE_MERGE" ;;
+            *) WINDOWS="$ALL" ;;
+          esac
           entries=''
           for s in $ALL; do entries="$entries{\"os\":\"ubuntu-latest\",\"scaffold\":\"$s\"},"; done
           for s in $WINDOWS; do entries="$entries{\"os\":\"windows-latest\",\"scaffold\":\"$s\"},"; done
@@ -1055,6 +1062,49 @@ jobs:
   # succeeded or was deliberately skipped — and FAILS if any of them failed or was cancelled.
   # `always()` is load-bearing: without it this job is itself skipped whenever a dependency is, which
   # reproduces the problem one level up.
+  # `CHANGELOG.md` is assembled from `.changes/*.md` at release time, and a PR that edits it directly
+  # is the thing that mechanism exists to prevent.
+  #
+  # The incident is written down in `.changes/README.md` and was measured, not feared: of 42 open
+  # pull requests, 23 edited `CHANGELOG.md` and 11 were CONFLICTING on it — every one of those an
+  # `[Unreleased]` section two branches appended to in the same place. The directory was created to
+  # end that, and then nothing enforced it: it has held its own README and no entries since, while
+  # every changelog-bearing commit went on editing the file directly. A documented convention with
+  # no teeth is a convention that gets rediscovered the next time a release has twenty open PRs.
+  #
+  # A release branch is exempt: assembling IS editing the file, and that is step four of RELEASING.md.
+  # Both shapes are exempt, because both are in use — `release/v2.14.0` was the branch behind one
+  # release and a bare `v3.2.0` is the branch behind the next. Matching only the prefix would fail
+  # the very PR that is allowed to do this, which is how an exemption teaches people to bypass it.
+  #
+  # Plain git for the same reason the `changes` job uses it, and it fails OPEN: if the base ref
+  # cannot be resolved the diff comes back empty and the check passes, because blocking a merge on
+  # a shallow clone would be a worse failure than missing one stray edit.
+  changelog-policy:
+    if: >-
+      github.event_name == 'pull_request' && !startsWith(github.head_ref, 'release/') && !startsWith(github.head_ref, 'v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - name: A changelog entry is a file in .changes/, not an edit to CHANGELOG.md
+        run: |
+          BASE="origin/${{ github.base_ref }}"
+          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}" 2>/dev/null || true
+          CHANGED=$(git diff --name-only "$BASE"...HEAD 2>/dev/null || true)
+          echo "$CHANGED" | grep -qx 'CHANGELOG.md' || { echo "CHANGELOG.md untouched"; exit 0; }
+          echo "This PR edits CHANGELOG.md directly."
+          echo
+          echo "Entries go in the .changes/ directory: one file per entry, named for the issue"
+          echo "and a slug, holding a '### Fixed' heading and the bullet. They are assembled"
+          echo "into CHANGELOG.md at release time."
+          echo "Two PRs adding two files never conflict; two PRs editing one file always might."
+          echo
+          echo "See .changes/README.md. If this IS the release PR, branch from release/."
+          exit 1
+
   gate:
     runs-on: ubuntu-latest
     # Every job that can fail a PR is listed HERE. A job missing from this list runs, reports, and is
@@ -1073,6 +1123,7 @@ jobs:
     needs:
       [
         changes,
+        changelog-policy,
         format-check,
         verify,
         e2e,

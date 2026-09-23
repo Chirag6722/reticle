@@ -470,3 +470,104 @@ describe('opening the browser at the moment the app can be driven', () => {
     expect(outcome.reachedPhase).toBe(SetupPhase.CONNECT);
   });
 });
+
+/**
+ * The daemon's account of why nothing connected, which setup had and did not print.
+ *
+ * `page-probe.ts` says in its own opening paragraph that the daemon's diagnosis "is the one to lead
+ * with" and that the page finding "adds only the page-side fact". Only the second half was ever
+ * wired: on a failed connect, setup printed the page sentence alone.
+ *
+ * That sentence is unconditional on SDK_PRESENT -- "never dialled the bridge", then three candidate
+ * causes. Driven on a machine where a daemon belonging to ANOTHER project held the bridge port, it
+ * was the opposite of the truth: the SDK dialled, presented its pairing token and was REFUSED, and
+ * the daemon had logged `authentication_failed` with both project ids a second earlier. All three
+ * causes it offers are wrong there, and each one sends the reader to inspect something that is fine.
+ */
+describe('a failed connect leads with what the daemon knows', () => {
+  const noSession = {
+    listSessions: (): Promise<CandidateSession[]> => Promise.resolve([]),
+  };
+
+  it("prints the daemon's reason before the page finding", async () => {
+    const notes: string[] = [];
+    const fx = world({
+      ...noSession,
+      daemonWhy: () =>
+        Promise.resolve({
+          lead: 'no browser session connected, and the reason is not the app: this daemon REFUSED the last page that dialled it',
+        }),
+      note: (line: string) => notes.push(line),
+    });
+    await runSetupPhases(INPUT, fx);
+    const whyAt = notes.findIndex((n) => n.includes('REFUSED the last page'));
+    const pageAt = notes.findIndex((n) => n.includes('never dialled the bridge'));
+    expect(whyAt).toBeGreaterThanOrEqual(0);
+    expect(pageAt).toBeGreaterThanOrEqual(0);
+    expect(whyAt).toBeLessThan(pageAt);
+  });
+
+  it('still prints the page finding when the daemon has nothing to say', async () => {
+    const notes: string[] = [];
+    const fx = world({
+      ...noSession,
+      daemonWhy: () => Promise.resolve(undefined),
+      note: (line: string) => notes.push(line),
+    });
+    await runSetupPhases(INPUT, fx);
+    expect(notes.join('\n')).toContain('never dialled the bridge');
+  });
+
+  it('is unchanged when nothing supplies a daemon reason at all', async () => {
+    const notes: string[] = [];
+    const fx = world({ ...noSession, note: (line: string) => notes.push(line) });
+    await runSetupPhases(INPUT, fx);
+    expect(notes.join('\n')).toContain('never dialled the bridge');
+  });
+
+  /*
+   * The agent surface must not be the human one.
+   *
+   * `init --json` is read by an agent, and what it acts on is the differential behind the lead --
+   * the ports actually scanned, and the lease that opens a URL on a machine with no browser. When
+   * the lead alone was both printed AND recorded, that differential vanished from `--json`
+   * entirely: `break/break-matrix.mjs` (`no-browser-to-open`) greps the run for `reticle_lease` and
+   * went red, because nothing in the output said it any more.
+   */
+  it('prints the lead to the person and records the full reason for the agent', async () => {
+    const notes: string[] = [];
+    const fx = world({
+      ...noSession,
+      daemonWhy: () =>
+        Promise.resolve({
+          lead: 'no browser session connected. Two things to weigh.',
+          full: 'no browser session connected. Two things to weigh. The scan covers a fixed set of ports and nothing else, so open it with reticle_lease {action:"acquire", url}.',
+        }),
+      note: (line: string) => notes.push(line),
+    });
+    const out = await runSetupPhases(INPUT, fx);
+    expect(notes.join('\n')).not.toContain('reticle_lease');
+    expect(out.notes.join('\n')).toContain('reticle_lease');
+  });
+
+  it('records the lead when that is all the daemon has', async () => {
+    const fx = world({
+      ...noSession,
+      daemonWhy: () => Promise.resolve({ lead: 'no browser session connected.' }),
+    });
+    const out = await runSetupPhases(INPUT, fx);
+    expect(out.notes.join('\n')).toContain('no browser session connected.');
+  });
+
+  it('a daemon that cannot be asked does not fail the run', async () => {
+    const notes: string[] = [];
+    const fx = world({
+      ...noSession,
+      daemonWhy: () => Promise.reject(new Error('connection refused')),
+      note: (line: string) => notes.push(line),
+    });
+    const out = await runSetupPhases(INPUT, fx);
+    expect(out.ok).toBe(false);
+    expect(notes.join('\n')).toContain('never dialled the bridge');
+  });
+});

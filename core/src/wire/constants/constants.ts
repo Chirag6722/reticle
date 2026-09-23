@@ -190,7 +190,65 @@ export const ReticleEnv = {
   HARNESS_BASE_URL: 'RETICLE_HARNESS_BASE_URL',
   /** Hard ceiling on harness model turns in one drive. Bounds cost, not value. */
   HARNESS_MAX_STEPS: 'RETICLE_HARNESS_MAX_STEPS',
+  /**
+   * Which model backs the harness driver: `anthropic` (the default) or `jev`.
+   *
+   * Two drivers exist because the driver's job turns out not to need a text generator. It picks the
+   * next action and says what it expects; the verdict is decided afterwards by the engine, with no
+   * model anywhere near it. A System One model answers typed questions against a state, which is
+   * exactly that job and none of the rest, so it can drive without being able to generate a
+   * sentence. Unset keeps the existing behaviour for everybody who has not asked for this.
+   */
+  HARNESS_DRIVER: 'RETICLE_HARNESS_DRIVER',
+  /**
+   * A direct Jev key, for this repo's own benchmarks and for anyone holding a TypeSafe account.
+   *
+   * Users are not expected to have one. The ordinary path is the key they already minted on the
+   * platform (`RETICLE_API_KEY`), which reaches Jev through the proxy at `RETICLE_CLOUD_URL` —
+   * this variable is the escape hatch that skips it, and it takes precedence when both are set so
+   * that a developer debugging the upstream is never silently talking to the proxy instead.
+   */
+  HARNESS_JEV_KEY: 'JEV_API_KEY',
+  /** Base URL for the Jev API, for a proxy or a gateway. Defaults to TypeSafe's own endpoint. */
+  HARNESS_JEV_URL: 'RETICLE_HARNESS_JEV_URL',
+  /** A direct OpenAI key. As with Jev, the ordinary path is the platform key and its proxy. */
+  HARNESS_OPENAI_KEY: 'OPENAI_API_KEY',
+  /** Model the OpenAI driver uses. Defaults to a small one — see `DEFAULT_OPENAI_MODEL`. */
+  HARNESS_OPENAI_MODEL: 'RETICLE_HARNESS_OPENAI_MODEL',
+  /**
+   * The API key minted on the platform, and the host it belongs to.
+   *
+   * Read through `apiKeyFrom()`, never directly — see the note on that function for why there are
+   * two names for one key and why neither may be dropped.
+   */
+  API_KEY: 'RETICLE_API_KEY',
+  /** The name this key had until 2026-09. Still honoured; see `apiKeyFrom()`. */
+  CLOUD_KEY: 'RETICLE_CLOUD_KEY',
+  CLOUD_URL: 'RETICLE_CLOUD_URL',
 } as const;
+
+/**
+ * The platform API key, whichever name it arrives under.
+ *
+ * `RETICLE_API_KEY` is the name. `RETICLE_CLOUD_KEY` is what it was called until 2026-09, and it
+ * keeps working — not out of politeness, but because the console printed that name to every user
+ * who ever connected a project, so it is exported in shells and CI configs we cannot see or edit.
+ * A rename that silently stops reading the old name does not look like a rename to those people;
+ * it looks like the product quietly losing their credentials.
+ *
+ * ONE function, because the alternative is each caller remembering both names and one of them
+ * forgetting. That is not hypothetical: this key was read inline in several places before it was
+ * named here at all, which is exactly how a rename half-lands.
+ *
+ * The new name wins when both are set, so a user migrating can export the new one and confirm it
+ * works before removing the old.
+ */
+export function apiKeyFrom(env: Record<string, string | undefined>): string | undefined {
+  const current = env[ReticleEnv.API_KEY];
+  if (current !== undefined && 0 < current.length) return current;
+  const legacy = env[ReticleEnv.CLOUD_KEY];
+  return legacy !== undefined && 0 < legacy.length ? legacy : undefined;
+}
 
 /** Hard transport bounds shared by the browser and bridge. */
 export const TRANSPORT_LIMITS = {
@@ -287,6 +345,24 @@ export const ReticleDir = {
   IMPACT_FILE: 'impact.json',
   /** what changes were SUPPOSED to make true —.reticle/intent.json (git-checked, reviewed) */
   INTENT_FILE: 'intent.json',
+  /**
+   * The sharded form of the same ledger —.reticle/intent/ (git-checked, for the same reason).
+   *
+   * Named here rather than inline at the store that writes it, because the partition guard over
+   * this object is what decides whether a name Reticle creates is committed or ignored. A directory
+   * spelled as a free string somewhere else is one the guard cannot see, so nobody ever makes that
+   * decision: `intent/` was written into users' repositories for that reason alone, neither
+   * classified nor ignored.
+   */
+  INTENT_SUBDIR: 'intent',
+  /**
+   * what a drive types into a field, keyed by the field's label —.reticle/fill-values.json.
+   *
+   * Git-checked on purpose. A generated value is paid for once and then belongs to the project: the
+   * next drive reuses it for free, a replay sends exactly what the recording sent, and a human who
+   * dislikes one can edit the file rather than argue with a model.
+   */
+  FILL_VALUES_FILE: 'fill-values.json',
   /** opt-in pixel baselines —.reticle/visual/<name>.png + <name>.diff.png. */
   VISUAL_SUBDIR: 'visual',
   /** verification-run artifacts —.reticle/runs/<runId>.json (the OEM/CI-consumable verdict). */

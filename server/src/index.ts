@@ -1,24 +1,19 @@
+import { writeHarnessSwitch } from '@/memory/cloud/harness-switch.js';
+import { harnessConfigSource } from '@/memory/cloud/harness-config.js';
+import { fetchPlatformConfig } from '@/features/harness/platform-config.js';
 import { join } from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { resolveProjectCloud } from './memory/cloud/cloud-config.js';
-import { startSyncDaemon } from './memory/cloud/sync-daemon.js';
+import { linkedCloudPort } from './memory/cloud/cloud-config.js';
+import { attachCloudSync } from './memory/cloud/sync-daemon.js';
 import { wireHooks } from './hooks/hook-commands.js';
 import {
   PROJECT_REGISTRY_FILE,
-  emptyProjectRegistry,
   parseProjectRegistry,
   projectCandidates,
 } from '@reticlehq/core/artifacts';
-import {
-  discoverProjectConfigs,
-  type ConfigDiscovery,
-} from './command/cli/config/config-discovery.js';
-import {
-  projectCandidatesFrom,
-  resolveArtifactRoot,
-  type ArtifactRoot,
-} from './memory/project/artifact-root.js';
+import { discoverProjectConfigs } from './command/cli/config/config-discovery.js';
+import { artifactRootResolver } from './memory/project/artifact-root-resolver.js';
 import type { Server } from 'node:http';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
@@ -51,6 +46,7 @@ import { initImpact } from './memory/impact/impact-recorder.js';
 import { FlowStore } from './language/flows/flows.js';
 import { buildFlowChips } from './language/flows/flow-scope.js';
 import { ProjectStore } from './memory/project/project-store.js';
+import { projectStoreResolver } from './memory/project/project-for-root.js';
 import { attachRouteLearning } from './memory/project/learned-routes.js';
 import { AnnotationStore } from './language/flows/stores/annotation-store.js';
 import { createNodeFileSystem, type FileSystemPort } from './memory/project/fs/fs-port.js';
@@ -274,7 +270,14 @@ function attachJournal(
     // Stamp the project's own `.reticle` before ANY counter fires for this session. Without it every
     // verdict is recorded against wherever the daemon was started, which is how one app's evidence
     // reached a different account's production dashboard.
-    session.artifactRoot = resolveArtifactRoot(session.projectId).root;
+    // The origin is passed for the case where the page never stamped a project id: it is the only
+    // distinguishing fact left, and without it every such app shares one bucket.
+    session.artifactRoot = resolveArtifactRoot(session.projectId, originOf(session.url)).root;
+    // Here rather than on the start path, which was neither the moment we were about to write into a
+    // repository nor the root we were about to write into: it created `.reticle/` — holding nothing
+    // but the ignore file — wherever the daemon was launched, coming back every boot after the user
+    // deleted it, while the journals this ignore protects landed in another tree, uncovered.
+    if (deps.enabled) void ensureWorkspaceGitignore(deps.fs, session.artifactRoot);
     journalAttach(session);
     // Seed the learned ambient map so a fresh session starts knowing which regions churn, instead of
     // re-learning from zero. Best-effort + async: a late seed still helps, a failure is silent.
@@ -286,7 +289,14 @@ function attachJournal(
     }
   });
   // Teardown: flush the journal tail to disk + persist what this session learned.
-  bridge.attachSessionEnd(makeSessionEnd(deps));
+  bridge.attachSessionEnd(
+    makeSessionEnd({
+      ...deps,
+      // Retention runs from teardown, and it must not delete the journal of a session that is still
+      // being written. The registry is the only thing that knows which those are.
+      liveSessionIds: () => new Set(bridge.sessions.all().map((s) => s.id)),
+    }),
+  );
   /*
    * And the same write, DURING the session rather than only at the end of it.
    *
@@ -306,16 +316,15 @@ function attachJournal(
     });
   }
   if (deps.enabled) {
-    void pruneSessions(deps.fs, deps.reticleRoot);
+    // Empty in the ordinary case (nothing has connected yet), but this path also runs on a daemon
+    // that is already serving sessions.
+    void pruneSessions(deps.fs, deps.reticleRoot, {
+      live: new Set(bridge.sessions.all().map((s) => s.id)),
+    });
     // The largest thing in the workspace, and until now the only one with no delete path at all.
     void pruneVisualDiffs(deps.fs, deps.reticleRoot);
     // Write-only local copies of reports the outbox already carries.
     void pruneFeedback(deps.fs, deps.reticleRoot);
-    // Here rather than in `init`, because this is the moment we are actually about to write into
-    // somebody's repository — and the paths that reach it without ever running `init` (a plugin
-    // install, a hand-added client config) are exactly the ones that would otherwise leave an
-    // unexplained pile of untracked files behind. Best-effort and write-once; see the helper.
-    void ensureWorkspaceGitignore(deps.fs, deps.reticleRoot);
   }
 }
 
@@ -422,38 +431,18 @@ function knownProjectRoots(): string[] {
   return [...roots];
 }
 
-function artifactRootResolver(daemonRoot: string): (projectId: string | undefined) => ArtifactRoot {
-  return (projectId) => {
-    let registry = emptyProjectRegistry();
-    try {
-      const path = join(homedir(), ReticleDir.ROOT, PROJECT_REGISTRY_FILE);
-      registry = existsSync(path)
-        ? parseProjectRegistry(JSON.parse(readFileSync(path, 'utf8')))
-        : registry;
-    } catch {
-      // A cache that cannot be read is an empty cache, never an error: the daemon still resolves
-      // through discovery, and falls back to its own root exactly as it did before this existed.
-    }
-    let discovery: ConfigDiscovery = { found: [], searched: [] };
-    try {
-      discovery = discoverProjectConfigs(process.cwd());
-    } catch {
-      // Same reasoning: a diagnostic search that throws must not take a tool call with it.
-    }
-    return resolveArtifactRoot({
-      projectId,
-      candidates: projectCandidatesFrom(discovery, registry),
-      daemonRoot,
-    });
-  };
-}
-
 export async function start(options: StartOptions = {}): Promise<RunningServer> {
   const port = options.port ?? RETICLE_DEFAULT_PORT;
   // Open the user's impact record before anything can connect. Not inside the MCP branch: a daemon
   // serving a browser with no agent attached still has a HUD to answer, and a report that reads
   // "nothing recorded yet" over a month of history on disk is the worst version of this feature.
-  initImpact({ reticleRoot: options.reticleRoot ?? join(process.cwd(), ReticleDir.ROOT) });
+  initImpact({
+    reticleRoot: options.reticleRoot ?? join(process.cwd(), ReticleDir.ROOT),
+    // The daemon owns both sides of this seam, so it is the layer that may join them: the cache
+    // lives in cloud memory, the platform read lives in the harness feature, and neither is allowed
+    // to reach for the other.
+    config: harnessConfigSource(() => fetchPlatformConfig(process.env)),
+  });
   const uninstallHooks = wireHooks(
     options.reticleRoot ?? join(process.cwd(), ReticleDir.ROOT),
     readProjectId(process.cwd()),
@@ -501,7 +490,7 @@ export async function start(options: StartOptions = {}): Promise<RunningServer> 
       flows,
     });
     const project = new ProjectStore(fs, reticleRoot, { now });
-    attachRouteLearning(bridge, project);
+    attachRouteLearning(bridge, projectStoreResolver(fs, project, reticleRoot, now));
     const annotations = new AnnotationStore();
     pool = createBrowserPool(options.headless ?? true);
     leaseReaper = new LeaseReaper(pool);
@@ -588,7 +577,13 @@ export async function startDaemon(options: StartOptions = {}): Promise<RunningSe
   // was never opened in the process the HUD talks to: tool calls still recorded (the dispatch
   // chokepoint opens it lazily), but a tab that connected before the first tool call was pushed
   // nothing, so the report read "nothing recorded yet" over a file with history in it.
-  initImpact({ reticleRoot: options.reticleRoot ?? join(process.cwd(), ReticleDir.ROOT) });
+  initImpact({
+    reticleRoot: options.reticleRoot ?? join(process.cwd(), ReticleDir.ROOT),
+    // The daemon owns both sides of this seam, so it is the layer that may join them: the cache
+    // lives in cloud memory, the platform read lives in the harness feature, and neither is allowed
+    // to reach for the other.
+    config: harnessConfigSource(() => fetchPlatformConfig(process.env)),
+  });
 
   const security = await resolveBridgeSecurityWithAutoToken(options);
   const shared = createSharedServer(security.token === undefined ? {} : { token: security.token });
@@ -610,6 +605,7 @@ export async function startDaemon(options: StartOptions = {}): Promise<RunningSe
       bridge.sessions.list(),
       bridge.sessions.noSessionHint(),
       verifyHttp?.port,
+      bridge.sessions.noSessionLead(),
     ),
   );
   // Agent-independent presence: the daemon outlives any single agent, so when the LAST agent's MCP
@@ -643,7 +639,7 @@ export async function startDaemon(options: StartOptions = {}): Promise<RunningSe
   /*
    * Bound AFTER the sync daemon exists, read only when a run is actually written.
    *
-   * `attachJournal` runs before `startSyncDaemon` because the journal has to be capturing before
+   * `attachJournal` runs before `attachCloudSync` because the journal has to be capturing before
    * anything can connect, and reordering them so this could be a direct reference would put sync
    * setup ahead of session capture for the sake of one callback.
    */
@@ -658,7 +654,7 @@ export async function startDaemon(options: StartOptions = {}): Promise<RunningSe
     onRunPersisted: () => syncNudge.run?.(),
   });
   const project = new ProjectStore(fs, reticleRoot, { now });
-  attachRouteLearning(bridge, project);
+  attachRouteLearning(bridge, projectStoreResolver(fs, project, reticleRoot, now));
   const annotations = new AnnotationStore();
   const pool = createBrowserPool(options.headless ?? true);
   const leaseReaper = new LeaseReaper(pool);
@@ -679,19 +675,22 @@ export async function startDaemon(options: StartOptions = {}): Promise<RunningSe
    * events a user most wants: the ones at the start of a run.
    */
   wireHooks(reticleRoot, readProjectId(process.cwd()));
-  const cloudSync = startSyncDaemon({
+  const cloudSync = attachCloudSync({
+    fs,
     reticleRoot,
-    cloud: () => resolveProjectCloud(fs, reticleRoot, homedir(), process.env),
-    // Every OTHER linked repo on this machine, not just the directory the daemon was started in.
-    // One daemon serves many projects, and pushing only its own root left the rest silently
-    // reporting nothing — indistinguishable, on the dashboard, from nobody having verified anything.
-    otherRoots: () => Promise.resolve(knownProjectRoots()),
-    cloudFor: (root) => resolveProjectCloud(fs, root, homedir(), process.env),
+    homeDir: homedir(),
+    env: process.env,
+    otherRoots: knownProjectRoots,
   });
   syncNudge.run = (): void => cloudSync.nudge();
-  // The panel's sync button. `syncNow`, not `nudge`: a nudge schedules a cycle soon, which is right
-  // for "a run landed" and wrong for a button somebody is watching. Never awaited.
+  // `syncNow`, not `nudge`: a nudge schedules a cycle soon, which is right for "a run landed" and
+  // wrong for a button somebody is watching. Never awaited.
   bridge.attachSyncRequest(() => void cloudSync.syncNow());
+  // The panel's harness switch. Written through to the platform rather than kept locally, so the
+  // console and the panel cannot disagree about a setting they both offer. Nothing is awaited and a
+  // failure is not surfaced: the next snapshot re-reads the platform, so a lost write shows up as
+  // the switch springing back, which is the truthful outcome.
+  bridge.attachHarnessRequest((enabled) => void writeHarnessSwitch(process.env, enabled));
   // Scope auto-selection to the active project (from .reticle.json) so a stray tab from another app is
   // never picked when the agent omits a sessionId. Explicit per-call scope/sessionId still overrides.
   // Scope + the no-session diagnosis: "no browser session connected" is the error that ends most
@@ -719,6 +718,7 @@ export async function startDaemon(options: StartOptions = {}): Promise<RunningSe
     project,
     fs,
     reticleRoot,
+    linkedCloud: linkedCloudPort(fs, reticleRoot, homedir(), process.env),
     // The long-lived daemon needs this MORE than the standalone MCP process does, not less: it is
     // the one that outlives a single project and serves every app on the machine. Omitting it here
     // silently disabled per-session artifact resolution for every agent that attaches to a running

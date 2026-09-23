@@ -1,8 +1,11 @@
 import { join } from 'node:path';
 import {
+  SAFE_SEGMENT_PATTERN,
   ReticleDir,
+  fnv1a,
   projectCandidates,
   type ProjectCandidate,
+  type ProjectId,
   type ProjectRegistry,
 } from '@reticlehq/core';
 import type { ConfigDiscovery } from '@/command/cli/config/config-discovery.js';
@@ -47,7 +50,7 @@ export type ArtifactRootReason = (typeof ArtifactRootReason)[keyof typeof Artifa
 
 interface ArtifactRootQuery {
   /** The connected session's HELLO projectId, when it sent one. */
-  projectId: string | undefined;
+  projectId: ProjectId | undefined;
   /** Every project this machine knows about. Supplied, not gathered here — this stays pure. */
   candidates: readonly ProjectCandidate[];
   /** Where artifacts go when the project cannot be identified. Already a `.reticle` path. */
@@ -139,4 +142,81 @@ export function projectCandidatesFrom(
       : [{ projectId: config.projectId, directory: config.directory }],
   );
   return [...discovered, ...projectCandidates(registry)];
+}
+
+/** Where evidence goes when no project could be named and the daemon is a guest in this tree. */
+export const UNMATCHED_SUBDIR = 'unmatched';
+
+/** What a project with NO identity at all is called on disk. Never blank, so the path is always real. */
+const UNNAMED_PROJECT = 'unnamed';
+
+/**
+ * The bucket for a project that could not name itself but was served from somewhere.
+ *
+ * `unnamed` used to take every one of these, which made it not a project's directory but the union
+ * of every project that ever failed to identify itself — sharing one `project.json`, one
+ * `envelopes.json`, one `flake.json` and one `assertion-tiers.json`. Those are the durable half:
+ * learned routes, per-route expectations, a quarantine ledger and an anti-downgrade floor. One
+ * app's floor silently becoming another app's floor is a wrong answer, not untidy disk.
+ *
+ * And it is the ORDINARY path, not an edge: a page that never stamped an id is an app instrumented
+ * without a build plugin, a page loaded before the plugin ran, or any tree where the daemon is a
+ * guest.
+ *
+ * The origin is the next-best identity available at that moment. It does not pretend to be a
+ * project id — two apps served on one port at different times still share a bucket — but that is a
+ * far smaller wrong than every unidentified app in the world sharing one.
+ */
+const ORIGIN_BUCKET_PREFIX = 'origin-';
+
+/**
+ * The fallback root for a session whose project could not be resolved.
+ *
+ * Falling back to the daemon's own root was unconditional and silent, and that is how Reticle came
+ * to create `.reticle/` — session journals included, carrying URLs, request and response bodies and
+ * page text — in a user's BACKEND directory. Their editor starts the daemon there; the directory
+ * was never instrumented and never agreed to hold anybody's session data. They deleted it, and the
+ * next session wrote it again.
+ *
+ * Two cases, and only one of them was ever the intended behaviour:
+ *
+ *   - the daemon is sitting IN a Reticle project (a developer who ran `reticle serve` in their own
+ *     app). Its root is the right answer, and it is the case the old fallback was written for.
+ *   - the daemon is a guest — no `.reticle.json`, no `.reticle/` already there. Then the evidence
+ *     goes to the user's own `~/.reticle/unmatched/<projectId>`, which is Reticle's to write.
+ *
+ * It is never dropped. A verdict with nowhere to live is a worse failure than one in an unexpected
+ * place, and the caller says out loud where it went.
+ *
+ * `projectId` arrives in HELLO from the page, so it is untrusted input on a path join and is held
+ * to one safe segment — the same guard session ids and flow names already pass.
+ */
+export function unmatchedRoot(query: {
+  daemonRoot: string;
+  /** Whether the daemon's own directory is a Reticle project — an IO question, answered by the caller. */
+  daemonIsProject: boolean;
+  /** The user's home directory. Passed in rather than read, so this stays pure. */
+  home: string;
+  projectId?: ProjectId | undefined;
+  /**
+   * Where the session was served from, when it is known. Used ONLY when no project id survives the
+   * segment guard — a real id always wins, because it is an identity and this is a stand-in.
+   */
+  origin?: string | undefined;
+}): string {
+  if (query.daemonIsProject) return query.daemonRoot;
+  const id = query.projectId ?? '';
+  const named = SAFE_SEGMENT_PATTERN.test(id) && !id.includes('..');
+  return join(
+    query.home,
+    ReticleDir.ROOT,
+    UNMATCHED_SUBDIR,
+    named ? id : unnamedSegment(query.origin),
+  );
+}
+
+/** Hashed, not spelled: an origin carries a host and a port, and neither belongs in a path segment. */
+function unnamedSegment(origin: string | undefined): string {
+  if (origin === undefined || 0 === origin.trim().length) return UNNAMED_PROJECT;
+  return `${ORIGIN_BUCKET_PREFIX}${fnv1a(origin.trim())}`;
 }

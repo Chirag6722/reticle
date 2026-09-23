@@ -41,7 +41,7 @@ import { flushProxySessionMetrics } from '@/telemetry/proxy-telemetry.js';
  * the whole defect this import closes was the proxy answering a DIFFERENT question from every other
  * surface, and a second copy of the probe is how that comes back.
  */
-import { fetchStatus as fetchDaemonStatus } from '@/command/cli/launch/cli-launch.js';
+import { fetchStatus as fetchDaemonStatus } from '@/command/daemon/binding/daemon-status-probe.js';
 /**
  * Re-exported so every existing caller (and every spec) keeps importing the proxy's log from the
  * proxy. Where the code lives is a file-size decision; where it is imported from is an API.
@@ -367,6 +367,15 @@ export function startMcpProxy(
   ensureDaemon?: () => Promise<void>,
   /** Observe the real shutdown boundary in transport tests without terminating their worker. */
   exitProcess: (code: number) => void = (code) => process.exit(code),
+  /**
+   * Tell the resilience layer this session proved itself usable.
+   *
+   * The same `endpoint` frame that earns a fresh retry budget below also clears the disconnect-storm
+   * counter, and for the same reason: response headers are produced by a daemon that accepts SSE and
+   * drops it, and an `endpoint` frame is not. Optional, because a transport test drives this
+   * function with no resilience installed.
+   */
+  onUsableSession: () => void = () => undefined,
 ): Promise<never> {
   return new Promise<never>((_resolve, reject) => {
     // A client just started us, which is the only honest evidence that Reticle is registered with
@@ -510,13 +519,11 @@ export function startMcpProxy(
         if (null === failure) return;
         const msg = parseJsonRpc(line);
         if (null === msg || msg.id === undefined || !pending.take(msg.id)) return;
-        if (failure.transport) {
-          reportMcpOutage(OutageStage.FIRST, {
-            reason: OutageReason.CONNECT_ERROR,
-            attempts: failure.attempts,
-            pendingLost: 1,
-          });
-        }
+        // No outage is reported here, deliberately. A POST leg that died while the SSE stream is
+        // still up is not the agent losing its tools: `postSocketFailures` on the session summary
+        // already counts it, and reporting it as a lost stream both double-counted and — because
+        // the outage cap is per process — let a transient POST failure in the first minute suppress
+        // the real stream outage in the fortieth.
         proxyLog('reticle_mcp_proxy_post_unanswered', {
           port,
           method: String(msg.method),
@@ -549,6 +556,10 @@ export function startMcpProxy(
           reportMcpOutage(OutageStage.RECOVERED, { reason: lastDropReason, attempts: cost });
         attempts = 0;
         attemptsBeforeDormant = 0;
+        // The disconnects behind us were reconnects, not a runaway. Counting them for the life of
+        // the process made twenty daemon restarts over a working week indistinguishable from twenty
+        // in eight seconds, and the proxy left on the former.
+        onUsableSession();
         // The new session's McpServer has never seen the client's initialize — replay it first, then
         // flush whatever the client sent while we were reconnecting.
         for (const line of replay.replayLines()) forward(url, line);

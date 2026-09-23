@@ -105,8 +105,45 @@ const bytesOf = (json: string): number => Buffer.byteLength(json, 'utf8');
  * labels are a UNION (ask for two, get either), and a quarantined flow never runs however it is
  * labelled. Everything else about selection lives in the tool description, which is sent once.
  */
-const DEFAULT_SURFACE_BYTE_BUDGET = 24_600;
-// Raised TWICE, each time deliberately, each time with the measurement that bought it.
+/*
+ * Moved 24_700 -> 24_800 for `net.bodyMatches`.
+ *
+ * The decision, since going over is one: this is EVIDENCE, not a route feature, and it is the fix
+ * for the only false green reported from the field in this release. `bodyContains` is a substring
+ * test over the serialised response body, and it was the only way to say anything about a response
+ * body at all — so "this field holds this value" had to be written as a substring, and a body
+ * carrying `"completedAt": null` satisfied a check for `completed` on a job that was queued. The
+ * verdict IS the product; a predicate that cannot express the commonest assertion about a response
+ * is not a surface worth protecting bytes on.
+ *
+ * Paid for as far as it could be: the `bodyContains` clause in the bug-catching hint was rewritten
+ * to teach `bodyMatches` instead rather than added alongside it, so the hint costs two bytes more,
+ * not forty. The rest is the field itself appearing in the advertised shape, which is the price of
+ * the agent being able to find it — a predicate nothing advertises is a predicate nobody calls,
+ * which is how the substring became the only reach in the first place.
+ */
+const DEFAULT_SURFACE_BYTE_BUDGET = 24_800;
+// Raised, each time deliberately, each time with the measurement that bought it.
+//
+// LATEST RAISE, 24_600 -> 24_700. `reticle_verify { action: "explore" }` gained a `driver`
+// parameter and a `rewroteFlows` output field: 86 B on the wire (24,600 -> 24,686, ~21
+// tokens/turn) against 0 B of headroom. The prose was cut first — the parameter description went
+// through three rewrites and lost half its length — and 86 B is what is left once the enum's two
+// values and their JSON-Schema scaffolding are paid for, which no rewording removes.
+//
+// What it buys, and it is two separate things:
+//
+// `driver` is the only way to run an A/B between the models that drive. It was previously settable
+// only per-daemon through an environment variable, which means restarting the daemon between arms
+// — and that is precisely the setup that had a STALE daemon answer three consecutive runs of our
+// own benchmark with one configuration, reporting `steps: 24` on a run whose budget was 8. A
+// comparison that cannot switch arms within a session is a comparison that silently does not.
+//
+// `rewroteFlows` fixes a false report, which is the more serious of the two. `savedFlows` was a
+// before/after diff of flow NAMES, and a second drive records the same journeys under the same
+// names — so the ORDINARY second run came back with an empty list and the tool told its caller
+// "nothing is proved and nothing will replay" about a ten-step flow sitting on disk. A false
+// "nothing was verified" is the same class of mistake as a false "everything passed".
 //
 // SECOND RAISE, 24_100 -> 24_500. `reticle_verify { action: "mutate" }` costs 185 B on the wire
 // (24,050 -> 24,235, ~46 tokens/turn), and the 24_100 ratchet had 50 B of headroom.

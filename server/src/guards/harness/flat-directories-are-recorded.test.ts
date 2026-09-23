@@ -66,7 +66,11 @@ const OVER_THE_LINE: Readonly<Record<string, number>> = {
   // different gaps and avatar sizes. Raised rather than grouped because this directory already pairs
   // a component with its stylesheet — settings, report and shell all do — so the file sits where the
   // convention puts it, and moving one pair out would be the inconsistent choice.
-  'adapters/realm/browser/src/presenter': 19,
+  // 20 with `presenter-offer.ts`, the one thing this HUD advertises: the card, its copy, the rules
+  // that keep it from nagging, and its stylesheet, in one file. Raised rather than grouped for the
+  // same reason as the line above -- it is a presenter surface beside every other presenter surface,
+  // and a `promo/` directory holding exactly one file would be a category invented for a single member.
+  'adapters/realm/browser/src/presenter': 20,
   // Newly over the line at 11, with `presenter-safe-html.ts`. It crossed because two SECURITY
   // helpers left `presenter-report.ts` when the account capsule became their second caller: HTML
   // escaping, and the dashboard-url scheme check that exists because `javascript:` once produced a
@@ -74,7 +78,13 @@ const OVER_THE_LINE: Readonly<Record<string, number>> = {
   // fixed in one of them, so the duplicate was not an option.
   'adapters/realm/browser/src/presenter/chrome': 11,
   'core/src/verdict': 11,
-  'core/src/wire': 15,
+  'core/src/wire': 16,
+  // 16 since `snapshot-tree.ts`. The snapshot tree is a format the BROWSER writes and several
+  // things on the Node side read back, and its parser was living beside the MCP tool handlers — so
+  // every other reader imported from the tool surface to parse a string the tool surface does not
+  // own, and the directory-reach guard refused the second layer that needed it. Moving it here put
+  // it with the other wire formats and took a cross-layer reach OUT of `features/crawl` as well.
+  //
   // 15 since the shared step-effect builder. Recorded rather than grouped: the note above explains
   // why this directory cannot come down by the usual rule — its FILENAMES are published API, so
   // moving one to tidy the count would be a breaking change for somebody outside this repository.
@@ -97,7 +107,12 @@ const OVER_THE_LINE: Readonly<Record<string, number>> = {
   // 18 since the last two cycles in this package were removed: `predicate-eval-kit.ts` (the result
   // type and the four comparisons the oracles are written in) and `predicate-session.ts` (what the
   // engine needs from a session). Both were reached back out of the modules that call their readers.
-  'engine/src/question/predicate': 18,
+  // 19 with `body-key-fragment.ts`, the rule that a response-body needle found only inside a KEY
+  // name grades inconclusive rather than pass. Raised on purpose rather than folded into
+  // `predicate-eval.ts`: it is a pure rule with an incident behind it, and it is the kind of thing
+  // that gets quietly re-broken when it lives inside the evaluator it constrains. This directory is
+  // now the largest flat one in the package and is the next thing here worth grouping.
+  'engine/src/question/predicate': 19,
   /*
    * Crossed ten when the fast-drive budget and a portable byte counter landed. The guard asks for
    * grouping rather than recording at this moment, and grouping is the wrong move HERE specifically:
@@ -134,7 +149,16 @@ const OVER_THE_LINE: Readonly<Record<string, number>> = {
   // assemble responses that carry gaps, and it holds session-scoped state -- so it belongs at the
   // surface, not in the pure engine that computes the gaps. Recorded rather than grouped: one
   // filter is not a cluster, and `tools/act/` is for the act path specifically.
-  'server/src/surface/tools': 36,
+  // 37 since `harness-plan.ts`: what a drive is FOR, read out of `.reticle` before it starts —
+  // every recorded journey with the consequence that must still hold, and the declared intent no
+  // flow asserts. Recorded rather than grouped, and it belongs beside `harness-explore.ts` for the
+  // reason the directory-reach guard insists on: `features/harness` is a SINK that imports nothing
+  // from this package, so anything the drive needs to be HANDED has to be assembled out here.
+  // 38 with `first-sentence.ts`, the one implementation of a summary that two surfaces had a copy
+  // of -- and only one copy knew that `e.g.` does not end a sentence, so the tool catalogue cut
+  // `reticle_session`'s MANDATORY handback out of its own summary. It sits beside the surfaces that
+  // call it rather than in a `text/` directory holding one file.
+  'server/src/surface/tools': 38,
   // Crossed the line when a planned step gained its own `expect`: the grading rule and its test
   // joined the act cluster (preflight, target, retry, capsule). Recorded rather than grouped,
   // because this directory IS the grouping -- these files were split out of act-tools.ts when it
@@ -151,13 +175,13 @@ const OVER_THE_LINE: Readonly<Record<string, number>> = {
   // 15 since `drive-agent.ts` and `drive-plan.ts` left with the drive itself: onboarding stops at a
   // connected app, and the stage that proves a flow runs a model inside the daemon rather than
   // spawning a second agent CLI. Lowered in the same commit, which is what locks the gain in.
-  'server/src/command/setup': 15,
+  'server/src/command/setup': 16,
   // Crossed the line with `drive-url-stamp.ts`: the mark that tells a page Reticle opened it for
   // itself. Its own leaf because the SDK reads the same constant to decide not to show a human a
   // first-run tour over a page nobody is looking at -- a rule split across two packages is worth
   // one file that names it.
   'server/src/portal/input': 11,
-  'server/src/portal/session': 20,
+  'server/src/portal/session': 21,
   // 32 since two leaves were extracted out of `flow-replay.ts` to break the last runtime cycle in
   // this directory: `flow-replay-types.ts` (shapes two collaborators share) and `flow-anchor.ts`
   // (resolving a step's anchor). Breaking a cycle costs files — a module that sits UNDER two others
@@ -172,12 +196,31 @@ const OVER_THE_LINE: Readonly<Record<string, number>> = {
   // It belongs beside `session-end.ts` for the same reason the line above gives: teardown owns the
   // final write of that artifact, and the flush is the same write on a different trigger. Putting it
   // near the event bus instead would pull the run store and the journal in behind it.
-  'server/src/memory/journal': 13,
+  // 14 with `self-observation.ts`: the rule that Reticle does not durably record the browser
+  // fetching Reticle's own SDK. It is its own file because the predicate has to be a pure function
+  // of the URL and testable without a journal -- both halves of a request/response pair must get the
+  // same answer, or filtering one half leaves the other unpaired and the engine reports a request
+  // that completed as one that hung.
+  'server/src/memory/journal': 14,
+  // 11 when the artifact-address files landed: `project-for-root.ts`, `artifact-root-resolver.ts`
+  // and the roster that pins them. Recorded rather than grouped, and the reason is the sibling
+  // guard: the natural home for "which directory does this write to" is `project/dir`, whose whole
+  // subject that is — but these four files ask the question with a ToolDeps, a discovered config
+  // and a project store in hand, so moving them there would add `dir -> tools`, `dir -> config`,
+  // `dir -> resolve` and `dir -> project`, turning a leaf directory into one that reaches for four
+  // others. A flat file is cheaper than a new mutual pair. Group them when the address question
+  // stops needing the caller's dependencies to answer it.
+  'server/src/memory/project': 11,
   // 35 since the setup funnel: `onboarding-funnel.ts` (the one emit chokepoint), `onboarding-firsts.ts`
   // (the first look / act / verdict of a run, which only the daemon can witness) and
   // `install-trace.ts` (draining what the installer could not report, because it ran before there
   // was a CLI). Three files rather than one: they answer at three different moments.
-  'server/src/telemetry': 35,
+  // 36 with `harness-drive.ts`: the span that says a verdict came from Reticle driving the app
+  // rather than from the user's own agent. It is a module and not a flag on a call because the two
+  // are indistinguishable at the emit site otherwise, and every activation number built on verdicts
+  // reads a drive we performed as adoption we did not earn. Raised rather than grouped: this
+  // directory is already the largest flat one here and grouping it is its own piece of work.
+  'server/src/telemetry': 36,
   'spec-runner/src': 11,
 };
 

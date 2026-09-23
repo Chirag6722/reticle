@@ -44,6 +44,7 @@ import { log } from '@/log.js';
 import { SERVER_VERSION } from '@/command/version/identity/server-version.js';
 import { setMcpClientNameHook } from '@/telemetry/feedback-context.js';
 import { getSessionMetrics } from '@/telemetry/session-metrics.js';
+import { reportMcpConnected } from '@/telemetry/mcp-connection.js';
 import { parsePredicate } from '@reticlehq/engine/question/predicate/predicate-parse.js';
 
 /**
@@ -84,20 +85,9 @@ function withExample(description: string, example?: Record<string, unknown>): st
  * and any contract stated after it gone too. Silent, and it degraded the DEFAULT profile only, which
  * is the one nobody reads the raw strings for.
  */
-const ABBREVIATIONS = ['e.g.', 'i.e.', 'etc.', 'vs.', 'cf.'];
-
-export function firstSentence(description: string): string {
-  const nl = description.indexOf('\n');
-  const base = nl >= 0 ? description.slice(0, nl) : description;
-  // Mask abbreviations with an equal-length filler so offsets stay valid in the original string.
-  const masked = ABBREVIATIONS.reduce(
-    (text, abbr) => text.split(abbr).join('\u0000'.repeat(abbr.length)),
-    base,
-  );
-  const dot = masked.search(/\.\s/);
-  const sentence = dot >= 0 ? base.slice(0, dot + 1) : base;
-  return sentence.length > 160 ? `${sentence.slice(0, 159)}…` : sentence;
-}
+// Re-exported because callers (and `mcp.test.ts`) have imported it from here since it lived here.
+export { firstSentence } from '@/surface/tools/first-sentence.js';
+import { firstSentence } from '@/surface/tools/first-sentence.js';
 
 /**
  * Parameters carrying the recursive predicate grammar. Advertised compactly in lean profiles.
@@ -146,8 +136,8 @@ const PREDICATE_KINDS =
  */
 const PREDICATE_FIELD_GRAMMAR_HINT =
   ' Bug-catching options: net.count (exact request count — catches double-submit), ' +
-  'net.bodyContains (a substring of what the SERVER answered — catches a UI that echoes the input ' +
-  'it sent instead of the result it got back), net.requestBodyMatches (a shallow JSON match on what ' +
+  'net.bodyMatches (a shallow JSON match on what the SERVER answered — say the FIELD and its value, ' +
+  'because a substring of the body matches key names too), net.requestBodyMatches (the same on what ' +
   'the UI SENT — the verdict for "applying this filter actually puts it in the payload"), ' +
   'console.absent:true (action completed with a CLEAN ' +
   'console), absent:true on element/text (it should be gone). Call reticle_tools for the full field ' +
@@ -268,24 +258,33 @@ export function advertisedTools(
   const shipped = new Set(tableForSurface(surface).map((tool) => tool.name));
   const ours = tools.filter((tool) => shipped.has(tool.name));
   const theirs = tools.filter((tool) => !shipped.has(tool.name));
-  // The `merged` surface keeps `reticle_tools` and drops `reticle_run`, which is not symmetry for
-  // its own sake. `reticle_run` exists to DISPATCH to a tool the surface does not advertise, and
-  // this surface advertises everything, so it has no job left. `reticle_tools` has a second job that
-  // survives: every input schema on a trimmed surface is LEAN, and `{ names: [...] }` is the only
-  // way to get a tool's full parameters — which matters more here than anywhere, because a merged
-  // tool's schema is the union of its members' fields with all of them optional. Recovery messages
-  // across this server also say "Call reticle_tools", and a surface without it turns that advice
-  // into a dead end (see surface-sizes.test.ts).
-  // A surface with no `reticle_run` can invoke only what it advertises, so the catalogue is told to
-  // list exactly that. Anything else is a menu of names the agent cannot order from.
+  /*
+   * `merged` used to drop `reticle_run`, on the reasoning that the hatch "exists to DISPATCH to a
+   * tool the surface does not advertise, and this surface advertises everything, so it has no job
+   * left".
+   *
+   * THE PREMISE WAS FALSE, and it had been false for some time. `MERGED_TOOL_NAMES` is
+   * `CORE_TOOL_NAMES` minus the merged-away names plus `LOOK`; `EXTENDED_TOOL_NAMES` — screenshot,
+   * visual diff, clock, network mock, storage, record, the flow pair, intent, context, capabilities
+   * — is not in it. So eleven registered tools were advertised by nothing, callable by nothing, and
+   * catalogued by nothing: `reticle_tools { names: ["reticle_screenshot"] }` answered `unknown
+   * tool`, on a build where the tool exists and is registered.
+   *
+   * The extended set's own comments say each demoted tool is "still one `reticle_run` hop from any
+   * agent that wants it". That is the trade the demotion was justified by, and dropping the hatch
+   * silently cancelled the half of it we owed the caller. One of the casualties was
+   * `reticle_visual_diff`, which covers the only bug class the registry marks as one Reticle cannot
+   * otherwise see.
+   *
+   * So the hatch stays, and the catalogue lists everything the hatch can reach. `reticle_tools`
+   * keeps its second job either way: every input schema on a trimmed surface is LEAN, and
+   * `{ names: [...] }` is the only way to get full parameters — which matters most here, because a
+   * merged tool's schema is the union of its members' fields with all of them optional. Recovery
+   * messages across this server also say "Call reticle_tools", and a surface without it turns that
+   * advice into a dead end (see surface-sizes.test.ts).
+   */
   const advertisedHere = filterTools([...ours], surface);
-  const callable =
-    surface === TOOL_SURFACE.MERGED
-      ? new Set([...advertisedHere, ...theirs].map((tool) => tool.name))
-      : undefined;
-  const meta = buildDynamicTools([...tools], origin, callable).filter(
-    (tool) => surface !== TOOL_SURFACE.MERGED || tool.name !== ReticleTool.RUN,
-  );
+  const meta = buildDynamicTools([...tools], origin, undefined);
   return [...advertisedHere, ...theirs, ...meta];
 }
 
@@ -615,7 +614,13 @@ export function createMcpServer(
    */
   server.server.oninitialized = () => {
     const info = server.server.getClientVersion();
-    if (info?.name !== undefined) getSessionMetrics().recordClient(info.name, info.version);
+    if (info?.name === undefined) return;
+    getSessionMetrics().recordClient(info.name, info.version);
+    // The one signal that separates "Reticle is running" from "somebody is USING it", reported from
+    // the first moment it can carry WHO. It used to fire from the SSE `connect()` resolution, which
+    // happens before the handshake — so every connect row was anonymous, and the field meant to say
+    // which agent client converts best was empty on every event ever sent.
+    reportMcpConnected(info.name);
   };
   // Which agent is on the other end, for a feedback report. Registered as a lazy hook rather than
   // read here: the handshake has not happened yet at construction time, and a report filed twenty
@@ -642,7 +647,25 @@ export function createMcpServer(
   const advertised = advertisedTools(profile, tools);
   // The names this surface actually hands the agent. Every piece of advice leaving this server is
   // rewritten against it, so a static string cannot route a reader to a tool they were not given.
-  const advertisedNames = new Set(advertised.map((tool) => tool.name));
+  /**
+   * What a name in advice can actually REACH, which is not the same as what is advertised.
+   *
+   * `liveCallText` rewrites mentions of tools this surface cannot reach — it exists because advice
+   * naming `reticle_flow_save` on a surface without it sent agents at a tool that answered "not
+   * reachable on this tool surface". Gated on the ADVERTISED set, it kept firing once the dispatch
+   * hatch came back: `reticle_flow_save` and `reticle_record` are reachable through
+   * `reticle_run` but not advertised, so every mention of them — INCLUDING their own names and the
+   * parameter docs that name the recording to save — was rewritten to
+   * `reticle_verify { action: "explore", persona }`. Two tools with the same wrong name, and a
+   * `flowName` description telling the reader to pass the name that a tool which is not the one
+   * they called was called with.
+   *
+   * With a hatch, every registered tool is reachable and no rewriting is owed. Without one,
+   * advertised IS reachable, which is the case this was written for.
+   */
+  const advertisedNames = advertised.some((tool) => ReticleTool.RUN === tool.name)
+    ? new Set(tools.map((tool) => tool.name))
+    : new Set(advertised.map((tool) => tool.name));
   installFriendlyArgErrors(
     server,
     new Map(

@@ -5,7 +5,17 @@ import { utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createNodeFileSystem, type FileSystemPort } from '@/memory/project/fs/fs-port.js';
-import { pruneFeedback, pruneSessions, pruneVisualDiffs, selectPrunable } from './retention.js';
+import { ReticleDir } from '@reticlehq/core';
+import {
+  DEFAULT_EVIDENCE_BUDGET_BYTES,
+  pruneEvidenceBudget,
+  pruneFeedback,
+  pruneSessions,
+  pruneVisualDiffs,
+  selectOverBudget,
+  selectPrunable,
+  type TierEntry,
+} from './retention.js';
 import { visualDiffPath, visualDir, visualPath } from '@/memory/project/dir/reticle-dir.js';
 
 describe('selectPrunable', () => {
@@ -58,7 +68,7 @@ describe('pruneSessions', () => {
         // stagger mtimes so ordering is deterministic
         await new Promise((r) => setTimeout(r, 5));
       }
-      await pruneSessions(fs, root, 2);
+      await pruneSessions(fs, root, { retention: 2 });
       const remaining = (await readdir(sessions)).sort();
       expect(remaining).toEqual(['s2', 's3']);
     },
@@ -66,8 +76,30 @@ describe('pruneSessions', () => {
   );
 
   it('never throws when there is no sessions dir', async () => {
-    await expect(pruneSessions(fs, root, 2)).resolves.toBeUndefined();
+    await expect(pruneSessions(fs, root, { retention: 2 })).resolves.toBeUndefined();
   });
+
+  /**
+   * A session directory's mtime is stamped when it is CREATED and never moves again: appending to a
+   * file inside it advances the file's mtime, not the directory's. So the longest-running session on
+   * the machine is also the oldest-looking one, and the count bound used to evict it while it was
+   * still being written — after which the journal, which latched its directory as ensured, failed
+   * every subsequent append in silence.
+   */
+  it(
+    'never evicts a session that is still open, even when it is the oldest',
+    async () => {
+      const sessions = join(root, 'sessions');
+      for (const name of ['live', 's2', 's3']) {
+        await mkdir(join(sessions, name), { recursive: true });
+        await writeFile(join(sessions, name, 'events.jsonl'), '', 'utf8');
+        await new Promise((r) => setTimeout(r, 5));
+      }
+      await pruneSessions(fs, root, { retention: 2, live: new Set(['live']) });
+      expect((await readdir(sessions)).sort()).toEqual(['live', 's2', 's3']);
+    },
+    SESSION_PRUNE_TIMEOUT_MS,
+  );
 });
 
 /**
@@ -173,5 +205,121 @@ describe('the feedback copies nothing reads back', () => {
 
   it('never throws when no report was ever written', async () => {
     await expect(pruneFeedback(ffs, froot)).resolves.toBeUndefined();
+  });
+});
+
+/**
+ * A count is not a size. Twenty session directories is twenty unbounded directories, and a user's
+ * `.reticle/sessions` reached 8 GB while every count bound in this file was being honoured — one
+ * chatty drive writes response bodies and DOM text until the drive stops, and nothing was ever
+ * looking at the total.
+ *
+ * So the evidence tier gets a second, independent bound in BYTES, and the memory tier gets none:
+ * flows, capsules, baselines, the intent ledger and the contract are small, durable and the whole
+ * reason the directory exists. They must keep being written however full the disk is.
+ */
+describe('the evidence tier byte budget', () => {
+  const evidence = (path: string, sizeBytes: number, mtimeMs: number): TierEntry => ({
+    path,
+    under: ReticleDir.SESSIONS_SUBDIR,
+    sizeBytes,
+    mtimeMs,
+  });
+
+  it('evicts the oldest evidence until the total is under budget', () => {
+    const entries = [evidence('a', 100, 1), evidence('b', 100, 2), evidence('c', 100, 3)];
+    expect(selectOverBudget(entries, 250)).toEqual(['a']);
+    expect(selectOverBudget(entries, 100)).toEqual(['a', 'b']);
+  });
+
+  it('evicts nothing when the tier is already under budget', () => {
+    expect(selectOverBudget([evidence('a', 10, 1)], 100)).toEqual([]);
+  });
+
+  /** The constraint the whole design is for: a full disk must not cost somebody their flows. */
+  it('never selects the memory tier, however far over budget', () => {
+    const memory = [
+      ReticleDir.FLOWS_SUBDIR,
+      ReticleDir.CAPSULES_SUBDIR,
+      ReticleDir.BASELINES_SUBDIR,
+      ReticleDir.INTENT_SUBDIR,
+    ].map((under, i) => ({ path: `${under}/x`, under, sizeBytes: 1_000_000_000, mtimeMs: i }));
+    expect(selectOverBudget(memory, 0)).toEqual([]);
+    // and a memory entry does not count toward the total that decides eviction
+    expect(selectOverBudget([...memory, evidence('a', 10, 9)], 100)).toEqual([]);
+  });
+
+  /** Same defect on the other bound: the byte budget has no count floor at all. */
+  it('never selects an open session, however far over budget', () => {
+    const entries = [evidence('live', 100, 1), evidence('b', 100, 2), evidence('c', 100, 3)];
+    expect(selectOverBudget(entries, 250, new Set(['live']))).toEqual(['b']);
+    // a lone, open, over-budget session is left alone rather than deleted under its own writer
+    expect(selectOverBudget([evidence('live', 100, 1)], 10, new Set(['live']))).toEqual([]);
+  });
+
+  it('has a budget somebody chose', () => {
+    expect(DEFAULT_EVIDENCE_BUDGET_BYTES).toBeGreaterThan(0);
+  });
+});
+
+describe('pruneEvidenceBudget', () => {
+  let broot: string;
+  let bfs: FileSystemPort;
+
+  beforeEach(async () => {
+    broot = join(await mkdtemp(join(tmpdir(), 'reticle-budget-')), '.reticle');
+    bfs = createNodeFileSystem();
+  });
+  afterEach(async () => {
+    await removeTempDir(join(broot, '..'));
+  });
+
+  it('drops the oldest sessions until the tier fits, and never the memory tier', async () => {
+    const sessions = join(broot, ReticleDir.SESSIONS_SUBDIR);
+    for (const [i, name] of ['s1', 's2', 's3'].entries()) {
+      await mkdir(join(sessions, name), { recursive: true });
+      await writeFile(join(sessions, name, 'events.jsonl'), 'x'.repeat(1000), 'utf8');
+      const when = new Date(1_700_000_000_000 + i * 1000);
+      utimesSync(join(sessions, name), when, when);
+    }
+    const flows = join(broot, ReticleDir.FLOWS_SUBDIR);
+    await mkdir(flows, { recursive: true });
+    await writeFile(join(flows, 'signup.json'), 'x'.repeat(5000), 'utf8');
+
+    await pruneEvidenceBudget(bfs, broot, 2500);
+
+    expect((await readdir(sessions)).sort()).toEqual(['s2', 's3']);
+    expect(await readdir(flows)).toEqual(['signup.json']);
+  });
+
+  it('skips an entry it cannot read rather than throwing', async () => {
+    const failing: FileSystemPort = {
+      ...bfs,
+      readdir: (path) =>
+        Promise.resolve(path.endsWith(ReticleDir.SESSIONS_SUBDIR) ? ['good', 'unreadable'] : []),
+      stat: (path) =>
+        path.endsWith('unreadable')
+          ? Promise.reject(new Error('EACCES'))
+          : Promise.resolve({ mtimeMs: 1, size: 10 }),
+    };
+    await expect(pruneEvidenceBudget(failing, broot, 0)).resolves.toBeUndefined();
+  });
+
+  it('never throws when nothing has been written yet', async () => {
+    await expect(pruneEvidenceBudget(bfs, broot)).resolves.toBeUndefined();
+  });
+
+  it('leaves an open session on disk even when it is the oldest and over budget', async () => {
+    const sessions = join(broot, ReticleDir.SESSIONS_SUBDIR);
+    for (const [i, name] of ['live', 's2', 's3'].entries()) {
+      await mkdir(join(sessions, name), { recursive: true });
+      await writeFile(join(sessions, name, 'events.jsonl'), 'x'.repeat(1000), 'utf8');
+      const when = new Date(1_700_000_000_000 + i * 1000);
+      utimesSync(join(sessions, name), when, when);
+    }
+
+    await pruneEvidenceBudget(bfs, broot, 2500, new Set(['live']));
+
+    expect((await readdir(sessions)).sort()).toEqual(['live', 's3']);
   });
 });

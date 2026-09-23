@@ -82,6 +82,19 @@ export interface SetupOutcome {
 }
 
 /** Everything the sequence needs from the world, so none of it is reached for directly. */
+/**
+ * The daemon's reason for "no session", in the two lengths its two readers need.
+ *
+ * Same fact, not two facts: `full` is the lead plus the differential behind it, so a reader given
+ * only one of them is never given something the other contradicts.
+ */
+export interface DaemonReason {
+  /** One line, printed to the person watching the install. */
+  readonly lead: string;
+  /** The whole differential, recorded for the agent reading `--json`. Defaults to the lead. */
+  readonly full?: string;
+}
+
 export interface SetupEffects {
   /** Start the dev server. Resolves once started; the caller owns stopping it. */
   readonly startDevServer: (command: string, cwd: string) => Promise<void>;
@@ -113,6 +126,19 @@ export interface SetupEffects {
    */
   readonly openBrowser: (url: string) => Promise<void>;
   readonly listSessions: () => Promise<CandidateSession[]>;
+  /**
+   * The daemon's own account of why nothing connected, if it can be asked.
+   *
+   * The daemon is the only party that can see a hello it REFUSED, and a refusal is the one piece of
+   * positive evidence in the whole failure -- only an SDK dials the bridge, so a turned-away page
+   * proves the app is running, instrumented and pointed here. `page-probe.ts` has said since it was
+   * written that this sentence is the one to lead with and that the page finding merely adds the
+   * page-side fact; only the second half was wired.
+   *
+   * Optional, and allowed to fail: setup must still report what it saw when the daemon cannot be
+   * reached, which is itself one of the states this runs in.
+   */
+  readonly daemonWhy?: () => Promise<DaemonReason | undefined>;
   readonly now: () => number;
   readonly sleep: (ms: number) => Promise<void>;
   readonly note: (line: string) => void;
@@ -171,6 +197,22 @@ const stop = (
  * exception loses the four things it needs — how far this got, the url, the session, and what to do
  * about it.
  */
+/**
+ * Ask the daemon why, and treat every failure as "it did not say".
+ *
+ * A daemon that cannot be reached is one of the states this runs in, so an error here is data, not
+ * an exception: the page finding below still prints and the run still ends with its own verdict.
+ */
+async function daemonWhy(fx: SetupEffects): Promise<DaemonReason | undefined> {
+  if (undefined === fx.daemonWhy) return undefined;
+  try {
+    const why = await fx.daemonWhy();
+    return undefined === why || 0 === why.lead.length ? undefined : why;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function runSetupPhases(input: SetupInput, fx: SetupEffects): Promise<SetupOutcome> {
   const notes: string[] = [];
   const note = (line: string): void => {
@@ -353,7 +395,25 @@ export async function runSetupPhases(input: SetupInput, fx: SetupEffects): Promi
           'the capture helper not installed, or a CSP that blocks the bridge: run `npx @reticlehq/server doctor`.',
       );
     } else {
-      // What the page contains is the one thing the daemon cannot know, so it is worth one fetch.
+      // The daemon first, when it has something to say: it is the only party that can see a hello it
+      // refused, and that outranks anything inferred from an absence. Then the page, which is the
+      // one thing the daemon cannot know, and worth one fetch.
+      const why = await daemonWhy(fx);
+      if (undefined !== why) {
+        // Two readers, two lengths, one fetch.
+        //
+        // The person watching an install gets the LEAD — that is what trimming this diagnosis was
+        // for. The agent reads `notes` out of `--json`, and what it acts on is the differential:
+        // which ports were actually scanned (so an empty result is not proof), why a missing
+        // `.reticle.json` is expected in a monorepo, and the lease that opens a URL on a box with
+        // no browser at all.
+        //
+        // Printing only the lead put BOTH readers on the lead, which silently emptied the agent
+        // surface: `init --json` stopped mentioning the lease, and `break/break-matrix.mjs`
+        // (`no-browser-to-open`) went red for exactly that reason.
+        fx.note(why.lead);
+        notes.push(why.full ?? why.lead);
+      }
       note(describePage(readPage(await fx.probePage(url)), url));
     }
     return stop(input, SetupPhase.CONNECT, { url }, notes);
@@ -372,13 +432,21 @@ export async function runSetupPhases(input: SetupInput, fx: SetupEffects): Promi
   // Both routes, because `explore` needs a model: without ANTHROPIC_API_KEY it answers "No model
   // configured to drive the app". Naming only that one hands the reader a dead end on any machine
   // without a key, which is the same defect this release spent its time removing everywhere else.
+  // Three short lines rather than one paragraph, and each says who it is for.
+  //
+  // This was a single 524-character note, measured on a real first run: eighty-three words, no
+  // break, naming `reticle_*` tools at a reader who had just typed `reticle init` in a terminal and
+  // has no such tools to call. The facts were right and the shape made them unreadable, which on
+  // the last line of onboarding is the same as not saying them.
+  note(`Connected. ${url} is instrumented. Onboarding is done; nothing is verified yet.`);
   note(
-    `Connected, and the app at ${url} is instrumented. Onboarding is done. Nothing is PROVED ` +
-      'yet: that is the first run, and it is yours to start. Drive one flow yourself with the ' +
-      '`reticle_*` tools, ending in `reticle_act_and_wait` or `reticle_assert` — those two are ' +
-      'what produce a verdict. Or hand the whole drive to Reticle with `reticle_verify { action: ' +
-      '"explore", persona: "<who does what>" }`, which records what it drove so later runs replay ' +
-      'with no model in the loop; that route needs ANTHROPIC_API_KEY.',
+    'Agent: drive one flow and end it with `reticle_act_and_wait` or `reticle_assert`. Those two ' +
+      'produce a verdict; nothing else does.',
+  );
+  note(
+    'Or hand over the whole drive: `reticle_verify { action: "explore", persona: "<who does ' +
+      'what>" }` records what it drove, so later runs replay with no model in the loop. Needs ' +
+      'ANTHROPIC_API_KEY.',
   );
   return {
     ok: true,

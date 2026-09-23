@@ -127,12 +127,20 @@ describe('the partition of what .reticle holds', () => {
     ReticleDir.BASELINES_SUBDIR,
     ReticleDir.CAPSULES_SUBDIR,
     ReticleDir.INTENT_FILE,
+    // The sharded form of the same ledger, and durable for the same reason. It was written into
+    // users' repositories unclassified: its directory name was a free string at the store, so this
+    // partition could not see it and nobody was ever asked which half it belonged to.
+    ReticleDir.INTENT_SUBDIR,
     ReticleDir.CLOUD_LINK_FILE,
     // A hook is a decision the whole team shares, exactly like a package script: one that exists
     // only on the machine that wrote it is a rule nobody else is following. It names COMMANDS and
     // never a credential, so it is safe to commit — the same reasoning that puts `cloud.json` here
     // while its API key stays in ~/.reticle.
     ReticleDir.HOOKS_FILE,
+    // What a drive types into each labelled field. Committed for two reasons: a replay must send
+    // exactly what the recording sent or it is not a replay, and a value a model wrote once should
+    // be reviewable and editable by the team rather than regenerated differently on every machine.
+    ReticleDir.FILL_VALUES_FILE,
   ];
 
   /** Names that are not entries IN `.reticle/` — the root itself, and files inside a session dir. */

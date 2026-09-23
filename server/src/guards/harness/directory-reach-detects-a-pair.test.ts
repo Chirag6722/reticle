@@ -68,6 +68,33 @@ function planted(backEdge: boolean): string {
   return dir;
 }
 
+/**
+ * A package whose `src` holds the SAME directory name in two places.
+ *
+ * `nameCollisions` is asserted at four call sites across three guard files, and every one of them
+ * asserts it is EMPTY. Nothing anywhere planted a collision, so gutting the function to `return []`
+ * left all four green -- verified by doing exactly that and watching 29 tests pass. Four assertions
+ * about a property nobody had ever observed the detector report.
+ *
+ * The fixture above cannot produce one: its two directories are `alpha` and `beta`, which are
+ * structurally incapable of colliding.
+ */
+function collided(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'reach-'));
+  fixture = dir;
+  mkdirSync(join(dir, 'src', 'alpha', 'shared'), { recursive: true });
+  mkdirSync(join(dir, 'src', 'beta', 'shared'), { recursive: true });
+  writeFileSync(join(dir, 'package.json'), '{"name":"fixture"}');
+  writeFileSync(join(dir, 'src', 'alpha', 'shared', 'one.ts'), 'export const one = 1;\n');
+  writeFileSync(join(dir, 'src', 'beta', 'shared', 'two.ts'), 'export const two = 2;\n');
+  const git = (...args: string[]): void => {
+    execFileSync('git', args, { cwd: dir, stdio: 'ignore' });
+  };
+  git('init', '-q');
+  git('add', '-A');
+  return dir;
+}
+
 describe('the shared directory graph finds what the five guards are frozen against', () => {
   it('sees both directories at all, so an empty answer cannot mean it read nothing', () => {
     const map = reaches(planted(true));
@@ -92,5 +119,37 @@ describe('the shared directory graph finds what the five guards are frozen again
 
   it('finds no name collision between two differently-named directories', () => {
     expect(nameCollisions(planted(true))).toEqual([]);
+  });
+
+  /**
+   * The blind spot every guard built on this shares, and the one that reported a red commit green.
+   *
+   * `sourceFiles` enumerates through `git ls-files`, so a file nobody has staged contributes no
+   * directory, no edges and no count. The guard then passes over a tree it never read. It happened
+   * twice in one day: a new `cli/lifecycle/daemon-lifecycle.ts` measured green before `git add`
+   * (the run saw the edge INTO the new directory from a tracked importer, and none of the six out
+   * of it), and the same shape earlier beside the artifact-root work.
+   *
+   * `flat-directories-are-recorded` already warned about this -- in its FAILURE message, which is
+   * the path you never reach when the file is invisible.
+   */
+  it('refuses to answer at all when a source file is not staged', () => {
+    const dir = planted(false);
+    writeFileSync(join(dir, 'src', 'alpha', 'unstaged.ts'), 'export const three = 3;\n');
+    expect(() => reaches(dir)).toThrow(/unstaged source file/i);
+  });
+
+  it('answers normally once everything is staged', () => {
+    expect(() => reaches(planted(false))).not.toThrow();
+  });
+
+  /**
+   * The positive counterpart, without which the four `toEqual([])` assertions elsewhere are
+   * decoration: they pass over a detector that has been gutted to answer nothing.
+   */
+  it('reports two directories that share a name', () => {
+    const found = nameCollisions(collided());
+    expect(found.length).toBeGreaterThan(0);
+    expect(JSON.stringify(found)).toContain('shared');
   });
 });

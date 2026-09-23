@@ -132,11 +132,38 @@ export function liveCallText(text: string, advertised: ReadonlySet<string>): str
     if (needs.every((name) => advertised.has(name))) continue;
     out = out.replace(pattern, instead);
   }
-  return out.replace(TOOL_TOKEN, (name) => {
+  /**
+   * A sentence explaining where a name WENT keeps that name, even though it is unreachable.
+   *
+   * These messages open with their own subject — "reticle_act_sequence was merged into reticle_act",
+   * "reticle_refresh no longer exists" — and the rewrite is precisely a rule for replacing
+   * unreachable names, so it replaced the subject too. Asking about `reticle_act_sequence` answered
+   * "reticle_act no longer exists", which is false: `reticle_act` is a tool, and the one thing the
+   * reader needed to know was which name had moved.
+   *
+   * Only the leading token, and only in front of those two phrases. Every other mention in the same
+   * sentence — including the tool to call INSTEAD — is still rewritten, which is the whole job.
+   */
+  const explainsItsSubject = /^(reticle_[a-z_]+)(?= (?:was merged into|no longer exists))/.exec(
+    out,
+  );
+  const subject = explainsItsSubject?.[1];
+  return out.replace(TOOL_TOKEN, (name, offset: number) => {
+    if (name === subject && 0 === offset) return name;
     if (advertised.has(name)) return name;
     return replacementFor(name, advertised) ?? name;
   });
 }
+
+/**
+ * Keys whose STRING value names a thing rather than advising a call.
+ *
+ * `name` is what the caller asked about and has to match their question against; `tool` is the
+ * already-resolved answer to "call this instead", so redirecting it a second time can only move it
+ * away from the answer. Deliberately two names and not a pattern: every other string in a result is
+ * prose, and prose is exactly what the rewrite is for.
+ */
+const IDENTITY_KEYS: ReadonlySet<string> = new Set(['name', 'tool']);
 
 /**
  * The same rewrite, applied to a result's STRING VALUES instead of to its encoded form.
@@ -149,6 +176,12 @@ export function liveCallText(text: string, advertised: ReadonlySet<string>): str
  * was corrected and the result became unreadable, which is a worse trade than the advice was worth.
  *
  * Values, not keys: a key is a contract with the caller and nothing in a key is advice.
+ *
+ * And not every value is advice either. A field that carries a tool's IDENTITY is an answer to
+ * "which one", not a suggestion about what to call — rewriting it destroys the thing the caller
+ * asked for. `reticle_tools { names: ["reticle_act_sequence"] }` sets `name` to the name it was
+ * asked about, and this rewrote it to `reticle_act`, so a batch query came back with entries the
+ * caller could no longer match to their questions. See `IDENTITY_KEYS`.
  */
 export function liveCallValues(value: unknown, advertised: ReadonlySet<string>): unknown {
   if ('string' === typeof value) return liveCallText(value, advertised);
@@ -156,7 +189,10 @@ export function liveCallValues(value: unknown, advertised: ReadonlySet<string>):
   if (null !== value && 'object' === typeof value) {
     const out: Record<string, unknown> = {};
     for (const [key, each] of Object.entries(value as Record<string, unknown>)) {
-      out[key] = liveCallValues(each, advertised);
+      out[key] =
+        IDENTITY_KEYS.has(key) && 'string' === typeof each
+          ? each
+          : liveCallValues(each, advertised);
     }
     return out;
   }

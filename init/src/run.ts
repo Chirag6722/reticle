@@ -509,9 +509,15 @@ function report(
         if (isConnectStep(s.title)) connectPending = true;
       }
       for (const line of detail.split('\n')) io.print(`      ${line}`);
-    } else if (detail.length > 0) {
-      io.print(`      ${detail}`);
     }
+    // Everything else gets its row and nothing more. The detail on a step that needs no decision
+    // restates its own title — "reticle already registered with Cursor" under
+    // `[·] MCP server (Cursor)` — and a measured Vite first run spent twelve of its forty-six lines
+    // that way, six tool names deep, before saying anything about the reader's own app.
+    //
+    // The ROW stays on every step: `apps/e2e/install-gate.mjs` reads `[mark] title → target` out of
+    // this report and diffs the shape against a recorded baseline, so a row that stopped printing
+    // would take that guard down with it while looking like tidying.
   }
   io.print('');
   if (connectPending) {
@@ -521,10 +527,20 @@ function report(
     );
     io.print('');
   }
+  const mcpStatus = resolvedStatus(plan, MCP_TARGET, failed, skipped);
   if (!continuesToRuntime) {
-    io.print(restartHint(resolvedStatus(plan, MCP_TARGET, failed, skipped), devCommand));
+    io.print(restartHint(mcpStatus, devCommand));
   }
-  return { ok: !connectPending, applied, manual };
+  // Carried out even when the hint above was printed, because the RUNTIME path needs the same fact
+  // and could not reach it: `restartHint` is only printed when this run stops at the files, and the
+  // full run -- the one the installer sends everybody to -- ended by telling an agent to call
+  // `reticle_act_and_wait` in a session whose tool list was read before Reticle existed.
+  return {
+    ok: !connectPending,
+    applied,
+    manual,
+    ...(StepStatus.APPLY === mcpStatus ? { mcpNewlyRegistered: true } : {}),
+  };
 }
 
 /**

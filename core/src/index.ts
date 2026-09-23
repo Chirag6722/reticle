@@ -43,7 +43,7 @@ export * from './artifacts/step-effect.js'; // StepEffect: a leaf, so the page n
 export * from './artifacts/flow-composition.js'; // canFollow: may B replay straight after A
 export * from './verdict/verification-run.js'; // run/verdict shapes for the CI surface
 export * from './wire/types.js';
-export * from './identity/brand.js'; // RunId / SessionId / Ref brands + validators
+export * from './identity/brand.js'; // RunId / SessionId / ProjectId / Ref brands + validators
 export * from './wire/net.js'; // NetInitiator / ipc:// scheme — network + desktop-IPC call vocabulary
 export * from './verdict/findings.js'; // crawl anomalies + cross-channel contradictions
 export * from './wire/desktop-contract.js'; // the Electron preload/main/renderer/daemon string contract
@@ -72,6 +72,7 @@ export * from './words/no-session-reason.js';
 export * from './telemetry-refusal.js';
 export * from './wire/narrow.js';
 export * from './wire/tool-names.js';
+export * from './wire/snapshot-tree.js'; // parseInteractive — the browser writes this format, Node reads it
 export * from './wire/platform.js';
 export * from './wire/channel.js';
 export * from './verdict/revision.js';

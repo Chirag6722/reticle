@@ -23,12 +23,15 @@ import { reticleStateHome } from '@/command/daemon/daemon.js';
 import { readDevServers } from '@/command/daemon/dev-servers.js';
 import { urlOfExistingApp } from './probe/existing-app.js';
 import { listSessions, OwnedDevServer, probePage } from './node-effects.js';
+import { fetchStatus } from '@/command/daemon/binding/daemon-status-probe.js';
+import { summarizeStatus } from '@/command/cli/launch/cli-launch.js';
 import {
   runSetupPhases,
   type SetupEffects,
   type SetupInput,
   type SetupOutcome,
 } from './run-setup.js';
+import { noticeKey, readSaid, rememberSaid, unsaidNotices } from './agent-notice-memory.js';
 
 /**
  * The dev server a crash should take with it, if one is running right now.
@@ -115,10 +118,23 @@ export function registerOtherAgents(print: (line: string) => void): void {
       `registered the MCP server with ${wrote.length} more agent(s): ${wrote.map((r) => r.name).join(', ')}`,
     );
   }
-  // A format we will not rewrite is somebody's to edit, so it has to be said rather than skipped.
-  for (const manual of results.filter((r) => 'manual' === r.action)) {
-    print(`${manual.name}: ${manual.why} — add the reticle entry to ${manual.file} by hand.`);
+  // A format we will not rewrite is somebody's to edit, so it has to be said rather than skipped --
+  // but said ONCE. Two commands call this function by design, so a `curl | sh` followed by
+  // `reticle init` printed the same two paragraphs twice in one sitting, and again on every re-run
+  // after that. See agent-notice-memory.ts: the stamp is keyed on the notice's own text, so a
+  // config that changes is reported again.
+  const stateHome = reticleStateHome();
+  const manual = results
+    .filter((r) => 'manual' === r.action)
+    .map((r) => ({ name: r.name, file: r.file, why: r.why }));
+  const fresh = unsaidNotices(readSaid(stateHome), manual);
+  for (const notice of fresh) {
+    print(`${notice.name}: ${notice.why} — add the reticle entry to ${notice.file} by hand.`);
   }
+  rememberSaid(
+    stateHome,
+    fresh.map((n) => noticeKey(n)),
+  );
   const skills = applyAgentSkills(agentIo, { home, platform });
   if (0 < skills.length) print(`wrote the /reticle skill for ${skills.length} agent(s)`);
 
@@ -209,6 +225,20 @@ export async function runSetupCommand(
       }
     },
     listSessions: () => listSessions(input.bridgePort),
+    // `summarizeStatus` already narrows this payload for `reticle status`; reusing it here keeps one
+    // reader of the wire shape rather than two that can disagree about which key carries the reason.
+    // Both lengths, from the one read: the lead is printed to the person watching the install, the
+    // full differential is recorded for the agent reading `--json`. Returning only the lead here is
+    // what emptied the agent surface — see the note at the call site in `run-setup.ts`.
+    daemonWhy: async () => {
+      const status = summarizeStatus(await fetchStatus(input.bridgePort));
+      const full = status.why;
+      // A daemon too old to report the short one falls back to the long one, because saying the
+      // right thing at length beats saying nothing.
+      const lead = status.whyLead ?? full;
+      if (undefined === lead) return undefined;
+      return undefined === full ? { lead } : { lead, full };
+    },
     now: () => Date.now(),
     sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
     note: print,

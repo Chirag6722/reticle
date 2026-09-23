@@ -1,6 +1,7 @@
 import { resolveFlowUploads } from './fields/flow-upload-resolve.js';
 import { learnFromRun } from '@reticlehq/engine/evidence/learned-guards.js';
 import {
+  type ProjectId,
   EventType,
   FLOW_SIGNAL_TIMEOUT_MS,
   FlowErrorCode,
@@ -29,7 +30,12 @@ import { queryRefs } from './replay.js';
 import { assertSuccess, dynamicTestids, successLabel, SUCCESS_STEP_TOOL } from './flow-success.js';
 import { buildDecision, unverifiableReason } from './decision.js';
 import { unsuppliedSecrets } from './fields/flow-secret-field.js';
-import { assertStepExpect, type FlowReplaySession } from './flow-replay.js';
+import {
+  assertStepExpect,
+  DocumentLostDuringReplay,
+  type FlowReplaySession,
+} from './flow-replay.js';
+import { isDocumentGoneError } from '@/portal/session/facts/session-replaced.js';
 import { classifyFlowAssertions, flattenSteps } from './flow-classify.js';
 import { dischargeFlowIntent, flowIntentStatement, flowReplayVerdictId } from './flow-intent.js';
 import { IntentStore } from '@/memory/intent/intent-store.js';
@@ -49,6 +55,7 @@ import { consultSubjectFor, selectConsulted, type ConsultedMemory } from './flow
 import { log } from '@/log.js';
 import type { ToolDeps } from '@/surface/tools/tool-kit.js';
 import { flowsForSession } from './flow-store-for-session.js';
+import { projectForRoot } from '@/memory/project/project-for-root.js';
 import { FlowParseNote } from './flow-expect-grammar.js';
 
 export function latestRecordedFlow(
@@ -101,12 +108,12 @@ async function recordReplayRun(
   status: ReplayStatus,
   driftSteps: number,
   durationMs: number,
-  projectId: string | undefined,
+  projectId: ProjectId | undefined,
   /** The APP's `.reticle`, resolved from the session — never the daemon's own. */
   recordRoot: string,
 ): Promise<void> {
   const runStatus = replayToRunStatus(status);
-  await deps.project.recordRun({
+  await projectForRoot(deps, recordRoot).recordRun({
     kind: RunKind.FLOW_REPLAY,
     name,
     status: runStatus,
@@ -357,8 +364,12 @@ export async function navigateAndAwait(
   try {
     const outcome = await session.command(ReticleCommand.NAVIGATE, { url });
     if (!outcome.ok || true !== asRecord(outcome.result)['ok']) return undefined;
-  } catch {
-    return undefined;
+  } catch (error: unknown) {
+    // A navigation that unloads the page rejects the very command that asked for it — the transport
+    // dies with the document. Reading that as "the navigate failed" skipped the arrival poll below
+    // and left replay driving a handle that could never answer again, which is how a flow with a
+    // startPath died at step 1 on an app that had loaded perfectly. Anything else is a real refusal.
+    if (!isDocumentGoneError(error)) return undefined;
   }
   const deadline = clock.now() + timeoutMs;
   for (;;) {
@@ -386,7 +397,7 @@ export async function navigateAndAwait(
 async function loadInvokedFlows(
   deps: ToolDeps,
   flow: FlowFile,
-  projectId?: string,
+  projectId?: ProjectId,
 ): Promise<Map<string, FlowFile>> {
   const out = new Map<string, FlowFile>();
   const queue: FlowFile[] = [flow];
@@ -434,6 +445,38 @@ async function firstUnmetPrecondition(
   return undefined;
 }
 
+/**
+ * The honest answer when the document replay was driving went away mid-run.
+ *
+ * Not a pass: nothing graded the journey, and the steps in hand are only the ones the departed
+ * document answered. Not a failure either — the app was never observed doing anything wrong, and
+ * reporting one would be the false red that sends a reader into product code that is fine. So it
+ * lands in the bucket this engine already has for "nothing was proved", the same one an unmet
+ * precondition uses, with the steps that DID answer attached and no row invented for the one that
+ * did not.
+ *
+ * Why replay reports rather than follows: the successor cannot be identified at the moment the
+ * socket closes. `SessionManager.remove` runs from the close handler, writes the tombstone a
+ * successor is later matched against, and has nothing to match yet — so the rejection is a plain
+ * transport failure by design, and a step in the middle of a journey has no budget to sit and poll
+ * with. `navigateAndAwait` CAN wait, because it knows it asked for the navigation, and it does.
+ */
+export function lostDocumentResult(name: string, lost: DocumentLostDuringReplay): FlowReplayResult {
+  return {
+    name,
+    status: ReplayStatus.OK,
+    steps: lost.steps,
+    unverifiable: {
+      reason:
+        `the page loaded a new document while step ${String(lost.atStep)} was running, so the run ` +
+        `could not be graded — the steps before it are reported and nothing after it was observed. ` +
+        `Nothing here says the app failed. If that navigation is part of the journey, record the ` +
+        `step's consequence with \`expect\` and replay again; if it was not, the flow started ` +
+        `somewhere it no longer belongs.`,
+    },
+  };
+}
+
 export async function replayNamedFlow(
   deps: ToolDeps,
   args: Record<string, unknown>,
@@ -443,7 +486,7 @@ export async function replayNamedFlow(
   // Resolve within the connecting app's scope so a shared daemon replays THIS project's flow, not a
   // same-named flow from another app. Safe-resolve: a missing session degrades to the global store,
   // and the load-then-session order (unchanged) still surfaces a not-found before a no-session error.
-  let projectId: string | undefined;
+  let projectId: ProjectId | undefined;
   try {
     projectId = deps.sessions.resolve(asString(args['sessionId'])).projectId;
   } catch {
@@ -551,25 +594,31 @@ export async function replayNamedFlow(
       unverifiable: { reason: unmet },
     };
   }
-  const steps = await replayFlow(
-    session,
-    replayable,
-    waitForPredicate,
-    FLOW_SIGNAL_TIMEOUT_MS,
-    true === args['confirmDangerous'],
-    undefined,
-    {
-      // How an `invoke` step finds the flow it runs. Scoped to the same project as the flow being
-      // replayed, so a composite cannot reach into another app's store for a same-named sub-journey.
-      resolveFlow: async (invoked: string) => {
-        const sub = await flowsForSession(deps, projectId).flows.load(invoked, projectId);
-        return sub.ok ? await resolveFlowUploads(deps, sub.value) : undefined;
+  let steps: FlowStepResult[];
+  try {
+    steps = await replayFlow(
+      session,
+      replayable,
+      waitForPredicate,
+      FLOW_SIGNAL_TIMEOUT_MS,
+      true === args['confirmDangerous'],
+      undefined,
+      {
+        // How an `invoke` step finds the flow it runs. Scoped to the same project as the flow being
+        // replayed, so a composite cannot reach into another app's store for a same-named sub-journey.
+        resolveFlow: async (invoked: string) => {
+          const sub = await flowsForSession(deps, projectId).flows.load(invoked, projectId);
+          return sub.ok ? await resolveFlowUploads(deps, sub.value) : undefined;
+        },
+        // Bug-sweep mode: keep going past a step whose action ran and whose consequence merely did
+        // not hold, so one flow reports one verdict per step instead of stopping at the first defect.
+        sweep: true === args['sweep'],
       },
-      // Bug-sweep mode: keep going past a step whose action ran and whose consequence merely did
-      // not hold, so one flow reports one verdict per step instead of stopping at the first defect.
-      sweep: true === args['sweep'],
-    },
-  );
+    );
+  } catch (error: unknown) {
+    if (!(error instanceof DocumentLostDuringReplay)) throw error;
+    return lostDocumentResult(name, error);
+  }
   // Computed HERE, before the synthetic success row is appended below: once that row is pushed,
   // `steps.length` no longer counts only the flow's own steps and the arithmetic is wrong.
   const halted = haltedFrom(steps, loaded.value.steps.length);
@@ -627,7 +676,7 @@ export async function replayNamedFlow(
   // Anti-reward-hacking baseline: record what this flow asserted ONLY when it passed clean. A
   // failing run must never become the baseline a later weakening is measured against.
   if (status === ReplayStatus.OK) {
-    await new AssertionTiersStore(deps.fs, deps.reticleRoot).recordPassing(
+    await new AssertionTiersStore(deps.fs, replayRoot).recordPassing(
       name,
       loaded.value.steps.map((s, i) => ({
         step: i,
@@ -650,7 +699,7 @@ export async function replayNamedFlow(
     }
   }
   // Push-default: the deviation report over this drive's segments, learned across runs. Best-effort.
-  const deviation = await computeReplayDeviation(deps, session, replayFloor);
+  const deviation = await computeReplayDeviation(deps, session, replayFloor, replayRoot);
   /*
    * What the team already knows about this flow, fetched on the agent's behalf.
    *
@@ -781,11 +830,13 @@ async function computeReplayDeviation(
   deps: ToolDeps,
   session: { eventsSince(cursor: number): ReticleEvent[] },
   floor: number,
+  /** The APP's root — the same one the replay resolved eleven lines above the old call. */
+  root: string,
 ): Promise<DeviationReport | undefined> {
   try {
     const segments = computeSegments(session.eventsSince(floor));
     if (0 === segments.length) return undefined;
-    return await reportAndAccumulate(new EnvelopeStore(deps.fs, deps.reticleRoot), segments);
+    return await reportAndAccumulate(new EnvelopeStore(deps.fs, root), segments);
   } catch {
     return undefined;
   }
@@ -802,14 +853,11 @@ function applyStartPathHint(result: FlowReplayResult, hint: string | undefined):
  * The connecting session's project, or undefined when no browser is attached. Flow tools use it to
  * scope storage to the current app on a shared daemon; resolving must NOT throw here (list/load are
  * documented to work headless), so a missing/unknown session degrades to the global/legacy store.
+ *
+ * Re-exported, not re-implemented. This file carried a BYTE-IDENTICAL second copy, and the two
+ * drifted the moment `ProjectId` was threaded: `session-root`'s copy returned the brand while this
+ * one returned `string`, so every flow tool importing from here was handed a widened value and lost
+ * the brand one line after it was minted. Exactly the weak-annotation failure the brand's own doc
+ * records against `RunStore.list()`.
  */
-export function sessionProjectId(
-  deps: ToolDeps,
-  sessionId: string | undefined,
-): string | undefined {
-  try {
-    return deps.sessions.resolve(sessionId).projectId;
-  } catch {
-    return undefined;
-  }
-}
+export { sessionProjectId } from '@/memory/project/session-root.js';

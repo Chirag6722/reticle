@@ -1,8 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { join } from 'node:path';
-import { ReticleDir } from '@reticlehq/core';
+import { basename, join } from 'node:path';
+import { asProjectId, ReticleDir } from '@reticlehq/core';
 import { emptyProjectRegistry, rememberProject } from '@reticlehq/core/artifacts';
-import { ArtifactRootReason, projectCandidatesFrom, resolveArtifactRoot } from './artifact-root.js';
+import {
+  ArtifactRootReason,
+  UNMATCHED_SUBDIR,
+  projectCandidatesFrom,
+  resolveArtifactRoot,
+  unmatchedRoot,
+} from './artifact-root.js';
 import type { ConfigDiscovery } from '@/command/cli/config/config-discovery.js';
 
 /**
@@ -35,12 +41,12 @@ function candidatesOf(found: ConfigDiscovery['found']) {
 describe('resolveArtifactRoot', () => {
   it('resolves to the matching project, not the daemon cwd', () => {
     const r = resolveArtifactRoot({
-      projectId: 'acme-web-9f3c1d',
+      projectId: asProjectId('acme-web-9f3c1d'),
       candidates: candidatesOf([
         {
           path: '/repo/apps/web/.reticle.json',
           directory: '/repo/apps/web',
-          projectId: 'acme-web-9f3c1d',
+          projectId: asProjectId('acme-web-9f3c1d'),
         },
       ]),
       daemonRoot: DAEMON_ROOT,
@@ -52,7 +58,7 @@ describe('resolveArtifactRoot', () => {
 
   it('picks the match, ignoring other projects the search also found', () => {
     const r = resolveArtifactRoot({
-      projectId: 'b-222',
+      projectId: asProjectId('b-222'),
       candidates: candidatesOf([
         { path: '/repo/apps/a/.reticle.json', directory: '/repo/apps/a', projectId: 'a-111' },
         { path: '/repo/apps/b/.reticle.json', directory: '/repo/apps/b', projectId: 'b-222' },
@@ -76,7 +82,7 @@ describe('resolveArtifactRoot', () => {
         {
           path: '/repo/apps/web/.reticle.json',
           directory: '/repo/apps/web',
-          projectId: 'acme-web-9f3c1d',
+          projectId: asProjectId('acme-web-9f3c1d'),
         },
       ]),
       daemonRoot: DAEMON_ROOT,
@@ -88,12 +94,12 @@ describe('resolveArtifactRoot', () => {
 
   it('falls back to the daemon root when nothing discovered declares that project', () => {
     const r = resolveArtifactRoot({
-      projectId: 'not-here-000',
+      projectId: asProjectId('not-here-000'),
       candidates: candidatesOf([
         {
           path: '/repo/apps/web/.reticle.json',
           directory: '/repo/apps/web',
-          projectId: 'acme-web-9f3c1d',
+          projectId: asProjectId('acme-web-9f3c1d'),
         },
       ]),
       daemonRoot: DAEMON_ROOT,
@@ -111,7 +117,7 @@ describe('resolveArtifactRoot', () => {
    */
   it('refuses to guess when two checkouts declare the same project', () => {
     const r = resolveArtifactRoot({
-      projectId: 'acme-web-9f3c1d',
+      projectId: asProjectId('acme-web-9f3c1d'),
       candidates: candidatesOf([
         { path: '/repo/.reticle.json', directory: '/repo', projectId: 'acme-web-9f3c1d' },
         { path: '/worktree/.reticle.json', directory: '/worktree', projectId: 'acme-web-9f3c1d' },
@@ -126,7 +132,7 @@ describe('resolveArtifactRoot', () => {
 
   it('ignores a discovered config that declares no projectId at all', () => {
     const r = resolveArtifactRoot({
-      projectId: 'acme-web-9f3c1d',
+      projectId: asProjectId('acme-web-9f3c1d'),
       candidates: candidatesOf([{ path: '/repo/.reticle.json', directory: '/repo' }]),
       daemonRoot: DAEMON_ROOT,
     });
@@ -166,7 +172,7 @@ describe('candidates from both sources', () => {
       1000,
     );
     const r = resolveArtifactRoot({
-      projectId: 'other-repo-77aa',
+      projectId: asProjectId('other-repo-77aa'),
       candidates: projectCandidatesFrom(discovery([]), registry),
       daemonRoot: DAEMON_ROOT,
     });
@@ -183,13 +189,13 @@ describe('candidates from both sources', () => {
   it('does not call one directory named twice an ambiguity', () => {
     const registry = rememberProject(emptyProjectRegistry(), 'acme-9f3c', '/repo/apps/web', 1000);
     const r = resolveArtifactRoot({
-      projectId: 'acme-9f3c',
+      projectId: asProjectId('acme-9f3c'),
       candidates: projectCandidatesFrom(
         discovery([
           {
             path: '/repo/apps/web/.reticle.json',
             directory: '/repo/apps/web',
-            projectId: 'acme-9f3c',
+            projectId: asProjectId('acme-9f3c'),
           },
         ]),
         registry,
@@ -209,7 +215,7 @@ describe('candidates from both sources', () => {
   it('still refuses when the two sources name genuinely different checkouts', () => {
     const registry = rememberProject(emptyProjectRegistry(), 'acme-9f3c', '/old/clone', 1000);
     const r = resolveArtifactRoot({
-      projectId: 'acme-9f3c',
+      projectId: asProjectId('acme-9f3c'),
       candidates: projectCandidatesFrom(
         discovery([
           { path: '/new/clone/.reticle.json', directory: '/new/clone', projectId: 'acme-9f3c' },
@@ -229,5 +235,118 @@ describe('candidates from both sources', () => {
       emptyProjectRegistry(),
     );
     expect(candidates).toEqual([]);
+  });
+});
+
+/**
+ * Where a session's artifacts go when we CANNOT name the project.
+ *
+ * The fallback was the daemon's own root, unconditionally and silently, which is how Reticle came
+ * to create `.reticle/` — journals included — in a user's backend directory. The daemon is started
+ * by the user's editor, in whatever directory that editor was in, and a tree that was never
+ * instrumented is a tree that never agreed to hold anybody's session data.
+ *
+ * Reported from the field as `.reticle/` reappearing in a backend after every delete.
+ *
+ * So: the daemon's root stays the fallback when the daemon really is sitting in a Reticle project
+ * (the developer who ran `reticle serve` in their app — the case this behaviour was written for),
+ * and otherwise the evidence goes to the user's own `~/.reticle/unmatched/<projectId>` rather than
+ * into somebody's repository. It is never DROPPED: a verdict with nowhere to live is a worse
+ * failure than one in an unexpected place, and the reason travels with the answer so the daemon can
+ * say out loud which it did.
+ */
+describe('a root for a session whose project we cannot name', () => {
+  it('uses the daemon root when the daemon is itself in a Reticle project', () => {
+    expect(
+      unmatchedRoot({ daemonRoot: '/repo/app/.reticle', daemonIsProject: true, home: '/home/u' }),
+    ).toBe('/repo/app/.reticle');
+  });
+
+  it('keeps out of a directory that never asked for Reticle', () => {
+    expect(
+      unmatchedRoot({
+        daemonRoot: '/repo/backend/.reticle',
+        daemonIsProject: false,
+        home: '/home/u',
+        projectId: asProjectId('shop-web'),
+      }),
+    ).toBe(join('/home/u', ReticleDir.ROOT, UNMATCHED_SUBDIR, 'shop-web'));
+  });
+
+  it('still lands somewhere when the session named no project at all', () => {
+    const root = unmatchedRoot({
+      daemonRoot: '/repo/backend/.reticle',
+      daemonIsProject: false,
+      home: '/home/u',
+    });
+    expect(root.startsWith(join('/home/u', ReticleDir.ROOT, UNMATCHED_SUBDIR))).toBe(true);
+  });
+
+  it('never lets a projectId off the wire choose a directory', () => {
+    // The id arrives in HELLO from the page, so it is untrusted input on a path join.
+    const root = unmatchedRoot({
+      daemonRoot: '/repo/backend/.reticle',
+      daemonIsProject: false,
+      home: '/home/u',
+      projectId: asProjectId('../../../etc/passwd'),
+    });
+    expect(root.includes('..')).toBe(false);
+  });
+});
+
+/**
+ * `unnamed` was keyed on the ABSENCE of an identity, so it was not one project's directory — it was
+ * the union of every project that ever failed to identify itself, sharing one set of durable files.
+ *
+ * Measured on a real machine: a single `~/.reticle/unmatched/unnamed/` holding `project.json`,
+ * `envelopes.json`, `flake.json` and `assertion-tiers.json` merged across unrelated apps. Those are
+ * the MEMORY tier — learned routes, per-route expectations, a quarantine ledger, an anti-downgrade
+ * floor. One app's assertion tier becoming another app's floor is a wrong ANSWER, not untidy disk.
+ *
+ * A page that never stamped a project id is the ordinary case, not an edge: an app instrumented
+ * without a build plugin, a page loaded before the plugin stamped one, any directory where the
+ * daemon is a guest. So the bucket is reached constantly and by design.
+ *
+ * The origin the session is served from is the next-best identity available at that moment, and it
+ * separates the apps that were colliding. It is not a project id and does not pretend to be: two
+ * different apps served on one port at different times still share a bucket. That is a much smaller
+ * wrong than every unidentified app in the world sharing one.
+ */
+describe('an unnameable project does not share a bucket with every other one', () => {
+  const base = { daemonRoot: '/repo/app/.reticle', daemonIsProject: false, home: '/home/u' };
+
+  it('separates two apps that never stamped a project id', () => {
+    const a = unmatchedRoot({ ...base, origin: 'http://localhost:3000' });
+    const b = unmatchedRoot({ ...base, origin: 'http://localhost:5173' });
+    expect(a).not.toBe(b);
+  });
+
+  it('is stable for one origin, so a project keeps its own memory across sessions', () => {
+    expect(unmatchedRoot({ ...base, origin: 'http://localhost:3000' })).toBe(
+      unmatchedRoot({ ...base, origin: 'http://localhost:3000' }),
+    );
+  });
+
+  /*
+   * Compared through `join`/`basename` rather than as literal text.
+   *
+   * `unmatchedRoot` builds the path with `join`, so on Windows it comes back separated by `\` and
+   * `startsWith('/home/u')` and `endsWith('/unnamed')` are both false against a perfectly correct
+   * answer. The claim is about WHERE the bucket sits and WHAT it is called, not about which slash
+   * the host uses, so it is asserted that way on every platform.
+   */
+  it('still answers with a real path when even the origin is unknown', () => {
+    const root = unmatchedRoot(base);
+    expect(root.startsWith(join(base.home))).toBe(true);
+    expect(basename(root)).toBe('unnamed');
+  });
+
+  it('prefers a real project id over the origin — the origin is only the fallback', () => {
+    const root = unmatchedRoot({
+      ...base,
+      projectId: asProjectId('abc123'),
+      origin: 'http://localhost:3000',
+    });
+    expect(basename(root)).toBe('abc123');
   });
 });

@@ -3,7 +3,7 @@ name: replay-user-flows
 description: Turn a user journey you just clicked through into a saved regression check that re-runs deterministically, with no model in the loop and no test code to write. Use when you have driven the same flow twice, when the user wants regression coverage without a Playwright suite, when a refactor needs proving against every existing journey, or when re-verifying by hand is costing a full drive every time.
 license: Apache-2.0
 metadata:
-  version: 3.1.0
+  version: 3.2.0
   homepage: https://www.reticle.sh
   repository: https://github.com/reticlehq/reticle
 ---
@@ -26,7 +26,7 @@ reticle_act_and_wait({ sessionId, ref, action: "click", until: { kind: "signal",
 
 That step replays as a test. A bare `reticle_act` saves a click with nothing to prove, and replays green through any regression.
 
-To name a flow deliberately rather than take the automatic one, `reticle_record` and `reticle_flow_save` do it through `reticle_run`. Both live on the extended surface: the default nine advertise no dispatch hatch, so they need a daemon started with `RETICLE_ADVERTISE_ALL_TOOLS=1`.
+To name a flow deliberately rather than take the automatic one, `reticle_record` and `reticle_flow_save` do it through `reticle_run { tool, args }`. Neither is advertised, and neither needs to be: `reticle_run` is on the default surface and dispatches to any registered tool by name. `RETICLE_ADVERTISE_ALL_TOOLS=1` advertises them outright instead, which suits a suite that calls by name rather than a running agent.
 
 Annotate the business outcome, not just the clicks, so a replay proves the journey _achieved_ something. Extended surface, like the two above:
 
@@ -43,7 +43,7 @@ reticle_run({ tool: "reticle_annotate", sessionId, args: { flow: "create-task", 
 reticle_verify({ sessionId, action: "change", files: ["src/tasks/TaskList.tsx"] })
 ```
 
-That replays the flows covering those files. To replay one named flow directly, `reticle_flow_replay` is reached through `reticle_run` on the extended surface.
+That replays the flows covering those files. To replay one named flow directly, `reticle_flow_replay` is reached through `reticle_run`.
 
 Three statuses, and the failures are legible rather than blind:
 
@@ -77,7 +77,7 @@ It works out which saved flows cover the files you edited and replays only those
 ### Which of your flows actually prove anything
 
 ```
-reticle_run({ tool: "reticle_domain", sessionId })   // extended surface
+reticle_run({ tool: "reticle_domain", sessionId })   // not advertised, one hop away
 // → { flowCount, coverage: { asserted, presenceOnly, assertionFree }, gaps: { declaredUntestedSignals, … } }
 ```
 

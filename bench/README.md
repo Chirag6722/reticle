@@ -116,6 +116,21 @@ node bench/harness/capture-screens.mjs
 # 5. Layer B — full agent loop (authoritative usage tokens). REQUIRES a key.
 ANTHROPIC_API_KEY=sk-... node bench/harness/claude-agent-loop.mjs
 
+# 5b. Can a System One model do the driver's job? A de-risk, NOT a result: it asks whether Jev can
+#     batch its questions, pick one action out of a noisy candidate set, and drive a SCRIPTED state
+#     machine to a goal. No browser is involved, so nothing it prints may be quoted as a benchmark.
+JEV_API_KEY=... node bench/harness/jev-probe.mjs
+
+# 5c. The measurement that CAN be quoted: the same app, tools and loop driven by each model in turn,
+#     with only the ModelDriver differing. Writes JEV-SCORECARD.md's numbers. BENCH_REPEATS>1,
+#     because one run per arm measures one drive rather than a driver.
+ANTHROPIC_API_KEY=sk-... JEV_API_KEY=... BENCH_REPEATS=3 node bench/harness/jev-vs-llm.mjs
+
+# 5d. Do the platform and the harness actually MEET? Drives a daemon holding only a platform key
+#     against a real app, with every provider key blanked. Called by reticle-cloud's
+#     scripts/harness-sync-check.mjs, which drives the whole chain from signup onwards.
+RETICLE_CLOUD_URL=... RETICLE_API_KEY=rk_live_... node bench/harness/platform-drive.mjs
+
 # 6. Layer C — deterministic regression suite (no API key). Records each flow once, then replays it
 #    with NO model and asserts a declared consequence. This is the RRE / regression story + the
 #    Reticle-only catches. Needs the demo (step 1) up; each harness self-drives its own reticle session.

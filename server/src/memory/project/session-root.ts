@@ -1,3 +1,5 @@
+import { dirname } from 'node:path';
+import type { ProjectId } from '@reticlehq/core';
 import type { ToolDeps } from '@/surface/tools/tool-kit.js';
 
 /**
@@ -15,23 +17,42 @@ import type { ToolDeps } from '@/surface/tools/tool-kit.js';
  * wrong answer rather than a cautious one. See `sessionProjectId`.
  */
 export function sessionRoot(deps: ToolDeps, sessionId: string | undefined): string {
-  const resolver = deps.artifactRootFor;
-  if (resolver === undefined) {
-    /*
-     * With no resolver the answer is `reticleRoot` either way — but the REFUSAL still has to
-     * happen, so the lookup is made for its throw and its value discarded. `artifactRootFor?.(…)`
-     * short-circuits its own argument, so the unwired path used to skip resolution entirely and
-     * hand a named-but-dead session the daemon's directory without ever checking the id. Every
-     * embedder of this engine, and every older construction of ToolDeps, is on this branch.
-     *
-     * Only when an id was actually NAMED, deliberately. With nothing named there is nothing to
-     * refuse, and `resolve(undefined)` is not free — it builds the ranked no-session diagnosis and
-     * records which branch it took. An unwired caller must cost exactly what it did before.
-     */
-    if (sessionId !== undefined) sessionProjectId(deps, sessionId);
-    return deps.reticleRoot;
-  }
-  return resolver(sessionProjectId(deps, sessionId)).root;
+  // Skip the LOOKUP, never the refusal.
+  //
+  // `artifactRootFor?.(…)` short-circuits its own argument, so an unwired caller used to skip
+  // resolution entirely and hand a named-but-dead session the daemon's own directory without ever
+  // checking the id -- which is how one app's intents, flows and runs land in another app's
+  // checkout. Resolving as an ARGUMENT fixes that, because arguments are evaluated first.
+  //
+  // But `resolve(undefined)` is not free: it builds the ranked no-session diagnosis and records
+  // which branch it took. With no resolver wired AND no id named there is nothing to refuse and
+  // nothing its answer could change, so that one case skips the lookup and costs what it always
+  // did. Every embedder of this engine, and every older construction of ToolDeps, is on it.
+  const nothingToRefuse = deps.artifactRootFor === undefined && sessionId === undefined;
+  return rootForProjectId(deps, nothingToRefuse ? undefined : sessionProjectId(deps, sessionId));
+}
+
+/**
+ * The same answer for a caller that already holds the projectId rather than a sessionId.
+ *
+ * The suite paths resolve the project ONCE and thread it down -- the run artifact, the cloud link,
+ * the flake ledger and the flows all belong to that one project -- so asking them to go back to the
+ * session manager for an id they already have is how a caller ends up taking the root from one
+ * place and the id from another. `sessionRoot` is now this function plus a lookup, so the two
+ * cannot disagree about what a resolved root is.
+ */
+export function rootForProjectId(deps: ToolDeps, projectId: ProjectId | undefined): string {
+  return deps.artifactRootFor?.(projectId).root ?? deps.reticleRoot;
+}
+
+/**
+ * The PROJECT directory -- one level above `.reticle` -- for a caller that runs a tool in a tree
+ * rather than writing a file into one. `git diff` is the case: it was being run in the daemon's
+ * `.reticle` subdirectory, which answers about the wrong repository (or, from a globally-registered
+ * daemon at `/` or `$HOME`, about none) while reporting a clean "nothing changed".
+ */
+export function projectDirFor(deps: ToolDeps, sessionId: string | undefined): string {
+  return dirname(sessionRoot(deps, sessionId));
 }
 
 /**
@@ -61,7 +82,7 @@ export function sessionRoot(deps: ToolDeps, sessionId: string | undefined): stri
 export function sessionProjectId(
   deps: ToolDeps,
   sessionId: string | undefined,
-): string | undefined {
+): ProjectId | undefined {
   try {
     return deps.sessions.resolve(sessionId).projectId;
   } catch (cause) {

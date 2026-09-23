@@ -1,5 +1,5 @@
 import type { WebSocket } from 'ws';
-import type { ChannelId, ImpactSnapshot } from '@reticlehq/core';
+import { asProjectId, type ChannelId, type ImpactSnapshot, type ProjectId } from '@reticlehq/core';
 import type { HandshakeFacts } from './facts/handshake-facts.js';
 import { refusedResult } from './page-commands/undeclared-command.js';
 import { recordImpact } from '@/memory/impact/impact-recorder.js';
@@ -59,6 +59,7 @@ import { buildSessionLease, type SessionLease } from './presence/session-lease.j
 import type { SessionInfo } from './session-info.js';
 export type { SessionInfo } from './session-info.js';
 import { buildSessionInfo } from './session-info.js';
+import { MAX_SUCCESSOR_HOPS, REBINDABLE_COMMANDS } from './rebind.js';
 
 type Clock = () => number;
 
@@ -66,35 +67,6 @@ const DEFAULT_COMMAND_TIMEOUT_MS = 8000;
 
 /** Prefix on correlated command ids (c1, c2, …) — distinguishes them from mark ids. */
 const COMMAND_ID_PREFIX = 'c';
-
-/**
- * Commands that may be re-issued against the connection that replaced this session.
- *
- * Reads only, and the boundary is the point. Re-reading a page costs nothing and answers the same
- * question the caller asked. An act cannot be replayed: it may already have been dispatched in the
- * page that went away, and performing it a second time behind the caller's back is a double submit
- * nobody asked for. A replaced act still errors, and the caller's own retry — with the same id,
- * which is still the right one — is the safe path.
- */
-/**
- * How far to walk a chain of replacements before giving up.
- *
- * Generous for the real case (a page reloading a handful of times while a call is in flight) and
- * small enough that a cycle costs nothing. The number is a backstop, not a policy: a chain longer
- * than this means something is re-dialling in a loop, and that is a different problem.
- */
-const MAX_SUCCESSOR_HOPS = 32;
-
-const REBINDABLE_COMMANDS: ReadonlySet<string> = new Set<string>([
-  ReticleCommand.SNAPSHOT,
-  ReticleCommand.QUERY,
-  ReticleCommand.MATCH,
-  ReticleCommand.INSPECT,
-  ReticleCommand.STATE_READ,
-  ReticleCommand.STORAGE_READ,
-  ReticleCommand.CAPABILITIES,
-  ReticleCommand.ANIMATIONS,
-]);
 
 /** Prefix on minted action ids (a1, a2, …) — the journal's action identity, independent of commands. */
 const ACTION_ID_PREFIX = 'a';
@@ -115,8 +87,14 @@ const WS_OPEN = 1;
  */
 export class Session implements HandshakeFacts {
   readonly id: string;
-  /** Stable build-stamped project identity; undefined for v1.0 SDKs that omit it. */
-  readonly projectId: string | undefined;
+  /**
+   * Stable build-stamped project identity; undefined for SDKs old enough to omit it.
+   *
+   * MINTED HERE. This is one of the two places a projectId enters the daemon with its provenance
+   * intact: the field is `projectId` on a zod-parsed HELLO, so the page said what it is. Every
+   * downstream reader takes the brand from this property rather than re-blessing a string.
+   */
+  readonly projectId: ProjectId | undefined;
   /**
    * The `.reticle` directory this session's evidence belongs in — impact counters AND capsules.
    *
@@ -193,7 +171,7 @@ export class Session implements HandshakeFacts {
 
   constructor(hello: HelloMessage, socket: WebSocket, clock: Clock) {
     this.id = hello.sessionId;
-    this.projectId = hello.projectId;
+    this.projectId = hello.projectId === undefined ? undefined : asProjectId(hello.projectId);
     this.url = hello.url;
     this.title = hello.title;
     this.adapters = hello.adapters;

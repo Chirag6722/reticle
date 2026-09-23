@@ -2,10 +2,12 @@ import { removeTempDir } from './machine/temp-dir.js';
 import { afterEach, describe, expect, it } from 'vitest';
 import * as http from 'node:http';
 import { mkdtemp } from 'node:fs/promises';
+import { existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ReticleEnv, LOOPBACK_HOST } from '@reticlehq/core';
 import { resolveBridgeSecurity, startDaemon, type RunningServer } from './index.js';
+import { FakeBrowser, waitUntil } from './portal/bridge/bridge.test-harness.js';
 
 describe('resolveBridgeSecurity', () => {
   const ENV_KEYS = [ReticleEnv.TOKEN, ReticleEnv.HOST, ReticleEnv.ALLOWED_ORIGINS] as const;
@@ -75,5 +77,85 @@ describe('startDaemon port collision', () => {
       // pairingTokenDir → temp so auto-provisioning never writes to the real ~/.reticle in tests.
       startDaemon({ port, reticleRoot: root, pairingTokenDir: root, now: () => 1_700_000_000_000 }),
     ).rejects.toThrow();
+  });
+});
+
+/**
+ * A daemon that has verified nothing must not leave a directory behind.
+ *
+ * Reported from the field: `.reticle/` kept reappearing in a backend directory the user had never
+ * instrumented. Their agent's MCP registration simply starts the daemon there, and the workspace
+ * `.gitignore` was written on the START path — so the directory was created by the act of booting,
+ * with no project, no session and no verdict in it. Deleting it fixed nothing: the next boot
+ * recreated it, which is what made it feel like a loop.
+ *
+ * The ignore file still gets written, one layer later, against the root a session's artifacts
+ * actually land in — which is also the root that was missing it whenever the daemon's cwd and the
+ * project's checkout were different trees.
+ */
+describe('a daemon that nothing connected to', () => {
+  let server: RunningServer | undefined;
+  let dir: string | undefined;
+
+  afterEach(async () => {
+    await server?.close();
+    server = undefined;
+    if (dir !== undefined) await removeTempDir(dir);
+    dir = undefined;
+  });
+
+  it('creates no .reticle directory where it was started', async () => {
+    dir = await mkdtemp(join(tmpdir(), 'reticle-daemon-untouched-'));
+    const root = join(dir, '.reticle');
+    server = await startDaemon({
+      port: 0,
+      reticleRoot: root,
+      pairingTokenDir: join(dir, 'token'),
+      now: () => 1_700_000_000_000,
+    });
+    // Startup work is best-effort and async; give it a turn to happen before asserting it did not.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(existsSync(root)).toBe(false);
+  });
+
+  it('writes the workspace ignore once a session connects, when this IS a Reticle project', async () => {
+    dir = await mkdtemp(join(tmpdir(), 'reticle-daemon-connected-'));
+    const root = join(dir, '.reticle');
+    // A daemon a developer started in their OWN app: the directory is already a Reticle workspace,
+    // so an unmatched session still belongs here. This is the case the daemon-root fallback was
+    // written for, and the only one it still covers.
+    mkdirSync(root, { recursive: true });
+    server = await startDaemon({
+      port: 0,
+      reticleRoot: root,
+      pairingTokenDir: join(dir, 'token'),
+      token: 'pair-me',
+      now: () => 1_700_000_000_000,
+    });
+    const browser = new FakeBrowser(await server.bridge.ready, 'sess-ignore', false, 'pair-me');
+    await browser.open();
+    await waitUntil(() => existsSync(join(root, '.gitignore')));
+    browser.close();
+  });
+
+  it('writes nothing into a directory that is not a Reticle project at all', async () => {
+    dir = await mkdtemp(join(tmpdir(), 'reticle-daemon-guest-'));
+    const root = join(dir, '.reticle');
+    // No `.reticle.json`, no `.reticle/` — a backend the user's editor happened to be sitting in.
+    // A session that cannot be matched to a project must not make this directory into a workspace;
+    // its evidence goes to the user's own `~/.reticle/unmatched/<projectId>` instead.
+    server = await startDaemon({
+      port: 0,
+      reticleRoot: root,
+      pairingTokenDir: join(dir, 'token'),
+      token: 'pair-me',
+      now: () => 1_700_000_000_000,
+    });
+    const browser = new FakeBrowser(await server.bridge.ready, 'sess-guest', false, 'pair-me');
+    await browser.open();
+    // Give the session-create handlers the time they would have needed to write.
+    await new Promise((r) => setTimeout(r, 250));
+    browser.close();
+    expect(existsSync(root)).toBe(false);
   });
 });
