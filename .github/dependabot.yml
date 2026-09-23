@@ -18,11 +18,6 @@ updates:
       - dependency-name: zod
         update-types:
           - version-update:semver-major
-      # astro 7.2 stops the Astro example connecting to the bridge; 7.0.3 works, and the SDK is not at
-      # fault (the connect script runs and dials). Measured and written up in #347. Held here rather
-      # than pinned in each grouped PR, because pinning inside the group makes Dependabot supersede
-      # the whole PR and take any review work on it with them. Remove this once #347 is resolved.
-      - dependency-name: astro
 
   # Keep the GitHub Actions themselves current AND pinned — Dependabot updates the pinned SHAs for us.
   - package-ecosystem: github-actions
