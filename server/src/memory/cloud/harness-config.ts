@@ -26,6 +26,8 @@ export interface HarnessConfigView {
   provider: string;
   harnessEnabled: boolean;
   harnessEntitled: boolean;
+  /** Whether the platform holds a key for `provider`. Entitlement is not readiness — see the offer. */
+  providerReady: boolean;
 }
 
 export interface ConfigSource {

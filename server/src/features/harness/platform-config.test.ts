@@ -18,7 +18,14 @@ describe('reading the driver preference from the platform', () => {
       LINKED,
       answering({ provider: 'jev', harnessEnabled: true }),
     );
-    expect(got).toEqual({ provider: 'jev', harnessEnabled: true, harnessEntitled: true });
+    // `providerReady` defaults TRUE when the platform reports no `available` map: silence from an
+    // older API is not a refusal, the same rule the two booleans beside it follow.
+    expect(got).toEqual({
+      provider: 'jev',
+      harnessEnabled: true,
+      harnessEntitled: true,
+      providerReady: true,
+    });
   });
 
   it('sends the platform key as a bearer, to the config path', async () => {
@@ -43,12 +50,36 @@ describe('reading the driver preference from the platform', () => {
    * them would make the daemon tell somebody whose free months quietly lapsed that they had turned
    * verification off, which is a support ticket rather than an answer.
    */
+  /*
+   * The case the field exists for: entitled, switched on, and no key behind the provider.
+   *
+   * Read from `available[provider]` and not from the map as a whole -- another provider being
+   * configured says nothing about whether THIS one can drive.
+   */
+  it("reads readiness for the project's own provider, not for any provider", async () => {
+    const got = await fetchPlatformConfig(
+      LINKED,
+      answering({
+        provider: 'jev',
+        harnessEnabled: true,
+        harnessEntitled: true,
+        available: { jev: false, anthropic: true, openai: false },
+      }),
+    );
+    expect(got?.providerReady).toBe(false);
+  });
+
   it('reports entitlement apart from the switch', async () => {
     const got = await fetchPlatformConfig(
       LINKED,
       answering({ provider: 'jev', harnessEnabled: true, harnessEntitled: false }),
     );
-    expect(got).toEqual({ provider: 'jev', harnessEnabled: true, harnessEntitled: false });
+    expect(got).toEqual({
+      provider: 'jev',
+      harnessEnabled: true,
+      harnessEntitled: false,
+      providerReady: true,
+    });
   });
 
   /** An older API reports neither field, and silence must not read as a refusal on either. */

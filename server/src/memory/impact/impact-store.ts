@@ -286,7 +286,13 @@ export class ImpactStore {
     if (this.#projectName !== undefined) snap.projectName = this.#projectName;
     if (this.#dashboardUrl !== undefined) snap.dashboardUrl = this.#dashboardUrl;
     snap.account = this.#account();
+    const cfgForOffer = this.#config.read();
     const offer = this.#offer.read();
+    // Joined here because this is the one place that holds BOTH the offer and the platform config.
+    // The card reads the offer, so readiness has to travel on it rather than being re-derived in a
+    // presenter that has no business knowing what a provider key is.
+    if (offer !== undefined && cfgForOffer !== undefined)
+      offer.drivable = cfgForOffer.providerReady;
     // Absent means "we have not heard", which the HUD renders as nothing at all. Never defaulted to
     // `{claimed:false}`: that would advertise the offer to everyone who is offline.
     if (offer !== undefined) snap.harnessOffer = offer;

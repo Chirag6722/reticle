@@ -44,6 +44,16 @@ export interface PlatformModelConfig {
    * report "you turned this off" to somebody whose free months quietly ran out.
    */
   harnessEntitled: boolean;
+  /**
+   * Whether the platform actually holds a key for the provider this project is pointed at.
+   *
+   * Entitlement and readiness are different facts and the HUD needs both. A workspace can be fully
+   * entitled -- claimed period, `harnessEnabled` on -- against a deployment that has no provider key
+   * configured, and every signal then reads healthy while a drive cannot run. Absent reads as READY,
+   * on the same rule as the two booleans above: an older API that does not report availability must
+   * not have its silence treated as a refusal.
+   */
+  providerReady: boolean;
 }
 
 /** A GET, narrowed to what this file uses, so a test can answer it without a network. */
@@ -65,10 +75,19 @@ function parse(body: string): PlatformModelConfig | undefined {
     // Same rule for both, for the same reason: an older API that reports neither must not have its
     // silence read as a refusal.
     const entitled = record['harnessEntitled'];
+    // `available` is keyed by provider and says which ones the platform holds a key for. Read only
+    // the entry for the provider this project uses: another provider being configured says nothing
+    // about whether THIS one can drive.
+    const available = record['available'];
+    const ready =
+      'object' === typeof available && null !== available
+        ? (available as Record<string, unknown>)[provider]
+        : undefined;
     return {
       provider,
       harnessEnabled: 'boolean' === typeof enabled ? enabled : true,
       harnessEntitled: 'boolean' === typeof entitled ? entitled : true,
+      providerReady: 'boolean' === typeof ready ? ready : true,
     };
   } catch {
     return undefined;

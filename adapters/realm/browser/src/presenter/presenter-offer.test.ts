@@ -37,6 +37,21 @@ describe('when the harness offer is shown at all', () => {
     expect(offerHtml({ claimed: false, eligible: false, claimUrl: CLAIM_URL }, false)).toBe('');
   });
 
+  /**
+   * `eligible` is about the OFFER; this is about the thing offered. A deployment holding no key for
+   * this project's provider still reports a claimable, entitled workspace — so without this the card
+   * sells three free months, the claim succeeds, and the drive is the first thing that fails, after
+   * the one claim somebody gets has been spent.
+   */
+  it('says nothing when a drive could not run, however claimable the offer is', () => {
+    expect(offerHtml({ claimed: false, claimUrl: CLAIM_URL, drivable: false }, false)).toBe('');
+  });
+
+  /** Same rule as eligibility: an older platform that does not report readiness has not refused. */
+  it('still offers when the platform said nothing about whether a drive could run', () => {
+    expect(offerHtml({ claimed: false, claimUrl: CLAIM_URL }, false)).toContain(OFFER_TEXT.CLAIM);
+  });
+
   /** An older platform reports no eligibility at all; silence is not a refusal. */
   it('still offers when the platform said nothing about eligibility', () => {
     expect(offerHtml({ claimed: false, claimUrl: CLAIM_URL }, false)).toContain(OFFER_TEXT.CLAIM);

@@ -181,6 +181,17 @@ export const HarnessOfferSchema = z.object({
   /** Where claiming happens. Absent ⇒ the HUD shows nothing, because a pitch with no door is noise. */
   claimUrl: z.string().optional(),
   /**
+   * Whether a drive could actually run if the offer were taken.
+   *
+   * Entitlement is not readiness. A workspace can be fully entitled against a deployment that holds
+   * no key for its provider, and then every signal reads healthy while a drive cannot start —
+   * including the card, which would sell three free months of something unusable and burn the one
+   * claim the person gets. Absent means "not told", which is treated as drivable for the same
+   * reason `claimed` is required and the rest are not: silence from an older platform must not
+   * switch the feature off.
+   */
+  drivable: z.boolean().optional(),
+  /**
    * Whether claiming would still grant anything.
    *
    * Carried separately because `claimed` is "running RIGHT NOW", and an expired free period reads

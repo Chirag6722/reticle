@@ -87,6 +87,14 @@ export interface OfferState {
    * one way this card can be actively insulting rather than merely unwanted. Absent means offerable.
    */
   eligible?: boolean | undefined;
+  /**
+   * Whether a drive could actually run. Absent means the platform did not say, which reads as yes.
+   *
+   * Separate from `eligible`, which is about the OFFER. This is about the thing being offered: a
+   * deployment holding no key for this project's provider entitles a workspace to a harness that
+   * cannot start.
+   */
+  drivable?: boolean | undefined;
 }
 
 const escape = (text: string): string =>
@@ -112,6 +120,16 @@ export function offerHtml(offer: OfferState | undefined, dismissed: boolean): st
   // A free period that has run out: nothing to claim and nothing to count down. The platform is
   // where that conversation continues, and this card is not the place to start it.
   if (false === offer.eligible) return '';
+  /*
+   * Entitled to something that cannot run.
+   *
+   * The platform reports which providers it holds a key for, and a deployment with none entitles a
+   * workspace to a harness that will not start. Selling three free months of that spends the one
+   * claim somebody gets and produces the exact shape this product refuses everywhere else: every
+   * signal green, the thing underneath unusable. Silence is the honest answer, and it is the same
+   * answer this file already gives when there is no door to send anybody through.
+   */
+  if (false === offer.drivable) return '';
   if (dismissed) return '';
   const url = offer.claimUrl;
   if (url === undefined || 0 === url.length) return '';
