@@ -1,4 +1,10 @@
-import { asFlowName, asProjectId, type FlowName, type ProjectId } from '@reticlehq/core';
+import {
+  asFlowName,
+  asProjectId,
+  type FlowName,
+  type Predicate,
+  type ProjectId,
+} from '@reticlehq/core';
 import { REDACTED_FILL } from './fields/flow-secret-field.js';
 export { REDACTED_FILL } from './fields/flow-secret-field.js';
 import { safeProjectId, type FlowResult } from './flow-result.js';
@@ -17,7 +23,6 @@ import {
 import type {
   ActionType,
   FlowAnchor,
-  FlowExpect,
   FlowFile,
   FlowStep,
   HealChange,
@@ -26,6 +31,7 @@ import type {
 import { ReticleTool } from '@reticlehq/core';
 import { asRecord, asString } from '@reticlehq/core';
 import { applyHealChanges } from './heal.js';
+import { withLearnedSources } from './learned-sources.js';
 import { flowIntentGap, linkFlowIntent } from './flow-intent.js';
 import { IntentStore } from '@/memory/intent/intent-store.js';
 import type { CompiledProgram, RecordedStep } from './recording/tape/recordings.js';
@@ -254,9 +260,9 @@ interface SaveSummary {
  * the same bytes as before.
  */
 export interface FlowAnnotations {
-  stepExpect: Map<number, FlowExpect>;
+  stepExpect: Map<number, Predicate>;
   dynamic: string[];
-  success?: FlowExpect;
+  success?: Predicate;
   /** The flow's declared business goal (intent annotation). */
   intent?: string;
 }
@@ -439,6 +445,18 @@ export class FlowStore {
     }));
   }
 
+  /** Give sourceless steps the files a clean replay resolved them to, merged onto the file as it is now. */
+  async recordSources(
+    name: string,
+    sources: ReadonlyMap<string, NonNullable<FlowStep['source']>>,
+    projectId?: ProjectId,
+  ): Promise<FlowResult<{ name: string }>> {
+    return await this.#changeInPlace(name, projectId, (flow) => ({
+      next: withLearnedSources(flow, sources) ?? flow,
+      value: { name },
+    }));
+  }
+
   /**
    * Apply confident testid rebinds to an on-disk flow (the `reticle_flow_heal` apply path),
    * rewriting ONLY the named steps' anchors and preserving every other field. Loading, the name
@@ -454,7 +472,8 @@ export class FlowStore {
     projectId?: ProjectId,
   ): Promise<FlowResult<{ name: string; changed: HealChange[] }>> {
     return await this.#changeInPlace(name, projectId, (flow) => {
-      const { flow: next, applied } = applyHealChanges(flow, changes);
+      // The store's injected clock, so a written flow records when the rebind actually happened.
+      const { flow: next, applied } = applyHealChanges(flow, changes, () => this.#clock.now());
       return { next, value: { name, changed: applied } };
     });
   }

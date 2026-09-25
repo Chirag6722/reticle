@@ -46,6 +46,7 @@ import {
   type CapabilitiesInput,
 } from './registry/capabilities.js';
 import { installAllObservers, runTeardowns } from './observers/install-all.js';
+import { setNetworkBodyMaxChars } from './observers/net-detail/network-body.js';
 import { installOverlay, type OverlayHandle } from './presenter/chrome/overlay.js';
 // TYPES only. Naming the panel's class here would put the whole panel in the first thing a page
 // downloads, and the panel is wanted only once an agent connects. It is fetched below instead, at
@@ -393,6 +394,11 @@ export class Reticle {
     // mistaken for an ordinary one. See connect-options.ts.
     setPresenterVisible(true === options.exposePresenter);
 
+    // Before the observers install, so the very first captured body already honours the cap.
+    if (options.networkBodyMaxChars !== undefined) {
+      setNetworkBodyMaxChars(options.networkBodyMaxChars);
+    }
+
     const emit = this.#emit;
     this.#captureBodies = true === options.captureNetworkBodies;
     // Only a definite `false` is carried. Absent stays absent all the way to the daemon, so an older
@@ -489,6 +495,9 @@ export class Reticle {
               ? { kind: intent.kind, text: intent.text }
               : { kind: intent.kind },
           );
+        // How the person uses the HUD, as control names. Taken off the wire by the daemon before the
+        // event buffer, so it is telemetry and never evidence.
+        panelOptions.onHudUse = (use) => this.#emit(EventType.HUD_USED, { ...use });
         const panel = new Presenter(panelOptions);
         this.#presenter = panel;
         panel.mount();
@@ -524,6 +533,9 @@ export class Reticle {
             // this yet at mount — the presenter is IDLE until the agent's first command — so without
             // the stamp the tour mounts over a leased page and its scrim swallows the drive.
             search: window.location.search,
+            // And the case no stamp can cover: a driver that launched its OWN browser and navigated
+            // to the app itself. There is no person on such a page and the scrim only eats its clicks.
+            navigator,
             // Reports whether it landed, so the button can say so. `clipboard` is absent outright
             // on an insecure origin, and `writeText` still rejects on a page without permission.
             copy: (text) =>

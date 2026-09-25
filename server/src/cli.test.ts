@@ -11,7 +11,13 @@ describe('summarizeStatus', () => {
       running: true,
       sessionCount: 2,
       sessions: [
-        { sessionId: 'a', url: 'http://localhost:5173/app', throttled: false, pendingMarks: 2 },
+        {
+          sessionId: 'a',
+          url: 'http://localhost:5173/app',
+          projectId: 'web-app',
+          throttled: false,
+          pendingMarks: 2,
+        },
         { sessionId: 'b', url: 'http://localhost:5173/x', throttled: true, stale: true },
       ],
     });
@@ -20,6 +26,7 @@ describe('summarizeStatus', () => {
       {
         sessionId: 'a',
         url: 'http://localhost:5173/app',
+        projectId: 'web-app',
         throttled: false,
         hidden: false,
         stale: false,
@@ -68,6 +75,7 @@ const INIT_DEFAULTS = {
   env: [] as string[],
   filesOnly: false,
   captureBodies: false,
+  hooks: false,
   json: false,
   open: true,
   relaunch: false,
@@ -396,6 +404,12 @@ describe('parseCliArgs', () => {
       filesOnly: true,
       captureBodies: false,
     });
+  });
+
+  // Opt-in: the Stop hook writes into a settings file the user and other tools own.
+  it('takes --hooks, and leaves it off by default', () => {
+    expect(parseCliArgs(['init', '--hooks'], PORT)).toEqual({ ...INIT_DEFAULTS, hooks: true });
+    expect(parseCliArgs(['init'], PORT)).toMatchObject({ hooks: false });
   });
 
   it('refuses a flag that names no value, rather than swallowing the next one', () => {

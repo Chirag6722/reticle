@@ -1,7 +1,13 @@
-import { mayResumeByReplayingPrefix, StepEffect } from '@reticlehq/core';
-import { Surface, formatStepAddress } from 'open-verification';
+import { formatStepAddress } from 'open-verification';
+import { assertsState, expectLabel, expectedElementTestid, withoutClauses } from '@reticlehq/core';
 import { span } from '@/trace.js';
-import { anchorLabel, expectElementDrift, resolveTestid, testidDrift } from './flow-anchor.js';
+import {
+  anchorLabel,
+  expectElementDrift,
+  resolveTestid,
+  testidDrift,
+  ambiguousAnchorDrift,
+} from './flow-anchor.js';
 export {
   anchorLabel,
   componentLabel,
@@ -22,17 +28,14 @@ import {
   DriftReason,
   EventType,
   FlowStepTool,
-  ReticleCommand,
   type Drift,
   type FlowFile,
   type FlowStep,
   type FlowStepResult,
-  type FlowExpect,
   type ReticleEvent,
   PredicateKind,
 } from '@reticlehq/core';
 import { asString, isConsequenceDrift } from '@reticlehq/core';
-import { replayActionArgs, ambiguousTestidNote } from './replay.js';
 import { anchorFieldName } from './fields/flow-secret-field.js';
 import {
   degradedStepResult,
@@ -41,7 +44,6 @@ import {
   runRoleStep,
   runSequenceStep,
 } from './flow-step-runners.js';
-import { successToPredicate } from './flow-success.js';
 import { inFlightRequestLabels } from '@/surface/tools/act/settle-in-flight.js';
 import { namedNetIsInFlight } from '@reticlehq/engine/evidence/unsettled.js';
 
@@ -49,8 +51,11 @@ import { namedNetIsInFlight } from '@reticlehq/engine/evidence/unsettled.js';
 const IN_FLIGHT_AT_BUDGET_END =
   'the request this step declared had not come back when the budget ended — it is still in flight, ' +
   'so nothing here says the app failed. Raise the step timeout, or look at the endpoint';
-import { ReticleTool } from '@reticlehq/core';
-import { isDocumentGoneError } from '@/portal/session/facts/session-replaced.js';
+import {
+  isDocumentGoneError,
+  SESSION_DISCONNECTED_REASON,
+} from '@/portal/session/facts/session-replaced.js';
+import { actOnResolvedRef } from './flow-step-runners.js';
 
 /**
  * The document this replay was driving went away mid-run.
@@ -138,7 +143,7 @@ function summarizeConsequence(events: ReticleEvent[]): string | undefined {
 }
 
 /** Run one testid-anchored step: re-resolve via QUERY, then ACT on the live ref, else drift. */
-async function runTestidStep(
+export async function runTestidStep(
   session: FlowReplaySession,
   step: FlowStep,
   index: number,
@@ -157,33 +162,57 @@ async function runTestidStep(
       drift: testidDrift(value, hint),
     };
   }
+  /*
+   * More than one match is DRIFT, not a note on a passing step.
+   *
+   * This used to take refs[0], act, and return ok:true with `ambiguousTestidNote`. The verdict
+   * reads `drift` and `ok` and never reads a note, so "we guessed which element you meant" was
+   * indistinguishable from "it did what it did before" -- the one claim a replay makes.
+   *
+   * The action is NOT dispatched. Acting and then reporting drift would leave the app changed by
+   * a click nobody can attribute, which is worse than the ambiguity it reports.
+   */
+  if (refs.length > 1) {
+    return {
+      step: index,
+      tool: step.tool,
+      anchor: value,
+      ok: false,
+      drift: ambiguousAnchorDrift(value, refs.length),
+    };
+  }
   const ref = refs[0] ?? '';
-  const note = refs.length > 1 ? ambiguousTestidNote(value) : undefined;
-  session.beginAction?.(ReticleTool.FLOW_REPLAY, { ref, action: step.action ?? '' });
-  let act;
-  try {
-    act = await session.command(ReticleCommand.ACT, {
-      ref,
-      action: step.action ?? '',
-      // The field this step types into — from the anchor, so a redacted fill can be supplied from
-      // RETICLE_SECRET_<FIELD> without the flow carrying the secret. The testid runner used to pass
-      // the testid string here and the other two runners passed nothing, so a role-anchored login
-      // typed the literal placeholder.
-      args: replayActionArgs(step.args, confirmDangerous, anchorFieldName(step.anchor)),
-    });
-  } finally {
-    session.finishAction?.();
-  }
-  const result: FlowStepResult = { step: index, tool: step.tool, anchor: value, ok: act.ok };
-  if (!act.ok) {
-    result.error = act.error ?? 'command failed';
-    if (note !== undefined) result.note = note;
-    return result;
-  }
+  /*
+   * The same dispatch its siblings use, including the one re-resolve on a stale ref (2.3).
+   *
+   * This runner had its own inline copy and no retry, so a flow died on a re-render purely because
+   * the step was anchored by testid rather than by role — the locator deciding how sturdy the replay
+   * is, which is exactly backwards. testid is also the anchor `reticle init` steers people towards,
+   * so the kind most likely to appear in a real flow was the kind without the cure.
+   *
+   * The re-resolve keeps the ambiguity rule above: more than one match is drift, never a guess, so
+   * it hands back a ref only when the locator still names exactly one element.
+   */
+  const result = await actOnResolvedRef(
+    session,
+    step,
+    index,
+    value,
+    ref,
+    confirmDangerous,
+    // The field this step types into — from the anchor, so a redacted fill can be supplied from
+    // RETICLE_SECRET_<FIELD> without the flow carrying the secret.
+    anchorFieldName(step.anchor),
+    async () => {
+      const again = await resolveTestid(session, value, sleep);
+      return 1 === again.refs.length ? again.refs[0] : undefined;
+    },
+  );
+  if (!result.ok) return result;
   // assert the step's expect.element testid is present AFTER the action —
   // unless that testid was marked DYNAMIC (the LLM-output case), in which case its presence/content
   // is NOT asserted (only the action ran). The skip is scoped strictly to the dynamic set.
-  const expectTestid = step.expect?.element?.testid;
+  const expectTestid = expectedElementTestid(step.expect);
   if (expectTestid !== undefined && !dynamic.has(expectTestid)) {
     const expectRefs = await resolveTestid(session, expectTestid, sleep);
     if (0 === expectRefs.refs.length) {
@@ -199,7 +228,6 @@ async function runTestidStep(
       };
     }
   }
-  if (note !== undefined) result.note = note;
   return result;
 }
 
@@ -227,7 +255,6 @@ async function runTestidStep(
 export async function assertStepExpect(
   session: FlowReplaySession,
   expect: NonNullable<FlowStep['expect']>,
-  dynamic: ReadonlySet<string>,
   waitForSignal: WaitForSignal,
   timeoutMs: number,
   since: number,
@@ -235,48 +262,58 @@ export async function assertStepExpect(
   // A testid is already asserted against the live DOM by the step runner. A role/name locator is
   // not that path — stripping every element made a recorded `until` by button name a no-op, so a
   // flow that proved the control at capture time could not go red when it was gone.
-  const consequences: FlowExpect = { ...expect };
-  if (undefined !== consequences.element?.testid) {
-    delete consequences.element;
-  }
-  const predicate = successToPredicate(consequences, dynamic);
+  /*
+   * Two clauses replay must not wait on, both for reasons that predate the tree.
+   *
+   * A testid element was already asserted against the live DOM by the step runner, so waiting on it
+   * again is a second read of a question already answered. A DYNAMIC testid is one whose content a
+   * model writes, and its presence is deliberately never asserted.
+   *
+   * A role/name locator is NEITHER, and stripping every element made a recorded `until` by button
+   * name a no-op — a flow that proved the control at capture time could not go red when it was gone.
+   *
+   * The DYNAMIC set used to be a parameter here and was dead the whole time: the testid was deleted
+   * from the expectation on the line above, and the only thing that read the set asked for the
+   * testid that had just been removed. One production caller was already passing an empty set. The
+   * rule is real and still applies to the flow's SUCCESS oracle, which is where it lives.
+   */
+  const predicate = withoutClauses(
+    expect,
+    // Only a PRESENT testid is the runner's to check; an absence stays here or nobody checks it.
+    (clause) =>
+      PredicateKind.ELEMENT === clause.kind &&
+      clause.query.testid !== undefined &&
+      true !== clause.absent,
+  );
   if (predicate === undefined) return undefined;
   const verdict = await waitForSignal(session, predicate, timeoutMs, since);
   if (verdict.pass) return undefined;
+  // The wait ended because the page stopped being observable, not because the consequence failed:
+  // the same fact as a command the dying socket rejected, so it takes the same path (the replay loop
+  // reports a lost document). As a drift, a socket that blinked for 26ms read as the app's defect.
+  if (true === verdict.observationLost) throw new Error(SESSION_DISCONNECTED_REASON);
   // A request the step NAMED that had not come back yet is a blind spot, not an assertion the app
   // failed. The live verdict path already draws this line (namedNetIsInFlight); replay read the
   // same window and never asked, so a slow endpoint was reported as a consequence that never fired.
   // An unrelated open request does not pardon a named URL that never started — matching decides it.
-  const openRequests =
-    expect.state === undefined ? inFlightRequestLabels(session.eventsSince(since)) : [];
+  const openRequests = assertsState(expect)
+    ? []
+    : inFlightRequestLabels(session.eventsSince(since), session.url, session.background);
   const namedInFlight = namedNetIsInFlight(predicate, openRequests);
   return {
     // The store case keeps its own kind because heal and the run report branch on it; everything
     // else is a consequence that did not hold, and the reason carries observed-vs-expected.
-    reasonKind:
-      expect.state !== undefined
-        ? DriftReason.STATE_MISMATCH
-        : namedInFlight
-          ? DriftReason.NET_STILL_IN_FLIGHT
-          : DriftReason.SIGNAL_NOT_OBSERVED,
+    reasonKind: assertsState(expect)
+      ? DriftReason.STATE_MISMATCH
+      : namedInFlight
+        ? DriftReason.NET_STILL_IN_FLIGHT
+        : DriftReason.SIGNAL_NOT_OBSERVED,
     reason: namedInFlight
       ? `${IN_FLIGHT_AT_BUDGET_END} (${openRequests.join(', ')})`
       : (verdict.failureReason ?? "the step's declared consequence did not hold"),
     anchor: expectLabel(expect),
     nearest: null,
   };
-}
-
-/** Name the thing that was asserted, for the drift's `anchor` column. */
-function expectLabel(expect: NonNullable<FlowStep['expect']>): string {
-  if (expect.signal !== undefined) return `signal:${expect.signal}`;
-  if (expect.net !== undefined) return `net:${expect.net.urlContains ?? expect.net.method ?? '*'}`;
-  if (expect.state !== undefined) return `state:${expect.state.path}`;
-  if (expect.console !== undefined) return `console:${expect.console.level ?? '*'}`;
-  if (undefined !== expect.element) {
-    return expect.element.testid ?? expect.element.name ?? expect.element.role ?? 'element';
-  }
-  return 'expect';
 }
 
 /** Run one signal-anchored step: wait for the signal predicate, else drift (no nearest for signals). */
@@ -325,9 +362,16 @@ async function runSignalStep(
  * On the first anchor MISS the step carries legible drift and replay STOPS, returning the partial
  * results. This is the "whose fault is it" contract, not a blind "command failed".
  */
-/** Where a replay starts reporting. Steps before it are re-driven, silently, as setup. */
+/**
+ * How a replay is loaded and how far it goes — not WHERE it starts.
+ *
+ * It carried a `from` (and a `surface` that existed only to gate it): replay from step N, re-driving
+ * the prefix silently. The machinery was built, tested and reachable from nothing at all — no tool
+ * argument, no CLI flag, no caller anywhere. Deleted rather than wired: unreachable code is read as
+ * current by the next person and maintained forever, its passing tests make it look load-bearing,
+ * and nobody has asked for resume-from-step. The history keeps it if it is ever wanted.
+ */
 export interface ReplayFromOptions {
-  from?: number;
   /**
    * How to load a flow this one INVOKES. Absent means invocations cannot be followed.
    *
@@ -342,13 +386,6 @@ export interface ReplayFromOptions {
   /** The invocation chain that reached this flow, nearest caller first. Empty at the top. */
   via?: readonly { flow: string; step: number }[];
   /**
-   * Which kind of subject this is. Decides whether re-driving the prefix is allowed at all.
-   *
-   * Defaults to `web`, which is the permissive answer — correct for the only surface that resumes
-   * today, and the reason a caller on a committing surface must say so rather than rely on silence.
-   */
-  surface?: Surface;
-  /**
    * Keep going past a step whose ACTION ran and whose declared consequence merely did not hold.
    *
    * Off by default, because a regression flow wants the first break and nothing after it. A BUG
@@ -361,39 +398,6 @@ export interface ReplayFromOptions {
    * where the flow says it is and continuing would invent results. `isConsequenceDrift` is the line.
    */
   sweep?: boolean;
-}
-
-/**
- * Where to start REPORTING — and whether re-driving the steps before it is allowed at all.
- *
- * "Resume is nearly free, just re-run the prefix" is true of a browser and false on a subject that
- * COMMITS. Re-driving a prefix on a service re-sends every request before step N; on a device it
- * moves an arm again. Neither is a convenience, and a protocol that did it silently would be
- * defective rather than helpful.
- *
- * So the surface's declared profile decides, through the specification's own `resumeStrategy` rather
- * than a local reading of `replayPrefix`. A refusal resumes from 0 — the whole journey is reported,
- * nothing is skipped and nothing is silently repeated beyond what a plain replay already does.
- */
-function resumableFrom(options: ReplayFromOptions, steps: readonly FlowStep[]): number {
-  const asked = Math.max(0, options.from ?? 0);
-  if (0 === asked) return 0;
-  if (!mayResumeByReplayingPrefix(options.surface ?? Surface.WEB)) return 0;
-  /*
-   * The surface answers for the SUBJECT; a step answers for itself.
-   *
-   * `web` is the permissive profile and it is right about a browser in general and wrong about the
-   * one click that charges a card. The surface check cannot see that, because the distinction is
-   * not a property of the realm — it is a property of the step. A flow that declares a prefix step
-   * as `commits` is saying: re-running me is not free, whatever the surface thinks.
-   *
-   * Refusing means resuming from 0, which is the same fail-safe the surface refusal already uses:
-   * the whole journey is reported and nothing is silently repeated beyond what a plain replay does.
-   * Absent effect is UNKNOWN and stays permissive — every flow recorded before this shipped has no
-   * effect on any step, and assuming the worst there would refuse every resume in existence.
-   */
-  const commitsInPrefix = steps.slice(0, asked).some((step) => StepEffect.COMMITS === step.effect);
-  return commitsInPrefix ? 0 : asked;
 }
 
 /**
@@ -439,10 +443,7 @@ async function runInvokeStep(
       error: `cannot replay "${name}": it was not found, so this journey would report green having never run it`,
     };
   }
-  // `from` is deliberately dropped rather than forwarded: it is a REPORTING offset into the
-  // caller's own step list, and applying it inside a sub-journey would silently hide that
-  // journey's first steps for a reason that has nothing to do with it.
-  const { from: _ignored, ...carried } = options;
+  const carried = options;
   const nested = await replayFlow(
     session,
     sub,
@@ -477,16 +478,6 @@ export async function replayFlow(
   options: ReplayFromOptions = {},
 ): Promise<FlowStepResult[]> {
   const results: FlowStepResult[] = [];
-  /*
-   * Where to start REPORTING. Everything before it still runs.
-   *
-   * Resuming is re-driving the prefix, not restoring state: there is no way to put an app back
-   * where it was without driving it there, and at a measured ~27ms a step there is no reason to
-   * try. So the prefix executes silently and the caller sees the journey from the point it asked
-   * about -- which is what makes "fix the break, resume, find the next one" a loop rather than a
-   * full re-read each time.
-   */
-  const from = resumableFrom(options, flow.steps);
   // testids whose region is LLM-dynamic — their expect-presence is NOT asserted.
   const dynamic = new Set<string>(
     (flow.dynamic ?? [])
@@ -601,7 +592,6 @@ export async function replayFlow(
         const expectDrift = await assertStepExpect(
           session,
           expectation,
-          dynamic,
           waitForSignal,
           waitFor(step),
           cursorBefore,
@@ -632,7 +622,7 @@ export async function replayFlow(
       // `tool` is dropped HERE rather than at the ten places that set it, so a new step runner cannot
       // forget the rule and quietly re-introduce the cost. Spelled out only when it is NOT the default.
       if (FlowStepTool.ACT === result.tool) delete result.tool;
-      if (index >= from || !result.ok || result.drift !== undefined) results.push(result);
+      results.push(result);
       // Under `sweep`, a failure whose action still RAN does not stop the run — the page is where the
       // step left it, so the next step is as meaningful as it was going to be. Anything else halts.
       const sweepPast =

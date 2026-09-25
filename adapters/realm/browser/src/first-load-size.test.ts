@@ -178,7 +178,75 @@ const DIST_ENTRY = join(PACKAGE_ROOT, 'dist', 'index.js');
  *
  * Raised by 1,000 rather than to the measurement, per the note above.
  */
-const MAX_FIRST_LOAD_BYTES = 241_100;
+/*
+ * 241_100 -> 242_300, for the form-field observer. 1,115 B measured, the largest single raise here.
+ *
+ * It buys the one channel the SDK did not have. `value` has been in the DOM observer's attribute
+ * allowlist all along and that observer runs with `attributeOldValue: true` — and it has never once
+ * fired for a React input, because React and every controlled component set the PROPERTY and
+ * `MutationObserver` watches attributes. So a field's value was readable on demand and there was NO
+ * EVENT to cite: "this field held its value across the re-render" could not be asserted, and a
+ * write the app silently dropped left no trace anywhere. Two named incidents sit on that gap.
+ *
+ * The bytes are mostly redaction, and that is the part that cannot be cut: a form is where somebody
+ * types their password, their card number and their address, so the observer has to decide per
+ * field whether the value may ride out at all, and it consults the same policy the rest of the wire
+ * does rather than carrying a second copy of the rule. A cheaper version that emitted values
+ * unconditionally would be smaller and must never ship.
+ *
+ * Raised by 1,200 rather than to the measurement, per the note above.
+ */
+/*
+ * 242_300 -> 240_300. LOWERED, for the first time, and by finding what the earlier notes kept
+ * promising somebody would find. Measured 239,247.
+ *
+ * A step's `expect` became a `Predicate`, which added `verdict/predicate.js` (3,739 B) and
+ * `artifacts/flow-expect-flat.js` (2,483 B) to every page load — 6,222 B over the ceiling, for a
+ * schema a browser never runs. The metafile said both were reached only through
+ * `artifacts/flow-types.js`, and flow-types was reached only because it re-exported two constants
+ * from `flow-step-tool.js`.
+ *
+ * `flow-step-tool.ts` was split out of `flow-types.ts` to end exactly this, and its own header says
+ * so. The convenience re-export put the module back on the barrel's path to those constants and
+ * undid the extraction silently. Naming the leaf directly on the barrel took back the 6,222 B AND
+ * the 3,243 B of flow schemas that had been riding in since before the split — 9,465 B total.
+ *
+ * So the debt the five raises above kept deferring is partly paid, and the ceiling comes down
+ * rather than keeping the winnings as slack: slack is what the next creep hides in. 1,000 B of
+ * headroom, per the rounding note above.
+ *
+ * Still unspent, and still the bigger number: `verdict/verification-run` (3,645 B) and the protocol
+ * barrel behind it. Same defect, same fix, a public-surface decision rather than a size-guard one.
+ */
+/*
+ * 240_300 -> 241_300, for bounding a repeating uncaught error. 531 B measured on this tree
+ * (239,903 -> 240,434), not the 91 B it measured where it was written: the base had moved.
+ *
+ * An uncaught error is recorded as an event, and recording it can raise the same error, so the path
+ * feeds itself: one repeating `TypeError` wrote a session's event log until it filled the disk
+ * (#986). The limiter lets the first few occurrences through, then only order-of-magnitude
+ * checkpoints, so a runaway costs O(log n) events instead of O(n). It has to be spent in the page:
+ * the daemon cannot decline what the SDK has already sent, and the send is the cost.
+ *
+ * Raised by 1,000 rather than to the measurement, per the note above.
+ */
+/*
+ * 241_300 -> 242_300. 606 B measured on this tree (240,731 -> 241,337) across four changes, each of
+ * which runs where the page is, not in the deferred panel: CSP violations reaching the console
+ * channel (a false green on absent-console assertions), the library-modal check that gives Escape
+ * back to Radix/MUI dialogs, a dblclick that dispatches the two clicks a browser does, and naming
+ * the editor when `type` cannot write into it. Raised by 1,000, per the note above.
+ */
+/*
+ * 242_300 -> 243_400, for HUD usage telemetry and copying annotations. 242,377 B measured on this
+ * tree. The metafile names what stays on the way in: the `hud.used` payload schema and its three
+ * small enums (the wire schema registry is loaded with every page), and the 330 B that formats marks
+ * as a prompt, which rides with the annotator because the annotator is itself a first-load export.
+ * The control LIST did land here first, at 1,040 B, through core's root barrel into a chunk shared
+ * with the lazy panel; it moved to the `@reticlehq/core/hud` subpath and left. Raised by 1,000 over
+ * the measurement, per the note above.
+ */
+const MAX_FIRST_LOAD_BYTES = 243_400;
 /*
  * Raised a fifth time, 233_300 -> 233_400, for a route to be assertable in a SAVED flow. 57 B.
  *

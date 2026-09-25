@@ -77,6 +77,30 @@ function openCodeEntry(): Record<string, unknown> {
   return { type: 'local', command: [NPX, ...npxServerArgs()], enabled: true };
 }
 
+/**
+ * Claude Code's project-scope MCP config, which needs no CLI on PATH.
+ *
+ * Named here beside the client specs because it IS one of Claude Code's two config routes, and a
+ * free string for it is the reason nobody noticed the other route existed when the CLI one failed.
+ */
+export const CLAUDE_PROJECT_CONFIG = '.mcp.json';
+
+/**
+ * Claude Code's project-scope registration, as a client spec so it goes through the same merge
+ * (already / manual / apply) as every other client. Not in `MCP_CLIENTS`: that list is DETECTED by
+ * its config existing, and this one is only ever written from inside Claude Code (see plan.ts).
+ */
+export const CLAUDE_PROJECT_SPEC: ClientSpec = {
+  id: McpClient.CLAUDE_CODE,
+  label: 'Claude Code, project',
+  scope: ConfigScope.PROJECT,
+  relPath: CLAUDE_PROJECT_CONFIG,
+  format: ConfigFormat.JSON,
+  serversKey: 'mcpServers',
+  entry: commandArgsEntry,
+  docs: 'https://docs.claude.com/en/docs/claude-code/mcp: project scope, .mcp.json at the project root',
+};
+
 export const MCP_CLIENTS: readonly ClientSpec[] = [
   {
     id: McpClient.CLAUDE_CODE,

@@ -51,9 +51,13 @@ const FLAT_FILE_LIMIT = 10;
  *                                   public-subpaths-are-pinned.test.ts.
  */
 const OVER_THE_LINE: Readonly<Record<string, number>> = {
-  'adapters/build/vite/src': 12,
+  // +1: connect-args.ts, split out of index.ts (988 lines, against the 1000 cap) with the body cap.
+  // +1: stamping.ts, which module ids get a source stamp and the per-file @reticle-ignore opt-out.
+  // The grouping this directory still wants is a `stamping/` subdirectory beside svelte-source.ts.
+  'adapters/build/vite/src': 14,
   'adapters/realm/browser/src/dom': 12,
-  'adapters/realm/browser/src/observers': 23,
+  // +1: error-repeats.ts, the limiter every uncaught-error path in console.ts goes through (#986).
+  'adapters/realm/browser/src/observers': 25,
   // 17 since the HUD's position primitives left `presenter-drag.ts` for their own leaf: the drag
   // gesture re-syncs the dock layout, and the dock layout reads the HUD's position, so the two files
   // needed each other over primitives that belong to neither.
@@ -70,6 +74,8 @@ const OVER_THE_LINE: Readonly<Record<string, number>> = {
   // that keep it from nagging, and its stylesheet, in one file. Raised rather than grouped for the
   // same reason as the line above -- it is a presenter surface beside every other presenter surface,
   // and a `promo/` directory holding exactly one file would be a category invented for a single member.
+  // 20 since `hud-telemetry.ts`: the one listener that names every HUD press. It reads the presenter's
+  // own root attributes and every surface's controls, so it sits with the surfaces it watches.
   'adapters/realm/browser/src/presenter': 20,
   // Newly over the line at 11, with `presenter-safe-html.ts`. It crossed because two SECURITY
   // helpers left `presenter-report.ts` when the account capsule became their second caller: HTML
@@ -77,7 +83,23 @@ const OVER_THE_LINE: Readonly<Record<string, number>> = {
   // link running code inside the developer's own app. A security rule living in two files gets
   // fixed in one of them, so the duplicate was not an option.
   'adapters/realm/browser/src/presenter/chrome': 11,
-  'core/src/verdict': 11,
+  /*
+   * 12 because `verdict-attribution.ts` earns its own module, and the reason is measured rather than
+   * tidy: folded into `verified-constants.ts` it added 687 B to what EVERY page downloads just for
+   * loading the SDK, which `first-load-size` caught. The browser never needs to know whose problem
+   * an unproved verdict is — that is read where a verdict is emitted — so a separate module lets the
+   * bundler drop it. Two guards pulling opposite ways, and the one about a cost every developer pays
+   * on every page load wins over the one about how many files sit in a directory.
+   *
+   * 15 since `predicate-tree.ts`, and it is the same trade a second time. A step's `expect` became a
+   * `Predicate`, so replay has to read INSIDE the tree — drop the element clause a healed locator
+   * would fake, ask whether a state is asserted — and the reader for that was living in
+   * `server/src/language/flows`. The `directory-reach` guard refused it there the moment `journal`
+   * needed it too, and its own advice ("most reaches were a file filed somewhere odd") was right:
+   * a shallow walk over the contract's own type belongs beside the contract. Moving it here took a
+   * cross-layer reach out of the server and left the file count as the only cost.
+   */
+  'core/src/verdict': 15,
   'core/src/wire': 16,
   // 16 since `snapshot-tree.ts`. The snapshot tree is a format the BROWSER writes and several
   // things on the Node side read back, and its parser was living beside the MCP tool handlers — so
@@ -102,8 +124,11 @@ const OVER_THE_LINE: Readonly<Record<string, number>> = {
    * leaf the browser can import without the schemas is still the right shape, and the guard's
    * ceiling was raised with that reasoning written beside it.
    */
-  'core/src/artifacts': 13,
-  'engine/src/evidence': 17,
+  'core/src/artifacts': 14,
+  // 11 since `hud-entry.ts`, the `@reticlehq/core/hud` subpath. Entry points live at the package root
+  // beside `tour-entry.ts` and `telemetry-entry.ts`, because package.json names them by path.
+  'core/src': 11,
+  'engine/src/evidence': 18,
   // 18 since the last two cycles in this package were removed: `predicate-eval-kit.ts` (the result
   // type and the four comparisons the oracles are written in) and `predicate-session.ts` (what the
   // engine needs from a session). Both were reached back out of the modules that call their readers.
@@ -112,7 +137,7 @@ const OVER_THE_LINE: Readonly<Record<string, number>> = {
   // `predicate-eval.ts`: it is a pure rule with an incident behind it, and it is the kind of thing
   // that gets quietly re-broken when it lives inside the evaluator it constrains. This directory is
   // now the largest flat one in the package and is the next thing here worth grouping.
-  'engine/src/question/predicate': 19,
+  'engine/src/question/predicate': 20,
   /*
    * Crossed ten when the fast-drive budget and a portable byte counter landed. The guard asks for
    * grouping rather than recording at this moment, and grouping is the wrong move HERE specifically:
@@ -123,7 +148,8 @@ const OVER_THE_LINE: Readonly<Record<string, number>> = {
    */
   'engine/src/window': 11,
   // vite-env-types.ts owns the type-only environment declaration emitted by the dev-module generator.
-  'init/src/patch': 15,
+  // +1: nuxt-snippets.ts, split out of snippets.ts when it crossed the 1000-line cap.
+  'init/src/patch': 16,
   // Crossed the line as the protocol grew the two things a subject must declare about ITSELF rather
   // than about what it can see: how it may be driven, and the state a suite starts from. Recorded
   // rather than grouped -- this directory IS the vocabulary, and splitting it would put nouns an
@@ -164,11 +190,18 @@ const OVER_THE_LINE: Readonly<Record<string, number>> = {
   // joined the act cluster (preflight, target, retry, capsule). Recorded rather than grouped,
   // because this directory IS the grouping -- these files were split out of act-tools.ts when it
   // hit the line cap, and splitting them again would scatter one cohesive unit across two homes.
-  'server/src/surface/tools/act': 11,
+  /*
+   * 12 because `already-true.ts` had to leave `act-tools.ts`, which sits ON the 1000-line cap, and
+   * rule 6 says split before adding. The obvious home refused it: `act-preflight.ts` states its own
+   * cohesion as "decidable without touching the page", and reading whether a consequence is already
+   * true queries the page. Two guards in tension, and the line cap is the one whose rule is explicit
+   * about what to do.
+   */
+  'server/src/surface/tools/act': 12,
   // 19 since `setup-mcp-cli.ts`: the terminal half of `reticle setup mcp`, which the one-line
   // installer runs before any project exists. It sits HERE and not in `setup/` because the reach
   // guard refused `command -> setup` and CLI handlers already live in this directory.
-  'server/src/command/cli': 19, // + tutorial.ts: one sequence, two audiences, ending at a verdict
+  'server/src/command/cli': 21, // + tutorial.ts: one sequence, two audiences, ending at a verdict; + report-command.ts, a command beside its siblings
   // 17 since the installer's Node half: `setup-mcp.ts` (which agents are here, and merging into the
   // configs they already keep) and `setup-install.ts` (the three steps only the shell could time).
   // Both are pure — their telemetry reporter is INJECTED, because this directory does not own a
@@ -182,13 +215,20 @@ const OVER_THE_LINE: Readonly<Record<string, number>> = {
   // first-run tour over a page nobody is looking at -- a rule split across two packages is worth
   // one file that names it.
   'server/src/portal/input': 11,
-  'server/src/portal/session': 21,
+  // 22 since `session-verdict-facts.ts` was extracted (the count is source files, not tests): both
+  // verdict-producing tools were threading the same session facts into `decideVerified` with the
+  // same conditional-spread idiom, and a third fact would have been a third copy. Raised on
+  // purpose — the facts a session contributes to a verdict belong beside the session, not
+  // duplicated in two tool files.
+  'server/src/portal/session': 22,
   // 32 since two leaves were extracted out of `flow-replay.ts` to break the last runtime cycle in
   // this directory: `flow-replay-types.ts` (shapes two collaborators share) and `flow-anchor.ts`
   // (resolving a step's anchor). Breaking a cycle costs files — a module that sits UNDER two others
   // cannot also be one of them. Raised deliberately, and the grouping this directory still wants is
   // a `replay/` subdirectory for the nine files that cluster there, which is its own commit.
-  'server/src/language/flows': 32,
+  // 33 since `learned-sources.ts`: it wraps the replay session and reads anchors the step runners
+  // own, so filing it under `change/` made that directory and this one need each other.
+  'server/src/language/flows': 33,
   // 12 since `drive-flow.ts`: the rule that turns a session's ambient tape into a flow per journey,
   // and the gate that refuses to save one asserting nothing. It sits beside `session-end.ts` because
   // teardown is the only caller and the tape is data by then — the reach guard already refused the
@@ -202,7 +242,12 @@ const OVER_THE_LINE: Readonly<Record<string, number>> = {
   // of the URL and testable without a journal -- both halves of a request/response pair must get the
   // same answer, or filtering one half leaves the other unpaired and the engine reports a request
   // that completed as one that hung.
-  'server/src/memory/journal': 14,
+  // 15 since `route-template.ts`: the key an envelope's statistics accumulate under. Its own file
+  // rather than a helper inside `deviation-service`, because BOTH the service that writes the
+  // envelope and the report that reads it must key on the identical value — a private copy on one
+  // side is how the two would silently disagree, and a lookup that misses every envelope is exactly
+  // the defect it was written to fix.
+  'server/src/memory/journal': 15,
   // 11 when the artifact-address files landed: `project-for-root.ts`, `artifact-root-resolver.ts`
   // and the roster that pins them. Recorded rather than grouped, and the reason is the sibling
   // guard: the natural home for "which directory does this write to" is `project/dir`, whose whole
@@ -221,7 +266,9 @@ const OVER_THE_LINE: Readonly<Record<string, number>> = {
   // are indistinguishable at the emit site otherwise, and every activation number built on verdicts
   // reads a drive we performed as adoption we did not earn. Raised rather than grouped: this
   // directory is already the largest flat one here and grouping it is its own piece of work.
-  'server/src/telemetry': 36,
+  // 37 since `hud-metrics.ts`, which rolls HUD use into the session summary beside the tool counts.
+  // Its own file so the 700-line session aggregator did not grow a second concern.
+  'server/src/telemetry': 37,
   'spec-runner/src': 11,
 };
 

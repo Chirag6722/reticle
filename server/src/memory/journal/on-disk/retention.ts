@@ -2,7 +2,7 @@ import { basename, join } from 'node:path';
 import { ReticleDir } from '@reticlehq/core';
 import type { FileSystemPort } from '@/memory/project/fs/fs-port.js';
 import { reticleDirPaths, visualDir } from '@/memory/project/dir/reticle-dir.js';
-import { TRANSIENT_DIRS } from './workspace-gitignore.js';
+import { EVIDENCE_DIRS } from './workspace-tiers.js';
 
 /** Keep at most this many session journals on disk; older ones are pruned by recency. */
 export const DEFAULT_SESSION_RETENTION = 20;
@@ -27,9 +27,10 @@ const PNG_SUFFIX = '.png';
  * and feedback copies together.
  *
  * Every bound above this line counts things, and a count cannot see a size: twenty session
- * directories is twenty UNBOUNDED directories. A user's `.reticle/sessions` reached 8 GB with all
- * three counts being honoured the whole time, because one drive against a chatty app appends
- * response bodies and DOM text for as long as the drive lasts, and nothing was looking at the total.
+ * directories is twenty UNBOUNDED directories. A workspace in the field grew to multiple gigabytes
+ * with all three counts being honoured the whole time, because one drive against a chatty app
+ * appends response bodies and DOM text for as long as the drive lasts, and nothing was looking at
+ * the total.
  *
  * Why this number and not one an order of magnitude either side. An ordinary session journal is
  * hundreds of kilobytes to a few megabytes; a long drive against an app with large JSON responses
@@ -52,11 +53,11 @@ export const DEFAULT_EVIDENCE_BUDGET_BYTES = 512 * 1024 * 1024;
 /**
  * One candidate entry inside a `.reticle/`, classified by the top-level directory it lives under.
  *
- * `under` is what decides the tier, and it is compared against `TRANSIENT_DIRS` — the same list the
- * workspace gitignore writes, guarded there as an exhaustive partition of what `.reticle/` holds.
- * Anything else is MEMORY: flows, capsules, baselines, the contract, the intent ledger. Those are
- * small, durable and the reason the directory exists, so they are never evicted, never counted, and
- * must keep being written however full the disk is.
+ * `under` is what decides the tier, and it is looked up in the workspace tier table's `durability`
+ * axis — never in the gitignore's, which answers a different question. Anything not EVIDENCE is
+ * MEMORY: flows, capsules, baselines, the contract, the intent ledger. Those are small, durable
+ * and the reason the directory exists, so they are never evicted, never counted, and must keep
+ * being written however full the disk is.
  */
 export interface TierEntry {
   /** Absolute path, and what is removed. */
@@ -91,7 +92,7 @@ export function selectOverBudget(
   budgetBytes: number,
   live: ReadonlySet<string> = NO_LIVE_SESSIONS,
 ): string[] {
-  const evidence = entries.filter((entry) => TRANSIENT_DIRS.includes(entry.under));
+  const evidence = entries.filter((entry) => EVIDENCE_DIRS.includes(entry.under));
   // Live sessions still COUNT — their bytes are on disk and the budget is about the disk. They are
   // only excluded from the eviction list, so a session over budget on its own is left alone rather
   // than deleted under its own writer.
@@ -106,9 +107,6 @@ export function selectOverBudget(
   }
   return doomed;
 }
-
-/** Where refused feedback reports are copied. Named here because the writer lives in another area. */
-const FEEDBACK_SUBDIR = 'feedback';
 
 interface DatedDir {
   name: string;
@@ -173,8 +171,6 @@ async function pruneByRecency(
 export interface RetentionOptions {
   /** How many session directories survive the count bound. */
   retention?: number;
-  /** The TOTAL the evidence tier may occupy. */
-  budgetBytes?: number;
   /**
    * The ids of sessions that are STILL OPEN. Neither bound may evict one.
    *
@@ -195,6 +191,11 @@ export interface RetentionOptions {
  * so a stat/rm failure on one dir (or a missing sessions/ dir) is swallowed, never crashing a session.
  * Mirrors RunStore's amortized pruning; run on daemon start and at the end of every session.
  *
+ * The COUNT bound only. This used to sweep the tier total as well, from when it was the single
+ * sweep both call sites used; `pruneWorkspace` is that single place now and runs the budget last,
+ * on purpose, so the leftover call here was a second walk of every evidence entry on every teardown
+ * — and it ran FIRST, sizing everything the counts were about to delete anyway.
+ *
  * An open session is excluded from BOTH bounds — see `RetentionOptions.live`.
  *
  * ponytail: excluded via `keep`, so an open session is not COUNTED toward the retention cap either.
@@ -209,9 +210,6 @@ export async function pruneSessions(
   const live = options.live ?? NO_LIVE_SESSIONS;
   const retention = options.retention ?? DEFAULT_SESSION_RETENTION;
   await pruneByRecency(fs, reticleDirPaths(root).sessions, retention, (name) => !live.has(name));
-  // The tier total is swept from here because this is the one sweep that runs on BOTH the daemon's
-  // start path and the end of every session, and the end of a session is when the bytes arrive.
-  await pruneEvidenceBudget(fs, root, options.budgetBytes ?? DEFAULT_EVIDENCE_BUDGET_BYTES, live);
 }
 
 /**
@@ -289,7 +287,7 @@ async function sizeOf(fs: FileSystemPort, path: string): Promise<number> {
  */
 async function collectEvidence(fs: FileSystemPort, root: string): Promise<TierEntry[]> {
   const entries: TierEntry[] = [];
-  for (const under of TRANSIENT_DIRS) {
+  for (const under of EVIDENCE_DIRS) {
     const isVisual = ReticleDir.VISUAL_SUBDIR === under;
     const dirs = isVisual ? await visualDirs(fs, root) : [join(root, under)];
     for (const dir of dirs) {
@@ -358,5 +356,5 @@ export async function pruneFeedback(
   root: string,
   retention: number = DEFAULT_FEEDBACK_RETENTION,
 ): Promise<void> {
-  await pruneByRecency(fs, join(root, FEEDBACK_SUBDIR), retention);
+  await pruneByRecency(fs, join(root, ReticleDir.FEEDBACK_SUBDIR), retention);
 }

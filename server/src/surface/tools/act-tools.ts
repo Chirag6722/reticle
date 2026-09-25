@@ -73,10 +73,6 @@ import {
   declaredExpectations,
   declaresBodyIndependentChannel,
 } from '@reticlehq/engine/question/declared.js';
-import {
-  readsDomState,
-  alreadyTrueHiddenMatch as alreadyTrueHiddenMatchOf,
-} from '@reticlehq/engine/evidence/already-true.js';
 import { describeWaitTarget, namedNetIsInFlight } from '@reticlehq/engine/evidence/unsettled.js';
 import { saveFailedAssertCapsule } from './act-capsule.js';
 import { blastRadius, buildDivergenceCapsule, wireCapsule } from '@/judgement/capsule/capsule.js';
@@ -98,7 +94,8 @@ import {
   provenExpectedLinks,
   PredicateSchema,
 } from '@reticlehq/engine/question/predicate/predicate.js';
-import { healthEnvelope, refuseIfThrottled } from '@/portal/session/session-health.js';
+import { sessionVerdictFacts } from '@/portal/session/session-verdict-facts.js';
+import { currentOf, healthEnvelope, refuseIfThrottled } from '@/portal/session/session-health.js';
 import {
   pausedShortCircuit,
   pausedOutputShape,
@@ -115,6 +112,7 @@ import { asActionType, gradeOf } from './act/act-helpers.js';
 import { resolveActTarget } from './act/act-target.js';
 import { tryRealInput, rewriteUploadArgs, HOVER_NEEDS_POINTER_MSG } from './real-input-attempt.js';
 import { gradeOfPredicate } from './assert/assert-grade.js';
+import { readAlreadyTrue } from './act/already-true.js';
 
 /**
  * Narrow the wire's `action` to a real ActionType, or undefined.
@@ -556,24 +554,11 @@ export const ACT_TOOLS: ToolDef[] = [
       // A verdict that lives only in the response lives only in the agent's context window, which is
       // exactly the copy a compaction destroys — see runs/run-context.ts.
       let verdictEffect: JournalVerdictEffect | undefined;
-      // Was the declared consequence ALREADY TRUE? Only asked for predicates that read live DOM
-      // state — event-based ones are floored at this act's cursor and cannot be satisfied by the
-      // past, so they need no pre-check and pay nothing. One extra query, on the path where a green
-      // is otherwise unfalsifiable. See engine/src/evidence/already-true.ts.
-      const alreadyTruePrecheck =
-        until !== undefined && readsDomState(until)
-          ? await evaluatePredicate(session, until, since, false)
-          : undefined;
-      const alreadyTrue = alreadyTruePrecheck?.pass ?? false;
+      // Was the consequence ALREADY TRUE, and what did that reading say? See act/already-true.ts.
+      const { alreadyTrue, alreadyTrueHiddenMatch, alreadyTrueEvidence, baselines } =
+        await readAlreadyTrue(session, until, since);
       // Same as the ACT handler: the route this step RAN on, before the action can move the app.
       const routeBeforeWait = pathOf(session.url);
-      // #889: the pre-check evidence is already in hand — cheap to also ask whether that match was
-      // against something hidden, so the already_true message can name it instead of leaving the
-      // agent to re-derive "was this actually showing?" from nothing.
-      const alreadyTrueHiddenMatch =
-        alreadyTrue && until !== undefined
-          ? alreadyTrueHiddenMatchOf(until, alreadyTruePrecheck?.evidence)
-          : false;
       try {
         // actCommand is the single interception point for upload+path rewrite.
         //
@@ -610,8 +595,8 @@ export const ACT_TOOLS: ToolDef[] = [
           null === actResult
             ? { pass: false, observationLost: true }
             : timeout > 0
-              ? await waitForPredicate(session, until, timeout, since)
-              : await evaluatePredicate(session, until, since);
+              ? await waitForPredicate(session, until, timeout, since, baselines)
+              : await evaluatePredicate(session, until, since, true, baselines);
 
         // The SDK may have gone away mid-act — see act-observation.ts.
         const followed = await followLostObservation({
@@ -620,7 +605,7 @@ export const ACT_TOOLS: ToolDef[] = [
           verdict,
           timeout,
           predicateStarted,
-          reevaluate: (next, budget) => waitForPredicate(next, until, budget, 0),
+          reevaluate: (next, budget) => waitForPredicate(next, until, budget, 0, baselines),
         });
         if (followed.followed) since = 0;
         session = followed.session;
@@ -799,17 +784,17 @@ export const ACT_TOOLS: ToolDef[] = [
           currentDocumentId: session.currentDocumentId,
           currentEditEpoch: session.currentEditEpoch,
           appOrigin: session.url,
+          background: session.background,
         });
         // The single field an agent reads. Everything below it is the evidence it was derived from;
         // this is the only one that has to be interpreted, and now it interprets itself.
         const outcomePending = acceptedWriteLabels(windowEvents);
         const outcomeUnread = unreadWriteLabels(windowEvents);
-        const stillInFlight = inFlightRequestLabels(windowEvents);
+        const stillInFlight = inFlightRequestLabels(windowEvents, session.url, session.background);
         const decision = decideVerified({
           pass: verdict.pass,
-          // So the unread-body remedy can check it applies to THIS page. Threaded rather than
-          // looked up inside decideVerified, which is pure and has no session.
-          ...(session.sdkVersion === undefined ? {} : { sdkVersion: session.sdkVersion }),
+          // Threaded rather than looked up: decideVerified is pure and has no session.
+          ...sessionVerdictFacts(session),
           // The caller NAMED the consequence rather than defaulting to "wait for idle". A
           // declaration made before the action is what this tool sells, and idle-settlement was
           // overriding it — see `declaredConsequence`. An explicit `{ kind: "settled" }` is not a
@@ -926,6 +911,16 @@ export const ACT_TOOLS: ToolDef[] = [
           // which is why the two are recorded apart rather than assumed alike.
           declaredBeforeActing: true,
           grade: gradeOfPredicate(until),
+          // What the declared consequence READ. The run fold has only the journal, so a kind absent
+          // here was being invented there as `element`. Same field, same reason, on the assert path.
+          kind: until.kind,
+          // The deciding clause, kept — and it was NOT, on this path, the commonest one. `unknown`
+          // alone cannot tell an outcome that has not arrived from a capture that could not be
+          // read, so a fold over the journal saw a verdict it could not attribute, and the
+          // attribution is the only part of an `unknown` a reader can act on. The comment above
+          // says "same field, same reason, on the assert path" and was half true. Found by the
+          // session gap summary, whose `undecidedBy` was empty for every unknown this tool made.
+          reason: decision.verifiedReason,
         };
         // Recorded on the session, so a later "am I done?" can answer with what is STILL missing
         // rather than with everything that was ever missing. An empty list closes a gap, which is
@@ -933,6 +928,8 @@ export const ACT_TOOLS: ToolDef[] = [
         noteSessionGaps(session, gaps);
         return withControl(session, {
           ...decision,
+          // WHAT was already true, not only that something was (4.1) — see act/already-true.ts.
+          ...(alreadyTrueEvidence === undefined ? {} : { alreadyTrueEvidence }),
           // An unobserved act has no effect to report, and inventing an empty one would read as
           // "the page did nothing" — a claim about the app, from a call that never saw it.
           ...(null === actResult ? {} : { effect: leanActResult(actResult.result) }),
@@ -982,7 +979,7 @@ export const ACT_TOOLS: ToolDef[] = [
           ...(0 === greenRadius.length ? {} : { blastRadius: greenRadius }),
           since,
           ...(session.id === actedSessionId ? {} : { sessionId: session.id }),
-          ...healthEnvelope(session),
+          ...healthEnvelope(currentOf(deps.sessions, session)),
         });
       } finally {
         acted.finishAction(

@@ -591,7 +591,46 @@ describe('predicate engine', () => {
       { kind: 'element', query: { text: 'Ready' } },
       100,
     );
-    expect(result).toEqual({ pass: false, failureReason: 'session disconnected' });
+    expect(result).toMatchObject({ pass: false, failureReason: 'session disconnected' });
+    expect(result.inconclusive).toContain('session disconnected');
+  });
+
+  /**
+   * Reported from the field: `reticle_assert` returned `verified: no / assertion_failed` because the
+   * `match` command timed out after 8000ms on a live, throttled tab. The same response said the page
+   * was alive. The page did not ANSWER; nothing was read and found absent. A read that never came
+   * back is "could not tell", which the verdict rule already turns into unknown.
+   */
+  /**
+   * Driven: `reticle_assert { timeout_ms: 3000 }` against a frozen tab answered after 8s, because
+   * each page command carried its own fixed timeout. The caller's budget is the budget.
+   */
+  it('gives every page read no more time than the wait has left', async () => {
+    const asked: number[] = [];
+    const session: PredicateSession = {
+      command: (_name, _args, timeoutMs) => {
+        asked.push(timeoutMs ?? Number.POSITIVE_INFINITY);
+        return Promise.reject(new Error('command timed out'));
+      },
+      eventsSince: () => [],
+      onEvent: () => () => undefined,
+      elapsed: () => 0,
+    };
+    await waitForPredicate(session, { kind: 'text', contains: 'Saved' }, 3_000);
+    expect(asked.length).toBeGreaterThan(0);
+    expect(Math.max(...asked)).toBeLessThanOrEqual(3_000);
+  });
+
+  it('a command the page never answered is inconclusive, never a failed consequence', async () => {
+    const session: PredicateSession = {
+      command: () => Promise.reject(new Error("command 'match' timed out after 8000ms")),
+      eventsSince: () => [],
+      onEvent: () => () => undefined,
+      elapsed: () => 0,
+    };
+    const result = await waitForPredicate(session, { kind: 'text', contains: 'Saved' }, 100);
+    expect(result.pass).toBe(false);
+    expect(result.inconclusive).toContain('timed out');
   });
 
   it('propagates the STRUCTURED cause (observed/expected/assertion) on a timed-out wait', async () => {
@@ -726,6 +765,64 @@ describe('a throttled tab timeout is not a missing render', () => {
     expect(result.pass).toBe(true);
   });
 
+  /*
+   * The sharpest form of the throttle complaint, and the most-reported condition in the whole field
+   * export (#1004): a verdict that contradicts its own evidence inside ONE evaluation.
+   *
+   * Reported verbatim: "A negative arm inside `allOf` was graded 'unknown / this tab is throttled
+   * and has not rendered' in the SAME evaluation where three sibling arms returned rendered,
+   * visible, inViewport elements."
+   *
+   * If a sibling arm SAW an element, the tab rendered. The starved-tab caveat exists because a
+   * negative reading on a starved tab may mean "I could not look" - and the sibling is direct proof
+   * that looking worked. Applying it anyway turns a real product failure into `unknown`, which is
+   * what an agent re-drives or walks away from, so the defect it was holding proof of never gets
+   * reported.
+   *
+   * Composites used to fall through to "keep the caveat" on purpose, as the conservative half of a
+   * trade: an over-cautious `unknown` costs a re-drive, a missing one costs a wrong verdict. That
+   * reasoning is right where nothing is known about the render, and this is the case where
+   * something IS known.
+   */
+  it('does not call an arm starved when a sibling arm saw a rendered element', async () => {
+    const session = new ThrottledSession([], (query) => {
+      const text = (query as { text?: string }).text ?? '';
+      // Three arms find their element; the fourth genuinely does not.
+      const found = 'Missing' !== text;
+      return { matched: found, count: found ? 1 : 0, elements: [] };
+    });
+
+    const result = await evaluatePredicate(session, {
+      kind: 'allOf',
+      predicates: [
+        { kind: 'element', query: { text: 'Rendered' } },
+        { kind: 'element', query: { text: 'Visible' } },
+        { kind: 'element', query: { text: 'InViewport' } },
+        { kind: 'element', query: { text: 'Missing' } },
+      ],
+    });
+
+    expect(result.pass, 'one arm really did not match').toBe(false);
+    expect(
+      result.inconclusive,
+      'three siblings saw elements, so the tab rendered — this is a product failure, not a starved read',
+    ).toBeUndefined();
+  });
+
+  /* The trade is unchanged where nothing was seen: every arm missed, so the caveat still holds. */
+  it('still calls the composite starved when NO arm saw anything', async () => {
+    const session = new ThrottledSession([]);
+    const result = await evaluatePredicate(session, {
+      kind: 'allOf',
+      predicates: [
+        { kind: 'element', query: { text: 'One' } },
+        { kind: 'element', query: { text: 'Two' } },
+      ],
+    });
+    expect(result.pass).toBe(false);
+    expect(result.inconclusive).toBe(THROTTLED_STARVED_NOTE);
+  });
+
   it('a PASSING wait on a throttled tab is not annotated', async () => {
     const session = new ThrottledSession([], () => ({
       matched: true,
@@ -739,6 +836,94 @@ describe('a throttled tab timeout is not a missing render', () => {
     );
     expect(result.pass).toBe(true);
     expect(result.inconclusive).toBeUndefined();
+  });
+
+  /**
+   * The same polarity bug, one nesting level up — where it survived the first fix.
+   *
+   * A clause is annotated before its composite ever sees it, so an `absent: true` clause that
+   * matched arrives at `allOf` correctly graded as a real failure. The composite then asked the
+   * question a second time, knew only that something had failed, and stamped the starved-tab
+   * caveat back on. Wrapping the reported assertion in a conjunction — which is what asserting two
+   * things about a page looks like — was enough to put the `unknown` back.
+   */
+  it('an allOf whose absence clause FOUND matches is a product failure, not a starved read', async () => {
+    const session = new ThrottledSession([], () => ({ matched: true, count: 13, elements: [] }));
+    const result = await evaluatePredicate(session, {
+      kind: 'allOf',
+      predicates: [{ kind: 'element', query: { text: 'ProgrammingError' }, absent: true }],
+    });
+    expect(result.pass, 'the absence clause matched, so the conjunction is false').toBe(false);
+    expect(
+      result.inconclusive,
+      'the matches were SEEN — wrapping the clause in an allOf cannot unsee them',
+    ).toBeUndefined();
+  });
+
+  it('an anyOf of absence clauses that all FOUND matches is a product failure too', async () => {
+    // `anyOf` reaches a readable failure only when NO clause was unreadable, so every clause failed
+    // by having seen something. There is nothing starved about that answer.
+    const session = new ThrottledSession([], () => ({ matched: true, count: 13, elements: [] }));
+    const result = await evaluatePredicate(session, {
+      kind: 'anyOf',
+      predicates: [
+        { kind: 'element', query: { text: 'ProgrammingError' }, absent: true },
+        { kind: 'element', query: { text: 'Traceback' }, absent: true },
+      ],
+    });
+    expect(result.pass).toBe(false);
+    expect(result.inconclusive).toBeUndefined();
+  });
+
+  it('an allOf whose clause simply was not found is still inconclusive', async () => {
+    // The other half, and the reason none of this is a blanket exemption: here the clause failed by
+    // NOT having seen something, it is annotated as a clause, and `unreadableComposite` carries that
+    // out through the conjunction. Deferring to the clauses means deferring to this one too.
+    const session = new ThrottledSession([], () => ({ matched: false, count: 0, elements: [] }));
+    const result = await evaluatePredicate(session, {
+      kind: 'allOf',
+      predicates: [{ kind: 'element', query: { text: 'Configuration' } }],
+    });
+    expect(result.pass).toBe(false);
+    expect(result.inconclusive).toBe(THROTTLED_STARVED_NOTE);
+  });
+
+  it('a mixed allOf is decided by the clause that actually failed', async () => {
+    // An absence clause that matched, beside a presence clause that could not be read. `allOf`
+    // already prefers the readable failure — "a clause that genuinely failed OUTRANKS one nobody
+    // could read" — and the starved-tab caveat has to follow that same choice rather than reinstate
+    // the clause allOf deliberately set aside.
+    const session = new ThrottledSession([], (q) =>
+      'ProgrammingError' === q?.text
+        ? { matched: true, count: 13, elements: [] }
+        : { matched: false, count: 0, elements: [] },
+    );
+    const result = await evaluatePredicate(session, {
+      kind: 'allOf',
+      predicates: [
+        { kind: 'element', query: { text: 'ProgrammingError' }, absent: true },
+        { kind: 'element', query: { text: 'Configuration' } },
+      ],
+    });
+    expect(result.pass).toBe(false);
+    expect(result.inconclusive).toBeUndefined();
+  });
+
+  it('a not-wrapped composite keeps the caveat, because no clause verdict answers for it', async () => {
+    // `not` is the one composite that is NOT deferred to its child: it fails when the child PASSED,
+    // and a passing child is never annotated, so there is no prior decision to inherit. Here the
+    // inner allOf passes by NOT having seen anything, which is exactly the reading a starved tab
+    // cannot be trusted to have made.
+    const session = new ThrottledSession([], () => ({ matched: false, count: 0, elements: [] }));
+    const result = await evaluatePredicate(session, {
+      kind: 'not',
+      predicate: {
+        kind: 'allOf',
+        predicates: [{ kind: 'element', query: { text: 'ProgrammingError' }, absent: true }],
+      },
+    });
+    expect(result.pass).toBe(false);
+    expect(result.inconclusive).toBe(THROTTLED_STARVED_NOTE);
   });
 
   it('an unthrottled timeout still looks like a near-miss, not a starved tab', async () => {

@@ -19,6 +19,8 @@ import {
 
 const TIMEOUT_FLAG = '--timeout';
 const STORAGE_STATE_FLAG = '--storage-state';
+/** The same predicate, read from a file, which no shell can mangle. See `parseExpect`. */
+const EXPECT_FILE_FLAG = '--expect-file';
 const SESSION_ID_FLAG = '--session-id';
 
 /**
@@ -55,6 +57,8 @@ export type VerifySuffix =
       storageState?: string;
       sessionId?: string;
       expect?: unknown;
+      /** A path to read the predicate from, when `--expect-file` was used instead of `--expect`. */
+      expectFile?: string;
       explore?: boolean;
       persona?: string;
       select?: string[];
@@ -66,6 +70,53 @@ export type VerifySuffix =
  * [--session-id <id>]`. The first non-flag token is the preview URL. `defaultPort` is already
  * env + `.reticle.json` + 4400.
  */
+/**
+ * Read a predicate off the command line, allowing for what a Windows shell did to it on the way.
+ *
+ * `cmd.exe` does not treat `'` as a quote character, so the command every doc and README shows
+ * arrives with LITERAL single quotes around the JSON. That is unambiguous, so it is undone: a
+ * matching pair, and only when what is inside then parses.
+ *
+ * PowerShell calling a native executable strips the INNER double quotes instead, and `{kind:signal}`
+ * is not JSON and cannot be repaired without guessing which bare words were keys and which were
+ * string values. Guessing there would assert something the caller did not write, so it is named
+ * instead — with the two forms that do work, because a predicate that does not parse produces NO
+ * verdict at all, which is the worst of the three possible outcomes.
+ */
+function parseExpect(
+  raw: string,
+): { kind: 'ok'; value: unknown } | { kind: 'error'; message: string } {
+  const unwrapped =
+    raw.length > 1 && raw.startsWith("'") && raw.endsWith("'") ? raw.slice(1, -1) : raw;
+  try {
+    return { kind: 'ok', value: JSON.parse(unwrapped) };
+  } catch {
+    if (looksQuoteStripped(unwrapped)) {
+      return {
+        kind: 'error',
+        message:
+          `${EXPECT_FLAG} received ${unwrapped}, which has had its double quotes removed — that is ` +
+          'PowerShell passing an argument to a native program, not a problem with the predicate. ' +
+          `Use ${EXPECT_FILE_FLAG} <path> (no quoting at all), or escape them: ` +
+          `${EXPECT_FLAG} "{\\"kind\\":\\"signal\\",\\"name\\":\\"order:placed\\"}"`,
+      };
+    }
+    // Named as a JSON problem rather than an unknown argument: the value IS the predicate, and
+    // "unknown argument" would send the reader looking at the flag instead of at their quoting.
+    return {
+      kind: 'error',
+      message: `${EXPECT_FLAG} needs a JSON predicate; could not parse: ${unwrapped}`,
+    };
+  }
+}
+
+/** A JSON object with every double quote gone: braces, a colon, and not one `"` anywhere. */
+function looksQuoteStripped(value: string): boolean {
+  return (
+    value.startsWith('{') && value.endsWith('}') && value.includes(':') && !value.includes('"')
+  );
+}
+
 export function parseVerifySuffix(args: string[], defaultPort: number): VerifySuffix {
   let headless = true;
   let url: string | undefined;
@@ -73,6 +124,7 @@ export function parseVerifySuffix(args: string[], defaultPort: number): VerifySu
   let storageState: string | undefined;
   let sessionId: string | undefined;
   let expect: unknown;
+  let expectFile: string | undefined;
   let explore = false;
   let persona: string | undefined;
   const select: string[] = [];
@@ -128,16 +180,14 @@ export function parseVerifySuffix(args: string[], defaultPort: number): VerifySu
       i++;
       const v = args[i];
       if (v === undefined) return missingValue(EXPECT_FLAG);
-      try {
-        expect = JSON.parse(v);
-      } catch {
-        // Named as a JSON problem rather than an unknown argument: the value IS the predicate, and
-        // "unknown argument" would send the reader looking at the flag instead of at their quoting.
-        return {
-          kind: 'error',
-          message: `${EXPECT_FLAG} needs a JSON predicate; could not parse: ${v}`,
-        };
-      }
+      const read = parseExpect(v);
+      if ('error' === read.kind) return read;
+      expect = read.value;
+    } else if (arg === EXPECT_FILE_FLAG) {
+      i++;
+      const v = args[i];
+      if (v === undefined) return missingValue(EXPECT_FILE_FLAG);
+      expectFile = v;
     } else if (arg.startsWith('--')) {
       return unknownArgument(arg);
     } else if (url === undefined) {
@@ -148,9 +198,18 @@ export function parseVerifySuffix(args: string[], defaultPort: number): VerifySu
     i++;
   }
   if (url === undefined) return missingOperand(VERIFY_COMMAND, 'a url');
+  // Two ways to say the same thing, and no way to say two different things. Preferring one
+  // silently is how a run asserts something the person did not write.
+  if (expect !== undefined && expectFile !== undefined) {
+    return {
+      kind: 'error',
+      message: `${EXPECT_FLAG} and ${EXPECT_FILE_FLAG} both name the predicate; pass one`,
+    };
+  }
   // Refused here, where nothing has been bound and no browser exists yet, because the damage this
-  // pair does is a verdict taken against the wrong user.
-  if (expect !== undefined && storageState !== undefined) {
+  // pair does is a verdict taken against the wrong user. A predicate from a file is the same
+  // predicate, so it is refused the same way.
+  if ((expect !== undefined || expectFile !== undefined) && storageState !== undefined) {
     return { kind: 'error', message: MSG_EXPECT_WITH_STORAGE_STATE };
   }
   return {
@@ -159,6 +218,7 @@ export function parseVerifySuffix(args: string[], defaultPort: number): VerifySu
     headless,
     port,
     ...(expect !== undefined ? { expect } : {}),
+    ...(expectFile !== undefined ? { expectFile } : {}),
     ...(timeoutMs !== undefined ? { timeoutMs } : {}),
     ...(storageState !== undefined ? { storageState } : {}),
     ...(sessionId !== undefined ? { sessionId } : {}),

@@ -46,9 +46,9 @@ const SERVER_SRC = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 /** Every use of the daemon's own root that is DELIBERATE, with the count pinned and the reason. */
 const DELIBERATE: Readonly<Record<string, { uses: number; why: string }>> = {
-  'index.ts': {
-    uses: 5,
-    why: 'The daemon wiring itself: it builds the resolver from its own root and prunes its own tree. Per-session routing happens inside the handlers it registers.',
+  'wire-journal.ts': {
+    uses: 3,
+    why: 'The daemon wiring itself: it builds the resolver from its own root and prunes its own tree. Per-session routing happens inside the handlers it registers. Lowered from 5 when the three inline prune calls became one workspace sweep — the daemon now names its own root once for maintenance instead of three times, which is the direction this roster exists to push. Split out of `index.ts` when the composition root reached the 1000-line backstop; the uses moved with the code and none were added.',
   },
   'memory/project/session-root.ts': {
     uses: 1,
@@ -67,8 +67,8 @@ const DELIBERATE: Readonly<Record<string, { uses: number; why: string }>> = {
     why: 'Fallback for a session whose project could not be resolved — `session.artifactRoot` wins when it exists.',
   },
   'memory/journal/session-end.ts': {
-    uses: 3,
-    why: 'The same fallback three times — ambient map, journal prune, run artifact — each written as `session.artifactRoot ?? deps.reticleRoot`.',
+    uses: 4,
+    why: 'The same fallback four times — ambient map, undriven-journal drop, workspace prune, run artifact — each written as `session.artifactRoot ?? deps.reticleRoot`. The fourth is the drop of a journal for a session that served no tool call, and it has to resolve the same root for the same reason the prune beside it does: teardown acts on the workspace the SESSION wrote into, never the daemon cwd.',
   },
   'surface/tools/invoke-tool.ts': {
     uses: 2,

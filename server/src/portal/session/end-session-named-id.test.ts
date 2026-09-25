@@ -31,6 +31,8 @@ function depsWithSuccessor(): { deps: unknown; ended: string[] } {
     setState: (state: SessionState) => {
       if (SessionState.ENDED === state) ended.push(SUCCESSOR);
     },
+    // Ending a session reports what it proved, read from its journal.
+    readJournalActions: () => Promise.resolve([]),
   };
   return {
     ended,

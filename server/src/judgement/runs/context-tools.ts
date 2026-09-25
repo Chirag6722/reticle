@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { type JournalAction, type ReticleEvent } from '@reticlehq/core';
 import { runContextFor } from './artifact/run-context.js';
+import { gapSummary } from './artifact/gap-summary.js';
 import { openSessionIntents } from '@/memory/intent/open-intents.js';
 import { ReticleTool } from '@reticlehq/core';
 import { sessionIdShape } from '@/surface/tools/tool-kit.js';
@@ -36,10 +37,16 @@ const CONTEXT_OUTPUT_SCHEMA = {
     .describe(
       'Claims a verdict already settled, each `{ claim, verified, source?, doc?, epoch? }`. Read this before re-driving something: re-proving it is slow, and assuming it is a false green.',
     ),
+  gap: z
+    .object({})
+    .passthrough()
+    .describe(
+      'The distance between what was claimed and what held, over THIS session: `{ claims, held, failed, undecided, nothingToProve, undecidedBy, falseGreensCaught, failures }`. `undecidedBy` says WHO can act on each unknown — environment (wait), code (fix the app), harness (fix Reticle or the call), could-not-see (look again). Folded from the same journal as everything else here, so it cannot disagree with it.',
+    ),
   remaining: z
     .array(z.string())
     .describe(
-      'The intents from .reticle/intent.json that no verdict has discharged. Derived from the ledger, never a guess at what you meant to do next.',
+      'The intents from .reticle/intent/ that no verdict has discharged. Derived from the ledger, never a guess at what you meant to do next.',
     ),
 };
 
@@ -78,14 +85,27 @@ export const CONTEXT_TOOLS: ToolDef[] = [
   {
     name: ReticleTool.CONTEXT,
     description:
-      'What THIS run has already established, so you do not rediscover it. Call it when your own copy is gone: right after a compaction, at the top of a fresh sub-agent, or at the start of a turn you did not begin. Returns `established` (what Reticle OBSERVED, with the source file:line where one was reported), `proven` (claims a verdict already settled, so you neither re-prove them nor assume them) and `remaining` (the intents from .reticle/intent.json that nothing has discharged). It is a FOLD over the journal, never a second store, so it cannot disagree with the ledger. Bounded and superseding rather than accumulating, and anything observed under a replaced document or before your last source edit is already dropped rather than presented as current. Only what Reticle observed goes in: it never reports what you intended or believed.',
+      'What THIS run has already established, so you do not rediscover it. Call it when your own copy is gone: right after a compaction, at the top of a fresh sub-agent, or at the start of a turn you did not begin. Returns `established` (what Reticle OBSERVED, with the source file:line where one was reported), `proven` (claims a verdict already settled, so you neither re-prove them nor assume them) and `remaining` (the intents from .reticle/intent/ that nothing has discharged). It is a FOLD over the journal, never a second store, so it cannot disagree with the ledger. Bounded and superseding rather than accumulating, and anything observed under a replaced document or before your last source edit is already dropped rather than presented as current. Only what Reticle observed goes in: it never reports what you intended or believed.',
     example: {},
     inputSchema: { ...sessionIdShape },
     outputSchema: CONTEXT_OUTPUT_SCHEMA,
     handler: async (deps: ToolDeps, args) => {
       const sessionId = asString(args['sessionId']);
       const evidence = await evidenceFor(deps, sessionId);
-      return runContextFor({ ...evidence, intents: await openSessionIntents(deps, sessionId) });
+      const context = runContextFor({
+        ...evidence,
+        intents: await openSessionIntents(deps, sessionId),
+      });
+      /*
+       * The gap rides on `reticle_context` rather than on a tool of its own.
+       *
+       * This is the one call an agent makes when it needs to know what the run has already settled,
+       * which is exactly the moment "and what did NOT settle, and whose problem each of those is"
+       * is worth reading. It is folded from the same journal the rest of this response is folded
+       * from, so it costs one more pass over an array already in hand and cannot disagree with the
+       * `proven` list beside it.
+       */
+      return { ...context, gap: gapSummary(evidence.actions) };
     },
   },
 ];

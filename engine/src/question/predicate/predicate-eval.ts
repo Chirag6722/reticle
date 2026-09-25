@@ -278,6 +278,17 @@ const DOCUMENT_INITIATORS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Whether a request was a subresource the DOCUMENT fetched (script, stylesheet, image…), as the
+ * resource-timing observer stamps them, rather than one the app sent through fetch, XHR, a beacon or
+ * IPC. The capsule's blast radius uses it to keep a page load out of "what this action also did".
+ */
+export function isDocumentInitiated(event: ReticleEvent): boolean {
+  if (event.type !== EventType.NET_REQUEST) return false;
+  const initiator = str(event.data['initiator']);
+  return initiator !== undefined && DOCUMENT_INITIATORS.has(initiator);
+}
+
+/**
  * Did the observer actually report a document-initiated load?
  *
  * This is the gate on the unobserved-channel downgrade above. Once subresource observation landed,
@@ -289,11 +300,7 @@ const DOCUMENT_INITIATORS: ReadonlySet<string> = new Set([
  * document-initiated record anywhere in the window proves the channel works.
  */
 function observerSawSubresources(events: ReticleEvent[]): boolean {
-  return events.some((e) => {
-    if (e.type !== EventType.NET_REQUEST) return false;
-    const initiator = str(e.data['initiator']);
-    return initiator !== undefined && DOCUMENT_INITIATORS.has(initiator);
-  });
+  return events.some(isDocumentInitiated);
 }
 
 /** The sentence both zero-match branches hand to `inconclusive`. */
@@ -509,7 +516,7 @@ export function evalNet(
   if (truncatedBody !== undefined && 0 === matches.length) {
     return {
       pass: false,
-      inconclusive: `a call matching ${describeNetFilter(p)} was answered with a body that was TRUNCATED before it was recorded, and ${wantedBody(p)} is not in the part that was kept — so this is undecidable, not a failure. Raise the capture cap or assert on something inside the recorded prefix`,
+      inconclusive: `a call matching ${describeNetFilter(p)} was answered with a body that was TRUNCATED before it was recorded, and ${wantedBody(p)} is not in the part that was kept — so this is undecidable, not a failure. The cap is per-body and set where the app calls connect(): \`reticle.connect({ captureNetworkBodies: true, networkBodyMaxChars: 65536 })\`, or for the Vite plugin \`reticle({ networkBodyMaxChars: 65536 })\` / VITE_RETICLE_BODY_MAX_CHARS=65536 (default 8192, max 262144). An SDK older than this daemon ignores the option; a version skew on the session says so. Raise it past this response's size and re-run, or assert on something inside the recorded prefix`,
       observed: `the first ${String(truncatedBody.length)} characters of a truncated response body ${JSON.stringify(clipBody(truncatedBody))}`,
       expected: `a response body carrying ${wantedBody(p)}`,
       assertion: 'net.bodyContains',

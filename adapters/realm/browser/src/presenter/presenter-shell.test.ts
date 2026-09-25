@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { Presenter } from './presenter.js';
+import { DISCOVERY_CALL_URL } from '@reticlehq/core';
 import { HudShell } from './presenter-shell.js';
 import { asSyntheticInput } from '@/actions/synthetic/synthetic-input.js';
 import { Annotator } from '@/review/annotator.js';
@@ -38,6 +39,23 @@ describe('presenter HUD shell', { timeout: HUD_MOUNT_TIMEOUT_MS }, () => {
     expect(overlay?.getAttribute('data-reticle-chat'), 'chat opens with the HUD').toBe('1');
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     expect(overlay?.getAttribute('data-reticle-chat')).toBeNull();
+    p.destroy();
+  });
+  // The top carousel lives INSIDE the log's scroll container, first, so it takes no height from the
+  // panel and rows push it up. The log trims by row, so a full log must not delete it.
+  it('mounts the carousel first in the log, and keeps it there as rows arrive and are trimmed', () => {
+    document.body.innerHTML = '';
+    globalThis.sessionStorage.clear();
+    const p = new Presenter({ logMax: 3 });
+    p.mount();
+    const log = document.querySelector('[data-reticle-log]');
+    expect(log?.firstElementChild?.hasAttribute('data-reticle-carousel')).toBe(true);
+    expect(log?.querySelector('[data-reticle-talk-book]')?.getAttribute('href')).toBe(
+      DISCOVERY_CALL_URL,
+    );
+    for (let i = 0; i < 6; i += 1) p.log(LOG_KIND.ACT, `row ${String(i)}`);
+    expect(log?.firstElementChild?.hasAttribute('data-reticle-carousel')).toBe(true);
+    expect(log?.querySelectorAll('[data-reticle-log-row]')).toHaveLength(3);
     p.destroy();
   });
   it('keeps the toolbar expanded while agent chat is open', () => {

@@ -12,13 +12,16 @@ import {
 } from '@/detect/detect.js';
 import { installFailureHint } from '@/diagnose/install-hint.js';
 import { installRetries } from '@/diagnose/install-retries.js';
-import { claudeAddCommand, mcpManual } from '@/register/mcp.js';
+import { claudeAddCommand, claudeProjectMcpJson, mcpManual } from '@/register/mcp.js';
 import {
   mergeClientConfig,
   ClientMergeStatus,
   clientSnippet,
   clientSpec,
+  CLAUDE_PROJECT_CONFIG,
+  CLAUDE_PROJECT_SPEC,
   McpClient,
+  type ClientSpec,
 } from '@/register/mcp-clients.js';
 import {
   CLAUDE_COMMAND_PATH,
@@ -60,6 +63,7 @@ import { reticleConfigContent } from '@/patch/snippets.js';
 import { configWithInstallSource } from '@/project/install-source-config.js';
 import { containerisedStep, uiLibraryStep, webGlCanvasStep, windowsMcpNoteStep } from './notices.js';
 import { existingConfigProblem, projectIdOf, RETICLE_CONFIG_FILE } from '@/detect/existing-config.js';
+import { CLAUDE_SETTINGS_PATH, stopHookStep } from './stop-hook-step.js';
 
 // Re-exported: it moved to the module that reads it, and every existing importer says `plan.js`.
 export { RETICLE_CONFIG_FILE };
@@ -157,40 +161,52 @@ function claudeMcpStep(input: PlanInput): Step | null {
  * parse is reported with a paste-able block rather than overwritten, and everything else is written.
  */
 function otherClientSteps(input: PlanInput): Step[] {
-  const steps: Step[] = [];
-  for (const detected of input.detectedClients ?? []) {
-    const spec = clientSpec(detected.id);
-    const merged = mergeClientConfig(spec, detected.existing);
-    const title = `MCP server (${spec.label})`;
-    if (merged.status === ClientMergeStatus.ALREADY) {
-      steps.push({
-        title,
-        target: detected.configPath,
-        status: StepStatus.ALREADY,
-        detail: `reticle already registered with ${spec.label}`,
-      });
-      continue;
-    }
-    if (merged.status === ClientMergeStatus.MANUAL) {
-      // Either the file did not parse, or the format is one we refuse to edit blind (TOML). Both
-      // end the same way: say so, and hand over the exact block.
-      steps.push({
-        title,
-        target: detected.configPath,
-        status: StepStatus.MANUAL,
-        detail: `add this to ${detected.configPath} by hand:\n${clientSnippet(spec)}`,
-      });
-      continue;
-    }
-    steps.push({
+  return (input.detectedClients ?? []).map((detected) =>
+    clientStep(clientSpec(detected.id), detected.configPath, detected.existing),
+  );
+}
+
+/** One client's step: already-correct is left alone, an unparseable file gets a paste-able block. */
+function clientStep(spec: ClientSpec, configPath: string, existing: string | null): Step {
+  const merged = mergeClientConfig(spec, existing);
+  const title = `MCP server (${spec.label})`;
+  if (merged.status === ClientMergeStatus.ALREADY) {
+    return {
       title,
-      target: detected.configPath,
-      status: StepStatus.APPLY,
-      detail: `register reticle with ${spec.label}`,
-      write: { path: detected.configPath, content: merged.content },
-    });
+      target: configPath,
+      status: StepStatus.ALREADY,
+      detail: `reticle already registered with ${spec.label}`,
+    };
   }
-  return steps;
+  if (merged.status === ClientMergeStatus.MANUAL) {
+    // Either the file did not parse, or the format is one we refuse to edit blind (TOML). Both
+    // end the same way: say so, and hand over the exact block.
+    return {
+      title,
+      target: configPath,
+      status: StepStatus.MANUAL,
+      detail: `add this to ${configPath} by hand:\n${clientSnippet(spec)}`,
+    };
+  }
+  return {
+    title,
+    target: configPath,
+    status: StepStatus.APPLY,
+    detail: `register reticle with ${spec.label}`,
+    write: { path: configPath, content: merged.content },
+  };
+}
+
+/**
+ * Claude Code's project `.mcp.json`, written only when `init` runs inside Claude Code with no CLI on
+ * PATH (a VS Code extension session). There the reporter had to write this file by hand (#1071,
+ * #1078); anywhere else a `.mcp.json` is a file in somebody's repo for a client they may not use, so
+ * they get the notice instead.
+ */
+function claudeProjectStep(input: PlanInput): Step | null {
+  if (input.claudeCli || true !== input.insideClaudeCode) return null;
+  const path = agentFile(input, CLAUDE_PROJECT_CONFIG);
+  return clientStep(CLAUDE_PROJECT_SPEC, path, input.claudeProjectConfig ?? null);
 }
 
 /** One global registration per detected agent (Claude + Cursor). Falls back to a manual note. */
@@ -212,7 +228,12 @@ function mcpSteps(input: PlanInput): Step[] {
   // Claude and Cursor first (they have their own registration paths), then every other detected
   // client. A machine with Cursor AND Windsurf gets both — registering only the first one found is
   // how a user ends up with Reticle in the editor they were not using.
-  const steps = [...stepsForAgents(input, (a) => a.mcpStep), ...otherClientSteps(input)];
+  const claudeProject = claudeProjectStep(input);
+  const steps = [
+    ...stepsForAgents(input, (a) => a.mcpStep),
+    ...(null === claudeProject ? [] : [claudeProject]),
+    ...otherClientSteps(input),
+  ];
   if (0 === steps.length) {
     // No agent detected. mcpManual already carries the Windows cmd fallback — do not append it again.
     return [
@@ -223,6 +244,32 @@ function mcpSteps(input: PlanInput): Step[] {
         detail: mcpManual(),
       },
     ];
+  }
+  /*
+   * Claude Code never leaves the plan without a word (#1071).
+   *
+   * It is the only client detected by CLI-on-PATH rather than by its config, so inside a Claude Code
+   * VS Code extension session — where `claude` is not on PATH — it reads as absent while the user is
+   * sitting in it. `claudeMcpStep` then returned null, and the manual fallback below only fires when
+   * NO agent at all was found. With Gemini and Codex present, Claude Code vanished from the plan
+   * entirely and nothing said so. A step that disappears is exactly what the install gate's baseline
+   * diff exists to catch, and the plan is the one artifact a person reads to learn what init did.
+   *
+   * Only when something else WAS found. With nothing found, the generic note below already says how
+   * to register, so nothing has silently vanished — and leaving that path untouched keeps every
+   * pristine scaffold in the install baseline reading exactly as it did.
+   */
+  if (!input.claudeCli && null === claudeProject && steps.length > 0) {
+    steps.push({
+      title: CLAUDE_MCP_TITLE,
+      target: MCP_TARGET,
+      // NOTICE, not MANUAL. Nothing here FAILED and the reader may not use Claude Code at all, so
+      // this is something to know rather than work owed — and the install gate asserts zero `⚠`,
+      // which would turn an informational line into a gate failure on any machine that happens to
+      // have another agent's config. A notice prints in full exactly like a manual step.
+      status: StepStatus.NOTICE,
+      detail: `no \`claude\` on PATH, so it could not be registered from here. Inside a Claude Code VS Code extension session the CLI is genuinely absent while the editor is not — add ${claudeProjectMcpJson()}`,
+    });
   }
   const windowsNote = windowsMcpNoteStep(input);
   if (windowsNote !== null) steps.push(windowsNote);
@@ -509,6 +556,23 @@ function agentRuleSteps(input: PlanInput): Step[] {
  * trade — but only if the message says what to do about it.
  */
 
+/**
+ * Is this package already declared at the version we would pin?
+ *
+ * The caret is the point. `npm i -D pkg@3.2.0` WRITES `^3.2.0`, so on every later run the pinned
+ * `3.2.0` failed a string comparison against the range npm had just created, and init re-installed
+ * for ever. Only the two forms a package manager writes by itself are read - an exact version, and
+ * `^`/`~` over that same version.
+ *
+ * Everything else installs. A false "already" leaves somebody with no SDK and an install that
+ * claims to have run; a redundant install only costs time, so the unreadable cases go the safe way.
+ */
+function alreadyDeclared(declared: string | undefined, pinned: string | undefined): boolean {
+  if (declared === undefined) return false;
+  if (pinned === undefined || 0 === pinned.length) return true;
+  return declared === pinned || `^${pinned}` === declared || `~${pinned}` === declared;
+}
+
 function installStep(input: PlanInput): Step {
   const pm = input.detection.packageManager;
   const packages = pinnedPackages(
@@ -516,6 +580,26 @@ function installStep(input: PlanInput): Step {
     input.options.sdkVersion,
   );
   const command = installCommand(pm, packages);
+  /*
+   * A re-run over an already-wired project does NO dependency work.
+   *
+   * Reported from the field: `init` on an instrumented npm-workspaces project ran a pnpm dependency
+   * migration, which moved the existing `node_modules` aside and broke the dev server. Whatever
+   * manager gets chosen, the redundant install is the step that touches the tree — so the fix that
+   * matters is not running one that nothing needs. `init` is documented as idempotent; this is the
+   * step that was not.
+   */
+  const declared = input.detection.dependencies ?? {};
+  const version = input.options.sdkVersion;
+  const names = frameworkPackages(input.detection.framework, input.detection.uiLibrary);
+  if (names.length > 0 && names.every((n) => alreadyDeclared(declared[n], version))) {
+    return {
+      title: 'Install dependencies',
+      target: 'package.json',
+      status: StepStatus.ALREADY,
+      detail: `${names.join(', ')} already declared${version === undefined || 0 === version.length ? '' : ` at ${version}`}`,
+    };
+  }
   if (!input.options.install) {
     return {
       title: 'Install dependencies',
@@ -691,6 +775,9 @@ export function buildPlan(input: PlanInput): Plan {
     ...mcpSteps(input),
     ...agentRuleSteps(input),
     ...slashCommandSteps(input),
+    ...(true === input.hooks
+      ? [stopHookStep(agentFile(input, CLAUDE_SETTINGS_PATH), input.claudeSettingsContent)]
+      : []),
     ...uiLibraryStep(input),
     ...webGlCanvasStep(input),
     installStep(input),

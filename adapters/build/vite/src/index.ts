@@ -3,12 +3,8 @@ import { missingTokenWarning } from './token/missing-token.js';
 import { ensurePairingToken } from './token/ensure-token.js';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { transformSync } from '@babel/core';
-import reticleSource from '@reticlehq/babel-plugin';
 import {
-  RETICLE_DEFAULT_PORT,
   RETICLE_RENDER_PREHOOK,
-  bridgeWsUrl,
   ReticleDir,
   ReticleEnv,
   RETICLE_ROOT_GLOBAL,
@@ -17,7 +13,14 @@ import {
 import { resolveProjectId } from './project-id.js';
 import { discoverDaemonPort } from './discover-port.js';
 import { announceDevServer } from './announce.js';
-import { SVELTE_FILE, stampSvelte } from './svelte-source.js';
+import { stampSvelte } from './svelte-source.js';
+import {
+  ignoredFileNotice,
+  optsOutOfStamping,
+  shouldStamp,
+  shouldStampSvelte,
+  stamp,
+} from './stamping.js';
 import {
   resolvableChain,
   sdkPackageVersion,
@@ -31,6 +34,7 @@ import {
   RETICLE_DISABLED_STUB,
   isReticleDisabledWebBuild,
 } from './disabled-browser-stub.js';
+import { connectArgs } from './connect-args.js';
 
 import {
   createInjectionWatch,
@@ -53,12 +57,6 @@ const RETICLE_SENSOR = '@reticlehq/browser';
  * file it lives in.
  */
 export const RETICLE_TOKEN_GLOBAL = '__RETICLE_TOKEN__';
-
-/** Files we stamp with source info — JSX/TSX only. */
-const JSX_FILE = /\.[jt]sx$/;
-/** Rollup virtual-module ids start with a NUL byte; never transform those. */
-const VIRTUAL_PREFIX = '\0';
-const NODE_MODULES = 'node_modules';
 
 /**
  * The connect code is served as a real module (not an inline <script>) so that Vite's import
@@ -192,6 +190,20 @@ export interface ReticleVitePluginOptions {
    * Also settable as `VITE_RETICLE_CAPTURE_BODIES=1`.
    */
   captureNetworkBodies?: boolean;
+  /**
+   * Per-body character cap for captured bodies. Default 8192; clamped to [256, 262144].
+   *
+   * Reachable here for the reason `captureNetworkBodies` is: the plugin is the only `connect()`
+   * most apps ever have, so an SDK option the plugin cannot pass is an option that does not exist.
+   *
+   * Raise it to make a NEGATIVE `bodyContains` decidable -- a negation is checked over the whole
+   * payload, so on a list endpoint bigger than the cap it is permanently undecidable, and that is
+   * the class that proves "this dangerous field is absent from every row" (#799).
+   *
+   * Also settable as `VITE_RETICLE_BODY_MAX_CHARS=65536`, so one run can raise it without editing
+   * vite.config.
+   */
+  networkBodyMaxChars?: number;
   /**
    * Retain a FAILED request's response body even with `captureNetworkBodies` off. Default true.
    *
@@ -391,41 +403,6 @@ function isHtmlEntry(id: string, specifier: string | undefined, root: string | u
   return candidate.endsWith(target.startsWith('/') ? target : `/${target}`);
 }
 
-/** A module id we may stamp at all: not virtual, not a dependency. Extension decides which stamper. */
-function stampableId(id: string): string | null {
-  if (id.startsWith(VIRTUAL_PREFIX)) return null;
-  if (id.includes(NODE_MODULES)) return null;
-  // Strip any query suffix (?worker, ?raw,...) before matching the extension.
-  return id.split('?')[0] ?? id;
-}
-
-function shouldStamp(id: string): boolean {
-  const clean = stampableId(id);
-  return clean !== null && JSX_FILE.test(clean);
-}
-
-/** A `.svelte` single-file component, which needs the Svelte stamper rather than Babel. */
-function shouldStampSvelte(id: string): boolean {
-  const clean = stampableId(id);
-  return clean !== null && SVELTE_FILE.test(clean);
-}
-
-function stamp(code: string, id: string): { code: string; map: string | null } | null {
-  const out = transformSync(code, {
-    filename: id,
-    plugins: [reticleSource],
-    parserOpts: { plugins: ['jsx', 'typescript'] },
-    sourceMaps: true,
-    configFile: false,
-    babelrc: false,
-  });
-  if (out?.code === undefined || null === out.code) return null;
-  return {
-    code: out.code,
-    map: out.map === undefined || null === out.map ? null : JSON.stringify(out.map),
-  };
-}
-
 /**
  * Read the daemon's auto-provisioned pairing token (~/.reticle/pairing-token, or the
  * RETICLE_PAIRING_TOKEN_DIR override) so the served app can present it. Node-side only — a browser
@@ -457,56 +434,6 @@ function warnIfTokenMissing(token: string | undefined): string | undefined {
     console.warn(warning);
   }
   return token;
-}
-
-/** Build the `reticle.connect` argument literal — only includes keys the user set. */
-function connectArgs(options: ReticleVitePluginOptions): string {
-  const args: Record<string, string | number | boolean> = {};
-  const port = options.port ?? RETICLE_DEFAULT_PORT;
-  if (port !== RETICLE_DEFAULT_PORT) args['url'] = bridgeWsUrl(port);
-  if (options.session !== undefined) args['session'] = options.session;
-  if (options.projectId !== undefined) args['projectId'] = options.projectId;
-  if (options.token !== undefined) args['token'] = options.token;
-  // Passed as connect ARGUMENTS, not as a `define`. A define substitutes a bare identifier in the
-  // source it transforms; the SDK reads these as `globalThis[NAME]`, a dynamic lookup no define can
-  // ever reach — so defining them looked right, shipped, and did nothing. Baking them into the
-  // generated connect call is a literal in generated source: no bundler subtleties, works the same
-  // in dev and in a desktop build.
-  if (options.root !== undefined && options.root.length > 0) args['root'] = options.root;
-  if (options.sdkVersion !== undefined && options.sdkVersion.length > 0) {
-    args['sdkVersion'] = options.sdkVersion;
-  }
-  // A desktop renderer is a production build by construction; without this the SDK's prod backstop
-  // refuses to connect and the app is silently uninstrumented.
-  if (true === options.desktop) args['allowInProduction'] = true;
-  // Env wins nothing — it only turns the flag ON, so a config that never set it can still be
-  // switched on for one debugging session without editing vite.config and restarting the mental
-  // model with it.
-  if (true === options.captureNetworkBodies || '1' === process.env['VITE_RETICLE_CAPTURE_BODIES']) {
-    args['captureNetworkBodies'] = true;
-  }
-  // Only the OPT-OUT is announced, never the default. The daemon reads absence as "unknown", so
-  // sending `true` here would say nothing it does not already assume — while sending `false` is the
-  // one fact a red verdict needs to stop prescribing a plugin this project has deliberately muted.
-  if (false === options.sourceMapping) args['sourceMapping'] = false;
-  // The one option that defaults ON, so the env var and the config flag both DISABLE rather than
-  // enable. Emitted only when switched off; the default stays implicit in the SDK.
-  if (false === options.captureErrorBodies || '1' === process.env['VITE_RETICLE_NO_ERROR_BODIES']) {
-    args['captureErrorBodies'] = false;
-  }
-  // Same shape, same reason. Off unless asked for, in a config or for one session.
-  if (true === options.exposePresenter || '1' === process.env['VITE_RETICLE_EXPOSE_PRESENTER']) {
-    args['exposePresenter'] = true;
-  }
-  // Same shape, same reason: without it an app that cannot be served on localhost has no way to
-  // reach the SDK option at all. The pairing token still applies — see the option's docstring.
-  if (
-    true === options.allowNonLocalhost ||
-    '1' === process.env['VITE_RETICLE_ALLOW_NON_LOCALHOST']
-  ) {
-    args['allowNonLocalhost'] = true;
-  }
-  return Object.keys(args).length > 0 ? JSON.stringify(args) : '';
 }
 
 /** The body of the connect module — real imports, resolved by Vite when the module is served. */
@@ -650,6 +577,8 @@ export function reticle(options: ReticleVitePluginOptions = {}): ReticleVitePlug
   const warn = options.onWarn ?? ((message: string) => globalThis.console.warn(message));
   /** Whether connect() actually reached a module — asserted at buildEnd, never assumed. */
   let injected = false;
+  /** Files already announced as opted out of stamping: one line each, for the life of the server. */
+  const announcedIgnored = new Set<string>();
   /**
    * Whether Vite ever asked us to transform the app's HTML.
    *
@@ -797,6 +726,16 @@ export function reticle(options: ReticleVitePluginOptions = {}): ReticleVitePlug
         return stamped ?? { code: withConnect, map: null };
       }
       if (!sourceMapping) return null;
+      // Decided HERE, ahead of both stampers, so the Svelte path honours the marker too and so the
+      // opt-out is announced once regardless of which stamper would have run. The Babel plugin reads
+      // the same marker on its own for the callers that reach it without Vite (#853).
+      if (optsOutOfStamping(code, id)) {
+        if (!announcedIgnored.has(id)) {
+          announcedIgnored.add(id);
+          warn(ignoredFileNotice(id));
+        }
+        return null;
+      }
       // `.svelte` runs on the RAW component source, which is only still markup because this plugin
       // declares `enforce: 'pre'` and therefore transforms before @sveltejs/vite-plugin-svelte. No
       // map: the insertions are within a line and never move one, and a wrong map is worse than none.

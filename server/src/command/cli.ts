@@ -18,6 +18,7 @@ import { attachStatusFields } from '@/surface/mcp/attach-memory.js';
 import { splitBrainFields, withNextAction } from './cli/status-fields.js';
 import { reticleStateHome } from './daemon/daemon.js';
 import { handleMcp } from './cli/mcp-command.js';
+import { handleReport } from './cli/report-command.js';
 import { resolveDaemonForProject } from './daemon/daemon-resolve.js';
 import { daemonStartOptions } from './cli/daemon-start-options.js';
 import {
@@ -114,6 +115,7 @@ function handleInit(parsed: {
   env?: string[] | undefined;
   filesOnly?: boolean | undefined;
   captureBodies?: boolean | undefined;
+  hooks?: boolean | undefined;
   licenseKey?: string | undefined;
   json?: boolean | undefined;
   drive?: boolean | undefined;
@@ -137,6 +139,7 @@ function handleInit(parsed: {
       // past a missing package manager, and could not honour that while never being told about it.
       ...(parsed.url === undefined ? {} : { url: parsed.url }),
       captureBodies: true === parsed.captureBodies,
+      hooks: true === parsed.hooks,
       // The outcome is reported by confirmInstall instead, once it knows whether an app connected —
       // `init` writing files was never the same thing as `init` working (#269).
       deferOutcome: true,
@@ -779,6 +782,9 @@ export function main(): void {
       break;
     case 'gate':
       void handleGate(parsed.files, parsed.since, parsed.hook);
+      break;
+    case 'report':
+      void handleReport(parsed.session, parsed.hook);
       break;
     case 'watch':
       handleWatch();

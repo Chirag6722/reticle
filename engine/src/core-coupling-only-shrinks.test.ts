@@ -34,7 +34,40 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /** Ceilings, not targets. Measured 2026-09-18 over shipped (non-test) sources. */
-const MAX_FILES_IMPORTING_CORE = 41;
+/*
+ * Raised 41 -> 43, and the two are NOT the same kind of change.
+ *
+ * `predicate-state.ts` is a SPLIT, not new coupling. `predicate.ts` crossed the 1000-line cap while
+ * the predicate language was gaining its past tense, and rule 6 says split before adding. The state
+ * evaluator moved out whole: the same symbols, from the same package, on the same code path. The
+ * file count is a PROXY for the coupling, and a proxy that forbids obeying another rule in the same
+ * file is measuring the wrong thing here. Counting import SITES — which the symbol ceiling below
+ * effectively does, and which did not move — is the honest reading of this one.
+ *
+ * `evidence/baseline.ts` is a real +1 and gets no such defence. It reads `STATE_READ` and `MATCH`,
+ * which are wire command names, and those live in core by the rule that put them there. The
+ * alternative was inlining two wire strings in the engine, which keeps this number flat by breaking
+ * the rule it exists to protect — the same argument as the symbol raise below it.
+ *
+ * Both are the debt the header describes, and neither is the debt growing quietly: the answer is
+ * still `Realm`, and this file is still the thing that stops it running backwards.
+ */
+/*
+ * 43 -> 44 for the predicate contract (3.2), and the honest note is that I PRICED THIS WRONG.
+ *
+ * I quoted the move as net +3 symbols and MINUS one file, on the reasoning that
+ * `predicate-schema.ts` would leave the engine entirely and take `ElementQuerySchema` with it. The
+ * symbols landed exactly at +3. The file half was wrong, and measuring is what said so: the file
+ * did not leave, it SPLIT. The contract went to core and the reasoning stayed, so the same file
+ * still imports core for `PredicateKind`, `ElementQuery` and `ElementDescriptor` — and `property.ts`,
+ * which imported nothing from core before, now imports the assertion type it evaluates.
+ *
+ * Both halves could be routed through a sibling to keep this number flat. That is laundering, it is
+ * the thing this guard exists to catch, and the header three paragraphs up says a raise is the
+ * thing to argue about rather than the thing to avoid. So: the file count went UP by one, the
+ * estimate that said otherwise was mine, and it is written here rather than quietly corrected.
+ */
+const MAX_FILES_IMPORTING_CORE = 44;
 /**
  * Raised by one, deliberately, and this is the argument for it.
  *
@@ -46,7 +79,23 @@ const MAX_FILES_IMPORTING_CORE = 41;
  * It is one more symbol on the SAME file that already imports core, so the file count is unmoved.
  * A realm-shaped engine takes the request's identity from the realm, and this goes with the rest.
  */
-const MAX_DISTINCT_SYMBOLS = 55;
+/*
+ * 55 -> 58 for the predicate contract (3.2). Measured, and exactly what it was priced at.
+ *
+ * `Predicate`, `PredicateSchema`, `PropertyAssertion` and `propertyAssertionSchema` come IN (+4);
+ * `ElementQuerySchema` goes out with the union that was its only borrower (-1).
+ *
+ * This is the one raise here that makes the number it guards MORE honest rather than less. The
+ * header's complaint is that the engine reads Reticle's own nouns, so a third party adopting it
+ * takes on a browser contract to reason about a service. A predicate is not one of those nouns: it
+ * is the language a claim is written in, it is what `FlowStep.expect` now holds, and core is where
+ * anything that crosses the wire belongs. Four of these five names are the engine borrowing its own
+ * vocabulary back from the package that should always have owned it.
+ *
+ * `EventType` and `ReticleEvent` are still the real debt, still most of the import sites, and still
+ * the thing `Realm` exists to fix. Unchanged by this.
+ */
+const MAX_DISTINCT_SYMBOLS = 58;
 
 /*
  * `node:path`'s dirname, not a hand-rolled one.

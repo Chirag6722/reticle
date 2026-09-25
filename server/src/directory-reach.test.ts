@@ -296,6 +296,8 @@ const REACHES_FOR: Record<string, readonly string[]> = {
   ],
   capsule: ['dir', 'fs'],
   cli: [
+    // doctor reads the document the dev server serves (served-document.ts) to judge its CSP.
+    'dev-server',
     'answers',
     'binding',
     'suite',
@@ -312,6 +314,9 @@ const REACHES_FOR: Record<string, readonly string[]> = {
     'flows',
     'fs',
     'identity',
+    // `reticle report` folds a session's action ledger from disk, with no daemon to ask. The ledger
+    // reader lives in `journal`; a second copy of it here would be a second opinion on its format.
+    'journal',
     'mcp',
     'outcome',
     'ports',
@@ -479,6 +484,9 @@ const REACHES_FOR: Record<string, readonly string[]> = {
   proxy: ['binding', 'daemon', 'identity', 'telemetry'],
   runs: ['artifact', 'cloud', 'dir', 'flows', 'intent', 'peer', 'project', 'telemetry', 'tools'],
   session: [
+    // Ending a session reports what it claimed and what held, folded from its own journal by the
+    // one gap fold the context tool and `reticle report` also use.
+    'artifact',
     'page-commands',
     'dev-server',
     'args',
@@ -664,6 +672,8 @@ const REACHES_FOR: Record<string, readonly string[]> = {
    */
   'page-commands': [],
   tools: [
+    // A lease that never dialled reads the served page's CSP, the same reader doctor uses.
+    'dev-server',
     'hooks',
     'navigation',
     'lifetime',

@@ -59,8 +59,26 @@ export const PROJECT_RUN_CAP = {
 /** Maximum distinct route identities retained in project.json. */
 export const PROJECT_ROUTE_CAP = 200;
 
-/** Schema version stamped onto on-disk flow files (.reticle/flows/<name>.json). */
-export const FLOW_FILE_VERSION = 1;
+/**
+ * Schema version STAMPED onto a flow file this Reticle writes.
+ *
+ * 2 since `FlowStep.expect` became a `Predicate`. Version 1 stored one flat slot per kind, which
+ * could not hold a composite, a negation or a property assertion — an `allOf[netA, netB]` saved as
+ * one of the two arms and the other was gone with nothing said.
+ */
+export const FLOW_FILE_VERSION = 2;
+
+/**
+ * Every version this Reticle can READ, which is not the same question as what it writes.
+ *
+ * A flow file is committed to a repository that other people share, so a reader that refused the
+ * previous format would break a teammate's suite on the day one person upgraded. v1 is lifted on
+ * read by `flowExpectToPredicate` and is NEVER rewritten: the file on disk stays v1 until something
+ * saves it again, at which point it is stamped with the version above.
+ *
+ * A number outside this set is the wrong READER, not a damaged file, and says so.
+ */
+export const READABLE_FLOW_VERSIONS: ReadonlySet<number> = new Set([1, FLOW_FILE_VERSION]);
 
 /** How a flow step is anchored to the live DOM at replay time (semantic, never a volatile ref). */
 export const AnchorKind = {
@@ -84,6 +102,19 @@ export const FlowErrorCode = {
   INVALID_NAME: 'flow_invalid_name', // path traversal / illegal chars
   NOT_FOUND: 'flow_not_found', // load of a missing flow
   PARSE_FAILED: 'flow_parse_failed', // on-disk JSON failed zod validation
+  /**
+   * The file is well-formed and carries a `version` this build does not read.
+   *
+   * Distinct from PARSE_FAILED because the two need OPPOSITE fixes, and saying the wrong one costs
+   * somebody a search for damage that is not there. Malformed means "repair or regenerate this
+   * file". Wrong version means the file is fine and the READER is the wrong one -- upgrade or
+   * downgrade Reticle, and do not touch the flow.
+   *
+   * `ProjectReadError.WRONG_VERSION` above draws the same line for `project.json` and for the same
+   * reason; flows simply had no equivalent, so every future format bump would have reported itself
+   * as corruption to every reader already in the field.
+   */
+  WRONG_VERSION: 'flow_wrong_version',
   NO_RECORDING: 'flow_no_recording', // save with no compiled program by that name
 } as const;
 export type FlowErrorCode = (typeof FlowErrorCode)[keyof typeof FlowErrorCode];
@@ -145,6 +176,23 @@ export const DriftReason = {
    * hunting for the nearest testid to the literal word "unresolved".
    */
   ANCHOR_DEGRADED: 'anchor_degraded',
+  /**
+   * The anchor resolved to MORE THAN ONE live element, so which one the recording meant is no
+   * longer decidable.
+   *
+   * Replay used to take the first match, act on it, and return `ok: true` carrying a note --
+   * "ambiguous testid 'x', used first match". The verdict is computed from `drift` and `ok` alone,
+   * so the note never reached it: a replay that clicked row 3 instead of row 1 reported `ok`.
+   * That is a locator resolving to a different element than the one recorded, reported green,
+   * which is the one thing a replay must never do -- its entire claim is "it did what it did
+   * before".
+   *
+   * Distinct from TESTID_NOT_FOUND for the same reason ANCHOR_DEGRADED is, and the distinction is
+   * what makes it fixable: "your element disappeared" wants a RENAMED anchor, and "your element is
+   * now several elements" wants a NARROWER one. Heal can only propose the second if the reason
+   * says which happened.
+   */
+  ANCHOR_AMBIGUOUS: 'anchor_ambiguous',
   /**
    * The step's anchor resolved and its action ran; the testid its `expect.element` names was absent
    * afterwards. Distinct from TESTID_NOT_FOUND for the same reason ANCHOR_DEGRADED is: "the element

@@ -42,7 +42,7 @@ export {
 export const CLI_USAGE = `usage:  npx @reticlehq/server <command>   (or \`reticle <command>\` once the bin is on your PATH)
 
   reticle init  [--dry-run] [--port N] [--no-mcp] [--no-install] [--app <dir>]
-                [--env KEY=VALUE]... [--files-only]  (wire Reticle into the project in this directory)
+                [--env KEY=VALUE]... [--files-only] [--hooks]  (wire Reticle into the project in this directory)
                 init is ONBOARDING: it wires the project, boots the app and proves a session
                 connected. It does not drive. The FIRST RUN is the stage that proves a flow:
                 reticle verify <url> --explore --persona "<who does what>", or the same thing
@@ -75,14 +75,18 @@ export const CLI_USAGE = `usage:  npx @reticlehq/server <command>   (or \`reticl
   reticle verify <url> [--port N] [--headed] [--timeout N] [--storage-state <file>] [--session-id <id>]  (one-shot: drive the URL, verify saved flows, exit 0=pass)
                        [--explore] [--persona <who>]   (no saved flows? let Reticle drive the app itself and record them)
                        [--select <label>]              (repeatable: verify only flows carrying these labels — no model, exit 0=pass)
-                [--expect '<json predicate>']            (one verdict, no saved flows needed — asks
-                the daemon that is already running, so nothing is bound and nothing is stopped. It
-                NEEDS that daemon: with none on the port it refuses and names the flag, rather than
-                reporting on your saved flows instead. Cannot be combined with --storage-state,
-                which this path has nowhere to load. This is the path when your client never loaded
-                the reticle_* tools. exit 0 ONLY on verified:"yes" — "unknown" is not a pass)
+                [--expect '<json predicate>' | --expect-file <path>]   (one verdict, no saved
+                flows needed. --expect-file is the form no shell can mangle: cmd.exe keeps the
+                single quotes the docs show, and PowerShell strips the inner double quotes, and
+                a predicate that does not parse produces no verdict at all — asks the daemon that
+                is already running, so nothing is bound and nothing is stopped. It NEEDS that
+                daemon: with none on the port it refuses and names the flag, rather than reporting
+                on your saved flows instead. Cannot be combined with --storage-state, which this
+                path has nowhere to load. This is the path when your client never loaded the
+                reticle_* tools. exit 0 ONLY on verified:"yes" — "unknown" is not a pass)
   reticle affected [--since <ref>] [file...]           (which saved flows must re-verify for the changed files)
   reticle gate [--since <ref>] [file...]               (exit non-zero unless passing artifacts cover the affected flows)
+  reticle report [--session <id>] [--hook]             (what the latest session claimed, and what held)
   reticle watch [url]                                  (on save, report which saved flows must re-verify)
   reticle drive <url> [--headless]                     (foreground mode, for debugging)
   reticle mcp   [--port N] [--drive <url>] [--headless] (MCP stdio proxy; auto-starts daemon if needed)
@@ -124,6 +128,9 @@ const CAPSULES_COMMAND = 'capsules';
 const GATE_COMMAND = 'gate';
 /** Hook mode: prose a human can read, and silence when there was simply nothing to check. */
 const HOOK_FLAG = '--hook';
+/** `reticle report [--session <id>] [--hook]` — what the latest session claimed, and what held. */
+const REPORT_COMMAND = 'report';
+const SESSION_FLAG = '--session';
 const WATCH_COMMAND = 'watch';
 const UPDATE_COMMAND = 'update';
 const ROLLBACK_COMMAND = 'rollback';
@@ -170,6 +177,7 @@ const KNOWN_COMMANDS: ReadonlySet<string> = new Set([
   HUNT_COMMAND,
   CAPSULES_COMMAND,
   GATE_COMMAND,
+  REPORT_COMMAND,
   WATCH_COMMAND,
   UPDATE_COMMAND,
   ROLLBACK_COMMAND,
@@ -254,6 +262,8 @@ const FILES_ONLY_FLAG = '--files-only';
  * and `init` runs unattended. Whoever passes this has decided; nothing decides it for them.
  */
 const CAPTURE_BODIES_FLAG = '--capture-bodies';
+/** `--hooks`: also install the print-only Claude Code Stop hook (`reticle report --hook`). */
+const HOOKS_FLAG = '--hooks';
 /**
  * The rest of the runtime surface.
  *
@@ -309,6 +319,7 @@ export type CliResult =
       env: string[];
       filesOnly: boolean;
       captureBodies: boolean;
+      hooks: boolean;
       json: boolean;
       relaunch: boolean;
       open: boolean;
@@ -360,6 +371,7 @@ export type CliResult =
       storageState?: string;
       sessionId?: string;
       expect?: unknown;
+      expectFile?: string;
       explore?: boolean;
       persona?: string;
       select?: string[];
@@ -368,6 +380,7 @@ export type CliResult =
   | { kind: 'hunt'; dir: string }
   | { kind: 'capsules' }
   | { kind: 'gate'; files: string[]; since?: string; hook?: boolean }
+  | { kind: 'report'; session?: string; hook: boolean }
   | { kind: 'watch'; url?: string }
   | { kind: 'update' }
   | { kind: 'rollback' }
@@ -531,6 +544,7 @@ type InitFlags =
       env: string[];
       filesOnly: boolean;
       captureBodies: boolean;
+      hooks: boolean;
       json: boolean;
       relaunch: boolean;
       open: boolean;
@@ -551,6 +565,7 @@ function parseInitFlags(args: string[]): InitFlags {
   const env: string[] = [];
   let filesOnly = false;
   let captureBodies = false;
+  let hooks = false;
   let json = false;
   let open = true;
   let relaunch = false;
@@ -587,6 +602,8 @@ function parseInitFlags(args: string[]): InitFlags {
       filesOnly = true;
     } else if (arg === CAPTURE_BODIES_FLAG) {
       captureBodies = true;
+    } else if (arg === HOOKS_FLAG) {
+      hooks = true;
     } else if (arg === JSON_FLAG) {
       json = true;
     } else if (arg === NO_OPEN_FLAG) {
@@ -635,6 +652,7 @@ function parseInitFlags(args: string[]): InitFlags {
     env,
     filesOnly,
     captureBodies,
+    hooks,
     json,
     open,
     relaunch,
@@ -729,6 +747,7 @@ export function parseCliArgs(
         env: r.env,
         filesOnly: r.filesOnly,
         captureBodies: r.captureBodies,
+        hooks: r.hooks,
         json: r.json,
         open: r.open,
         relaunch: r.relaunch,
@@ -892,6 +911,7 @@ export function parseCliArgs(
         ...(r.storageState !== undefined ? { storageState: r.storageState } : {}),
         ...(r.sessionId !== undefined ? { sessionId: r.sessionId } : {}),
         ...(r.expect !== undefined ? { expect: r.expect } : {}),
+        ...(r.expectFile !== undefined ? { expectFile: r.expectFile } : {}),
         ...(true === r.explore ? { explore: true } : {}),
         ...(r.persona !== undefined ? { persona: r.persona } : {}),
         ...(r.select !== undefined ? { select: r.select } : {}),
@@ -920,6 +940,15 @@ export function parseCliArgs(
         files: t.files,
         ...(since === undefined ? {} : { since }),
         ...(hook ? { hook: true } : {}),
+      };
+    }
+    case REPORT_COMMAND: {
+      const at = rest.indexOf(SESSION_FLAG);
+      const session = -1 === at ? undefined : rest[at + 1];
+      return {
+        kind: 'report',
+        hook: rest.includes(HOOK_FLAG),
+        ...(session === undefined ? {} : { session }),
       };
     }
     case WATCH_COMMAND: {

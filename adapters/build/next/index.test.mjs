@@ -3,6 +3,7 @@ import { createRequire } from 'node:module';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
 const { withReticle, readPairingToken, discoverDaemonUrl } = require('./index.cjs');
@@ -74,7 +75,31 @@ describe('withReticle', () => {
     expect(rule).toBeDefined();
     expect(rule.test.test('src/Foo.tsx')).toBe(true);
     expect(rule.test.test('src/Foo.jsx')).toBe(true);
+    // #1081: a JavaScript Next project writes its pages as .js.
+    expect(rule.test.test('app/page.js')).toBe(true);
     expect(rule.test.test('src/util.ts')).toBe(false);
+  });
+
+  it('gives Turbopack a .js rule that skips foreign code, on the Next that accepts one', () => {
+    process.env.NODE_ENV = 'development';
+    const cwd = process.cwd();
+    try {
+      // The Next is read from the APP: next-smoke runs Next 16, where rules take a `condition`.
+      process.chdir(fileURLToPath(new URL('../../../apps/next-smoke/', import.meta.url)));
+      const rules = withReticle({}).turbopack?.rules ?? {};
+      expect(rules['*.js']?.condition).toEqual({ not: 'foreign' });
+      expect(rules['*.js']?.loaders?.length).toBe(1);
+    } finally {
+      process.chdir(cwd);
+    }
+  });
+
+  it('withholds that rule from an older Turbopack that would reject the key', () => {
+    process.env.NODE_ENV = 'development';
+    // This package's own directory resolves Next 15, whose Turbopack has no rule conditions.
+    const rules = withReticle({}).turbopack?.rules ?? {};
+    expect(rules['*.js']).toBeUndefined();
+    expect(rules['*.tsx']).toBeDefined();
   });
 
   /**
@@ -277,5 +302,62 @@ describe('the duplicated wire constants match core', () => {
       rmSync(home, { recursive: true, force: true });
       rmSync(cwd, { recursive: true, force: true });
     }
+  });
+});
+
+/**
+ * `next dev` is a dev server whatever the shell says NODE_ENV is (#1069).
+ *
+ * Reported on 3.2.0: `withReticle` silently no-ops when the shell exports `NODE_ENV=production`,
+ * even under `next dev`. People do that to reproduce production behaviour locally, and the result is
+ * an app that looks instrumented, starts cleanly, and never connects - indistinguishable from a
+ * dozen other install failures, with no reason to suspect an env var set for something else.
+ *
+ * Two rules. `next dev` IS the dev signal, because the user ran a dev server and that is not
+ * ambiguous. And when it does disable itself, it says so once, naming the variable responsible -
+ * the issue's own acceptance line is "must either connect or print why it did not".
+ *
+ * A production BUILD stays untouched, which is what the gate was for in the first place.
+ */
+describe('the dev signal under a production NODE_ENV', () => {
+  const previousEnv = process.env.NODE_ENV;
+  const previousArgv = process.argv;
+
+  afterEach(() => {
+    process.env.NODE_ENV = previousEnv;
+    process.argv = previousArgv;
+  });
+
+  it('instruments under a production NODE_ENV when told to explicitly', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.RETICLE_DEV = '1';
+    const input = { reactStrictMode: true };
+    const out = withReticle(input);
+    expect(out, 'the override did nothing, so the user still has no way out').not.toBe(input);
+    expect(typeof out.webpack).toBe('function');
+    delete process.env.RETICLE_DEV;
+  });
+
+  it('still leaves a production build completely alone by default', () => {
+    process.env.NODE_ENV = 'production';
+    const input = { reactStrictMode: true };
+    expect(withReticle(input)).toBe(input);
+  });
+
+  it('says why it disabled itself, naming the variable', () => {
+    process.env.NODE_ENV = 'production';
+    const said = [];
+    const realLog = console.log;
+    console.log = (...args) => said.push(args.join(' '));
+    try {
+      withReticle({});
+    } finally {
+      console.log = realLog;
+    }
+    const line = said.join('\n');
+    expect(line).toContain('NODE_ENV');
+    // And the way out, not just the diagnosis — the reader is stuck without it.
+    expect(line).toContain('RETICLE_DEV');
+    expect(line.toLowerCase()).toContain('reticle');
   });
 });

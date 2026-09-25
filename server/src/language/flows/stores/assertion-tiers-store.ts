@@ -1,6 +1,7 @@
 import { dirname } from 'node:path';
+import { writeFileAtomic } from '@/memory/project/fs/write-atomic.js';
 import { z } from 'zod';
-import type { FlowExpect } from '@reticlehq/core';
+import type { Predicate } from '@reticlehq/core';
 import type { FileSystemPort } from '@/memory/project/fs/fs-port.js';
 import { reticleDirPaths } from '@/memory/project/dir/reticle-dir.js';
 import { withFileLock } from '@/memory/project/file-lock.js';
@@ -80,7 +81,7 @@ export class AssertionTiersStore {
       out[name] = {
         steps: entry.steps.map((s) => ({
           step: s.step,
-          ...(s.expect === undefined ? {} : { expect: s.expect as FlowExpect }),
+          ...(s.expect === undefined ? {} : { expect: s.expect as Predicate }),
         })),
         sources: entry.sources,
       };
@@ -91,9 +92,7 @@ export class AssertionTiersStore {
   async save(tiers: FlowTiers): Promise<void> {
     await this.#fs.mkdir(dirname(this.#path));
     const body = `${JSON.stringify({ version: ASSERTION_TIERS_VERSION, flows: tiers }, null, 2)}\n`;
-    const tmp = `${this.#path}.tmp`;
-    await this.#fs.writeFile(tmp, body);
-    await this.#fs.rename(tmp, this.#path);
+    await writeFileAtomic(this.#fs, this.#path, body);
   }
 
   /** Record one flow's assertion shape + covered sources after it PASSED. Never breaks a replay. */

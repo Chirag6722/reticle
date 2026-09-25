@@ -34,6 +34,7 @@ import {
 import { redirectToWorkspaceApp } from './detect/workspace-redirect.js';
 import { isConnectStep } from './plan/connect-steps.js';
 import { CURSOR_RULE_PATH, RETICLE_MD_PATH } from './project/agent-rules.js';
+import { CLAUDE_SETTINGS_PATH } from './plan/stop-hook-step.js';
 import { CRA_ENV_PATH } from './patch/cra.js';
 import { NEXT_LAYOUT_CANDIDATES, NEXT_PAGES_APP_CANDIDATES } from './patch/next-patch.js';
 import { formatGeneratedSource } from './patch/format-generated.js';
@@ -62,7 +63,7 @@ import {
 import { claudeAvailableProbe, claudeExistsProbe } from './register/mcp.js';
 import { reticleDevLocation } from './patch/next-patch.js';
 import { scanTestids, storeHints, scanStores } from './detect/capabilities.js';
-import { CURSOR_PROJECT_MARKER } from './register/mcp-clients.js';
+import { CLAUDE_PROJECT_CONFIG, CURSOR_PROJECT_MARKER } from './register/mcp-clients.js';
 import { deriveProjectId, packageName } from './project/project-id.js';
 import {
   VITE_DEV_MODULE_PATH,
@@ -346,9 +347,12 @@ function gatherPlanInput(options: InitOptions, io: InitIo, pkg: unknown): PlanIn
   return {
     detection,
     captureBodies: options.captureBodies,
+    hooks: options.hooks,
     cspSources,
     claudeCli,
     mcpExists,
+    insideClaudeCode: io.host.insideClaudeCode(),
+    claudeProjectConfig: options.mcp ? io.readFile(agentFile(CLAUDE_PROJECT_CONFIG)) : undefined,
     platform: process.platform,
     detectedClients,
     cursorProjectPresent: io.exists(CURSOR_PROJECT_MARKER),
@@ -421,6 +425,9 @@ function gatherPlanInput(options: InitOptions, io: InitIo, pkg: unknown): PlanIn
     cursorRuleContent: io.readFile(agentFile(CURSOR_RULE_PATH)),
     claudeCommandContent: io.readFile(agentFile(CLAUDE_COMMAND_PATH)),
     cursorCommandContent: io.readFile(agentFile(CURSOR_COMMAND_PATH)),
+    // Read only to MERGE into: the settings file is the user's, and other tools write in it too.
+    claudeSettingsContent:
+      true === options.hooks ? io.readFile(agentFile(CLAUDE_SETTINGS_PATH)) : undefined,
     ...(agentRoot === undefined
       ? {}
       : {
@@ -467,6 +474,22 @@ function report(
   continuesToRuntime = false,
 ): InitResult {
   io.print(dryRun ? 'reticle init (dry run, no files written)' : 'reticle init');
+  /*
+   * The escape hatches, named by the command that needs them, at the moment it needs them.
+   *
+   * `--dry-run`, `--app` and `--no-mcp` all exist and all work, and they were discoverable only
+   * from `--help`. A prospective user's agent refused to run this at all — correctly, since it was
+   * being asked to let a third-party package edit a build config and register itself with every
+   * agent on the machine, and nothing it could see offered a way to look first. It had already
+   * decided by the time `--help` would have told it.
+   *
+   * On the REAL run only. In a dry run the reader has already found the flag.
+   */
+  if (!dryRun) {
+    io.print(
+      '  --dry-run shows this plan and writes nothing · --app <dir> picks the app · --no-mcp skips agent registration',
+    );
+  }
   // Every path below is printed RELATIVE, and until now nothing said what to. Reported from the
   // field as "[✓] Reticle config → .reticle.json" followed by the file not being there: the app was
   // in `frontend/`, init redirected into it, and the report's `.reticle.json` was true about a

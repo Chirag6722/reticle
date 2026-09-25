@@ -112,7 +112,21 @@ export function installStoreState(emit: Emit): Teardown {
         // unwinds that loop and every listener registered after ours never runs.
         observeSafely(() => {
           const next = safeRead(getter);
-          for (const change of diffState(last, next)) {
+          const changes = diffState(last, next);
+          /*
+           * Advance the baseline BEFORE emitting, not after.
+           *
+           * It used to be the last statement in this block, inside the `observeSafely` that swallows
+           * a throw — so ONE emit that threw left `last` pointing at a state the store had already
+           * moved past, and every later notify diffed against that stale baseline and re-sent the
+           * whole changed value again. For a store holding a list that is the entire list on every
+           * subsequent change, for the life of the session, and none of it is a change anybody made.
+           *
+           * The read has happened; the store is at `next` whatever becomes of the events. Losing one
+           * event is the cost of a failed emit. Re-sending every past event forever is not.
+           */
+          last = next;
+          for (const change of changes) {
             const value = project(change.path, change.new);
             const old = project(change.path, change.old);
             // A new reference carrying the value it already had is not a change. See
@@ -123,9 +137,12 @@ export function installStoreState(emit: Emit): Teardown {
             // that would silently drop a real rotation. The comparison is only meaningful where the
             // projection is faithful.
             if (!isSensitiveKey(change.path) && samePresentedValue(old, value)) continue;
-            emit(EventType.STATE_CHANGE, { name, path: change.path, value, old });
+            // Each on its own, so a value the transport refuses costs its own event and not the
+            // other paths that changed in the same notify.
+            observeSafely(() =>
+              emit(EventType.STATE_CHANGE, { name, path: change.path, value, old }),
+            );
           }
-          last = next;
         });
       }),
     );

@@ -40,6 +40,13 @@ function undeclaredChannels(inputs: VerifiedInputs): string[] {
 }
 
 interface VerifiedInputs {
+  /**
+   * The page SDK and daemon wire mismatch, when the handshake found one. Absent means they agree.
+   *
+   * Carried rather than re-derived: only the bridge sees both halves of the handshake, and a verdict
+   * that re-guessed it from versions would disagree with the warning the session already printed.
+   */
+  versionSkew?: string;
   /** Did the declared consequence hold? Undefined when the action declared none. */
   pass?: boolean;
   /**
@@ -195,7 +202,26 @@ interface VerifiedVerdict {
 export function decideVerified(inputs: VerifiedInputs): VerifiedVerdict {
   const { pass, honesty, contradictions = [], settled, outcomePending, outcomeUnread } = inputs;
 
-  // FIRST, ahead of every other clause. A claim that needed to read something nobody was watching
+  // Ahead of everything, with `capability-absent` below it and for the same reason: a skewed wire
+  // means the ACTION may never have happened, so grading the quality of an observation of it is
+  // grading nothing. `session-health` already ranks skew above the throttle warning on this
+  // argument; this is the verdict finally agreeing with the warning it was printing beside.
+  //
+  // UNKNOWN, not NO. Nothing about the app was disproved -- the link under the evidence is what is
+  // in doubt. An empty string is not a skew.
+  const skew = inputs.versionSkew;
+  if (skew !== undefined && skew.length > 0) {
+    return {
+      verified: Verified.UNKNOWN,
+      verifiedReason: VerifiedReason.VERSION_SKEW,
+      because:
+        `the page SDK and this daemon are on different wire contracts (${skew}), so dispatched ` +
+        'and settled may be silent no-ops — nothing was proved or disproved about the app. ' +
+        'Converge the versions and re-run',
+    };
+  }
+
+  // FIRST among the evidence clauses. A claim that needed to read something nobody was watching
   // was never answerable, and any clause reaching a verdict before this one would report that as
   // something else -- most often as a failure, which blames the app for a gap in the tooling.
   const unobservable = undeclaredChannels(inputs);
@@ -389,6 +415,25 @@ export function decideVerified(inputs: VerifiedInputs): VerifiedVerdict {
         'value the app was ASKED for, rather than the one it committed, looks exactly like this. ' +
         'Check the consequence directly (reticle_snapshot for what rendered, reticle_state for what ' +
         'the store holds) before trusting it',
+    };
+  }
+  // `route-rendered-nothing` gets its own sentence for the same reason: the generic one blames churn
+  // and a slow app, and here nothing was busy - the URL moved and no view appeared for it. Driven on
+  // bench-app with a store that ignored the navigation: the route predicate held, this fired, and the
+  // generic sentence sent the reader to wait. UNKNOWN rather than NO because a view revealed from DOM
+  // that already existed (a CSS-toggled tab) emits this same window.
+  const routeOnly =
+    deciding.length > 0 &&
+    deciding.every((c) => c.kind === ContradictionKind.ROUTE_RENDERED_NOTHING);
+  if (routeOnly) {
+    return {
+      verified: Verified.UNKNOWN,
+      verifiedReason: VerifiedReason.EVIDENCE_INCOMPLETE,
+      because:
+        'the URL changed, but nothing rendered for it: no content added or removed and no request ' +
+        'made, so the new route may show the old view. A route change alone does not prove the ' +
+        'destination appeared. Assert what the destination shows (its heading or a testid) or the ' +
+        'store value that selects it, rather than the URL',
     };
   }
   if (deciding.length > 0 && !settlementOnly) {

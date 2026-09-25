@@ -34,6 +34,7 @@ import {
 } from './tour-view.js';
 import { TourAnchor } from '@reticlehq/core/tour';
 import { RETICLE_URL_PARAM } from '@reticlehq/core';
+import { appModalOpen } from '@/dom/dom-ignore.js';
 
 /** Where "they have seen it" is remembered. Per project, so a second app still gets its tour. */
 export const TOUR_SEEN_KEY_PREFIX = 'reticle.tour.seen.';
@@ -155,6 +156,13 @@ export interface TourDeps {
    */
   readonly search?: string;
   /**
+   * The navigator of the page being mounted into, for the one question `webdriver` answers.
+   *
+   * Optional: a caller that cannot supply one keeps its tour rather than losing it to a guard that
+   * could not read the thing it guards on.
+   */
+  readonly navigator?: { readonly webdriver?: boolean };
+  /**
    * Copying is a capability, not a guarantee — an insecure origin has no clipboard.
    *
    * It reports whether the text actually landed. A `void` call makes a page with a working clipboard
@@ -233,6 +241,20 @@ export function mountTour(deps: TourDeps): TourHandle | undefined {
    * itself. A tour is for the person who ran `npm run dev`, never for a page nobody is looking at.
    */
   if (openedByReticle(deps.search)) return undefined;
+  /*
+   * A browser under automation has nobody to onboard.
+   *
+   * The two guards above do not cover it. `isDriving()` reads false at page load by construction,
+   * and `openedByReticle` reads a stamp Reticle puts on pages IT opens - an agent that launches its
+   * own Playwright context and calls `page.goto` carries none. Reported from the field three times
+   * over, always the same way: the scrim takes `pointer-events: auto`, the driver's click lands on
+   * it instead of the app, and the run stalls until somebody attaches a debugger to find out why.
+   *
+   * `navigator.webdriver` is that question said directly, and the same discriminator
+   * `effectivePaceMs` already uses for the same reason: one of these browsers has a person in front
+   * of it and the other does not.
+   */
+  if (true === deps.navigator?.webdriver) return undefined;
   if (tourAlreadySeen(deps.storage, deps.projectId)) return undefined;
 
   const doc = deps.document;
@@ -424,6 +446,16 @@ export function mountTour(deps: TourDeps): TourHandle | undefined {
    */
   const onKey = (event: KeyboardEvent): void => {
     if (!open) return;
+    /*
+     * An app modal outranks our onboarding.
+     *
+     * Reported from the field as "Escape does not close a <dialog> opened with showModal()", with
+     * the tell in the repro: "after a click inside the dialog it works again" — a click dismisses
+     * the tour, and Escape reaches the app from then on. Cancelling the key is what stops the
+     * browser's own close request, so while the app has a modal open the tour does not take Escape.
+     * It is still dismissable by its own Skip control, and by the click that was closing it anyway.
+     */
+    if (appModalOpen(doc)) return;
     const step = 'ArrowRight' === event.key ? 1 : 'ArrowLeft' === event.key ? -1 : 0;
     if ('Escape' === event.key) {
       event.preventDefault();

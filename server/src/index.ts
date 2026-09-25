@@ -19,6 +19,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import {
   AGENT_STOPPED_NOTICE,
   RETICLE_DEFAULT_PORT,
+  bridgeWsUrl,
   ReticleCommand,
   ReticleDir,
   ReticleEnv,
@@ -49,7 +50,7 @@ import { ProjectStore } from './memory/project/project-store.js';
 import { projectStoreResolver } from './memory/project/project-for-root.js';
 import { attachRouteLearning } from './memory/project/learned-routes.js';
 import { AnnotationStore } from './language/flows/stores/annotation-store.js';
-import { createNodeFileSystem, type FileSystemPort } from './memory/project/fs/fs-port.js';
+import { createNodeFileSystem } from './memory/project/fs/fs-port.js';
 import { cleanupCaptureDirectories } from './features/visual/capture-cleanup.js';
 import { ReticleRunner } from './judgement/runs/reticle-runner.js';
 import { createRunnerPort } from './judgement/runs/runner-port.js';
@@ -76,26 +77,26 @@ import {
 } from './portal/session/lease-visibility.js';
 import { playwrightLauncher, resolveMaxContexts } from './portal/pool/playwright-launcher.js';
 import { LeaseReaper } from './portal/pool/lease-reaper.js';
-import { readJournalEnabled, readProjectId } from './command/cli/ports/resolve/cli-port.js';
-import { hasProjectConnectedBefore } from './memory/recall/prior/connection-memory.js';
+import {
+  findProjectConfig,
+  projectIdsAt,
+  readJournalEnabled,
+  readProjectId,
+} from './command/cli/ports/resolve/cli-port.js';
+import { hasAnyProjectConnectedBefore } from './memory/recall/prior/connection-memory.js';
 import { reticleStateHome } from './command/daemon/daemon.js';
 import { probeChromium } from './command/cli/doctor/browser/chromium-hint.js';
-import { makeJournalAttach } from './memory/journal/attach-journal.js';
-import { makeSessionEnd, recordDriveRun } from './memory/journal/session-end.js';
-import { attachDriveRunFlush } from './memory/journal/drive-run-flush.js';
-import type { TapeStep } from './memory/journal/drive-flow.js';
-import type { OnboardingStep } from '@reticlehq/core/telemetry';
+import { attachJournal } from './wire-journal.js';
 import { reportOnboardingStep } from './telemetry/onboarding-funnel.js';
 import { AMBIENT_RECORDING } from './language/flows/recording/tape/recordings.js';
-import { AmbientStore } from './memory/journal/ambient-store.js';
-import { ensureWorkspaceGitignore } from './memory/journal/on-disk/workspace-gitignore.js';
-import {
-  pruneFeedback,
-  pruneSessions,
-  pruneVisualDiffs,
-} from './memory/journal/on-disk/retention.js';
+import { readRetainPolicy } from './memory/journal/on-disk/retain-policy.js';
 import type { RealInputProvider } from './portal/input/real-input.js';
 import { log } from './log.js';
+import {
+  readReaderBundle,
+  zeroInstallScript as zeroInstallScriptFor,
+  type InjectedConnect,
+} from './portal/pool/zero-install.js';
 
 /** A human-facing one-liner for a panel replay verdict — ✓ passed / ⚠ drifted / ✗ errored. */
 function replayVerdictLine(result: FlowReplayResult): string {
@@ -128,9 +129,9 @@ export type { FlowResult } from './language/flows/flows.js';
 export type { Clock } from './machine/clock.js';
 export {
   assertSuccess,
-  successToPredicate,
   dynamicTestids,
   successLabel,
+  successToPredicate,
 } from './language/flows/flow-success.js';
 export { classifyFlowAssertions, FlowAssertionGrade } from './language/flows/flow-classify.js';
 export type { FlowAssertionClassification } from './language/flows/flow-classify.js';
@@ -187,7 +188,12 @@ export { resolveBridgeSecurity } from './portal/bridge/bridge-security.js';
  * Build the shared browser pool (one headless Chromium, N capped isolated leased contexts). Lazy —
  * no Chromium launches until the first lease — so creating it is free even when never used.
  */
-function createBrowserPool(headless: boolean): BrowserPool {
+/** Where the zero-install reader connects: this daemon's own bridge, with its pairing token. */
+function readerConnect(port: number, token: string | undefined): InjectedConnect {
+  return { url: bridgeWsUrl(port), ...(token === undefined ? {} : { token }) };
+}
+
+function createBrowserPool(headless: boolean, reader: InjectedConnect): BrowserPool {
   const maxContexts = resolveMaxContexts(process.env[ReticleEnv.MAX_CONTEXTS], cpus().length);
   const genSessionId = (): string =>
     `lease-${
@@ -195,7 +201,20 @@ function createBrowserPool(headless: boolean): BrowserPool {
         ? globalThis.crypto.randomUUID()
         : String(Date.now())
     }`;
-  return new BrowserPool(playwrightLauncher({ headless }), { maxContexts, genSessionId });
+  // Built on first use and kept: the page that needs it is one whose app never connected.
+  let script: string | null | undefined;
+  const zeroInstallScript = (): string | undefined => {
+    if (script === undefined) {
+      const bundle = readReaderBundle();
+      script = bundle === undefined ? null : zeroInstallScriptFor(bundle, reader);
+    }
+    return script ?? undefined;
+  };
+  return new BrowserPool(playwrightLauncher({ headless }), {
+    maxContexts,
+    genSessionId,
+    zeroInstallScript,
+  });
 }
 
 /**
@@ -236,96 +255,6 @@ function makeNetworkDetailRouter(bridge: Bridge, driveUrl: string | undefined) {
       }
     }
   };
-}
-
-/**
- * Wire journal capture, ambient seeding and the journal-tail flush onto a bridge.
- *
- * Both entry points need all three, and both used to hand-roll them. `startDaemon` only ever wired the
- * first, so on the path every user actually takes (`reticle serve` / `reticle mcp`) the journal tail was
- * dropped at session end and the learned ambient map was never persisted OR seeded — meaning ambient
- * learning could not converge across sessions and the last events of every session were lost. The two
- * call sites had already drifted once before, which is why this is one function rather than a
- * copy-paste both are asked to keep in step.
- */
-function attachJournal(
-  bridge: Bridge,
-  deps: {
-    fs: FileSystemPort;
-    reticleRoot: string;
-    enabled: boolean;
-    takeAmbientTape?: () => { steps: readonly TapeStep[]; startPath?: string } | undefined;
-    reportStep?: (step: OnboardingStep) => Promise<boolean>;
-    /** Tell cloud sync a run landed, so it cycles instead of waiting for its timer. */
-    onRunPersisted?: () => void;
-    flows?: FlowStore;
-  },
-): void {
-  const journalAttach = makeJournalAttach(deps);
-  const ambientStore = new AmbientStore(deps.fs, deps.reticleRoot);
-  // Built once, not per session: the resolver walks config discovery and the user-level registry,
-  // and neither changes between two tabs connecting a second apart.
-  const resolveArtifactRoot = artifactRootResolver(deps.reticleRoot);
-  bridge.attachSessionCreate((session) => {
-    // Stamp the project's own `.reticle` before ANY counter fires for this session. Without it every
-    // verdict is recorded against wherever the daemon was started, which is how one app's evidence
-    // reached a different account's production dashboard.
-    // The origin is passed for the case where the page never stamped a project id: it is the only
-    // distinguishing fact left, and without it every such app shares one bucket.
-    session.artifactRoot = resolveArtifactRoot(session.projectId, originOf(session.url)).root;
-    // Here rather than on the start path, which was neither the moment we were about to write into a
-    // repository nor the root we were about to write into: it created `.reticle/` — holding nothing
-    // but the ignore file — wherever the daemon was launched, coming back every boot after the user
-    // deleted it, while the journals this ignore protects landed in another tree, uncovered.
-    if (deps.enabled) void ensureWorkspaceGitignore(deps.fs, session.artifactRoot);
-    journalAttach(session);
-    // Seed the learned ambient map so a fresh session starts knowing which regions churn, instead of
-    // re-learning from zero. Best-effort + async: a late seed still helps, a failure is silent.
-    if (deps.enabled) {
-      void ambientStore
-        .load()
-        .then((counts) => session.seedAmbient(counts))
-        .catch(() => undefined);
-    }
-  });
-  // Teardown: flush the journal tail to disk + persist what this session learned.
-  bridge.attachSessionEnd(
-    makeSessionEnd({
-      ...deps,
-      // Retention runs from teardown, and it must not delete the journal of a session that is still
-      // being written. The registry is the only thing that knows which those are.
-      liveSessionIds: () => new Set(bridge.sessions.all().map((s) => s.id)),
-    }),
-  );
-  /*
-   * And the same write, DURING the session rather than only at the end of it.
-   *
-   * Teardown was the only writer of a run artifact, so every verdict produced while a tab stayed
-   * open was invisible to cloud sync — which can only push artifacts that exist. Reported as "sync
-   * is not happening" and diagnosed as the agent forgetting to sync; there is no sync command to
-   * forget. The evidence simply was not on disk yet.
-   *
-   * Safe to call repeatedly because the run id is derived from the session, so this rewrites one
-   * artifact rather than accumulating them — a property `recordDriveRun` already had, for the
-   * unrelated reason that a reconnecting tab must not publish two overlapping rows.
-   */
-  if (deps.enabled) {
-    attachDriveRunFlush({
-      resolve: (sessionId: string) => bridge.sessions.get(sessionId),
-      write: (session) => recordDriveRun(deps, session),
-    });
-  }
-  if (deps.enabled) {
-    // Empty in the ordinary case (nothing has connected yet), but this path also runs on a daemon
-    // that is already serving sessions.
-    void pruneSessions(deps.fs, deps.reticleRoot, {
-      live: new Set(bridge.sessions.all().map((s) => s.id)),
-    });
-    // The largest thing in the workspace, and until now the only one with no delete path at all.
-    void pruneVisualDiffs(deps.fs, deps.reticleRoot);
-    // Write-only local copies of reports the outbox already carries.
-    void pruneFeedback(deps.fs, deps.reticleRoot);
-  }
 }
 
 /**
@@ -478,12 +407,17 @@ export async function start(options: StartOptions = {}): Promise<RunningServer> 
     const fs = createNodeFileSystem();
     const reticleRoot = options.reticleRoot ?? join(process.cwd(), ReticleDir.ROOT);
     const now = options.now ?? ((): number => Date.now());
-    const journalEnabled = readJournalEnabled(process.cwd(), process.env[ReticleEnv.JOURNAL]);
+    const retain = readRetainPolicy(findProjectConfig(process.cwd()));
+    // `retain.sessions: 0` says keep no journals. Honoured at CAPTURE as well as at the sweep —
+    // writing a directory in order to delete it on the way out is work nobody asked for.
+    const journalEnabled =
+      readJournalEnabled(process.cwd(), process.env[ReticleEnv.JOURNAL]) && 0 < retain.sessions;
     const flows = new FlowStore(fs, reticleRoot, { now });
     attachJournal(bridge, {
       fs,
       reticleRoot,
       enabled: journalEnabled,
+      retain,
       // Bound HERE, where the recorder is already in hand: teardown gets the tape, not the recorder.
       takeAmbientTape: () => recordings.stop(AMBIENT_RECORDING),
       reportStep: reportOnboardingStep,
@@ -492,7 +426,7 @@ export async function start(options: StartOptions = {}): Promise<RunningServer> 
     const project = new ProjectStore(fs, reticleRoot, { now });
     attachRouteLearning(bridge, projectStoreResolver(fs, project, reticleRoot, now));
     const annotations = new AnnotationStore();
-    pool = createBrowserPool(options.headless ?? true);
+    pool = createBrowserPool(options.headless ?? true, readerConnect(port, security.token));
     leaseReaper = new LeaseReaper(pool);
     leaseReaper.start();
     /*
@@ -536,7 +470,7 @@ export async function start(options: StartOptions = {}): Promise<RunningServer> 
     const server = createMcpServer(
       realInput !== undefined ? { ...deps, realInput } : deps,
       profile,
-      hasProjectConnectedBefore(reticleStateHome(), port, activeProjectId),
+      hasAnyProjectConnectedBefore(reticleStateHome(), port, projectIdsAt(process.cwd())),
     );
     // When the agent (the MCP client) disconnects cleanly, end every active session at once so the
     // HUD doesn't linger. (If the agent instead KILLS this process, the WS dies and the browser
@@ -631,7 +565,10 @@ export async function startDaemon(options: StartOptions = {}): Promise<RunningSe
   const fs = createNodeFileSystem();
   const reticleRoot = options.reticleRoot ?? join(process.cwd(), ReticleDir.ROOT);
   const now = options.now ?? ((): number => Date.now());
-  const journalEnabled = readJournalEnabled(process.cwd(), process.env[ReticleEnv.JOURNAL]);
+  const retain = readRetainPolicy(findProjectConfig(process.cwd()));
+  // See the sibling path: `retain.sessions: 0` stops the capture too, not only the sweep.
+  const journalEnabled =
+    readJournalEnabled(process.cwd(), process.env[ReticleEnv.JOURNAL]) && 0 < retain.sessions;
   const flows = new FlowStore(fs, reticleRoot, { now });
   // Built here rather than inside `deps` below, so teardown can save what a drive recorded. Both
   // paths pass the same pair — `daemon-parity.test.ts` is what keeps them from drifting apart.
@@ -648,6 +585,7 @@ export async function startDaemon(options: StartOptions = {}): Promise<RunningSe
     fs,
     reticleRoot,
     enabled: journalEnabled,
+    retain,
     takeAmbientTape: () => recordings.stop(AMBIENT_RECORDING),
     reportStep: reportOnboardingStep,
     flows,
@@ -656,7 +594,7 @@ export async function startDaemon(options: StartOptions = {}): Promise<RunningSe
   const project = new ProjectStore(fs, reticleRoot, { now });
   attachRouteLearning(bridge, projectStoreResolver(fs, project, reticleRoot, now));
   const annotations = new AnnotationStore();
-  const pool = createBrowserPool(options.headless ?? true);
+  const pool = createBrowserPool(options.headless ?? true, readerConnect(port, security.token));
   const leaseReaper = new LeaseReaper(pool);
   leaseReaper.start();
   /*
@@ -740,7 +678,7 @@ export async function startDaemon(options: StartOptions = {}): Promise<RunningSe
     createMcpServer(
       effectiveDeps,
       profile,
-      hasProjectConnectedBefore(reticleStateHome(), port, readProjectId(process.cwd())),
+      hasAnyProjectConnectedBefore(reticleStateHome(), port, projectIdsAt(process.cwd())),
     ),
   );
   // `reticle drive <url>` when this daemon already owns the port: it asks HERE instead of trying to
@@ -853,7 +791,7 @@ export async function startDaemon(options: StartOptions = {}): Promise<RunningSe
       const vh = verifyHttp;
       if (vh !== undefined) await new Promise<void>((resolve) => vh.server.close(() => resolve()));
       leaseReaper.stop();
-      cloudSync.stop();
+      await cloudSync.flush(); // not stop(): the last run written is the one nobody has yet
       await loopbackAlias.close?.();
       await pool.shutdown();
       await owned?.dispose();

@@ -2,7 +2,8 @@ import { removeTempDir } from '@/machine/temp-dir.js';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { ReticleDir } from '@reticlehq/core';
 import { createNodeFileSystem } from '@/memory/project/fs/fs-port.js';
 import {
   asProjectId,
@@ -14,16 +15,18 @@ import {
 } from '@reticlehq/core';
 import { AmbientStore } from './ambient-store.js';
 import { makeSessionEnd, type SessionEndTarget } from './session-end.js';
-import { DEFAULT_SESSION_RETENTION } from './on-disk/retention.js';
+import { DEFAULT_DIFF_RETENTION, DEFAULT_SESSION_RETENTION } from './on-disk/retention.js';
 import { reticleDirPaths, sessionDirPath } from '@/memory/project/dir/reticle-dir.js';
 
 function fakeSession(
   id: string,
   ambient: Record<string, number>,
   onFlush?: () => void,
+  artifactRoot?: string,
 ): SessionEndTarget {
   return {
     id,
+    ...(artifactRoot === undefined ? {} : { artifactRoot }),
     flushJournal: () => {
       onFlush?.();
       return Promise.resolve();
@@ -72,6 +75,32 @@ describe('makeSessionEnd (teardown: flush journal + persist ambient)', () => {
     await end(fakeSession('s1', { 'chat-log': 5 }, () => (flushed = true)));
     expect(flushed).toBe(false);
     expect(await new AmbientStore(fs, root).load()).toEqual({});
+  });
+
+  /*
+   * Turning journalling off is what somebody does BECAUSE `.reticle/` got too big. It was also the
+   * one setting under which nothing ever deleted what was already there.
+   *
+   * Teardown returned before reaching retention, and retention had moved into teardown from daemon
+   * start, where it had been ungated. So the opt-out quietly stopped sweeping visual diffs, feedback
+   * copies and run artifacts too - none of which need the journal to be written in the first place.
+   *
+   * Retention is maintenance of a directory, not a part of journalling. It runs either way.
+   */
+  it('still sweeps the workspace when journalling is switched off', async () => {
+    const stale = join(root, ReticleDir.VISUAL_SUBDIR, 'shot.diff.png');
+    await fs.mkdir(dirname(stale));
+    await fs.writeFile(stale, 'x');
+    const kept: string[] = [];
+    for (let i = 0; i < DEFAULT_DIFF_RETENTION + 2; i += 1) {
+      const p = join(root, ReticleDir.VISUAL_SUBDIR, `later-${String(i)}.diff.png`);
+      await fs.writeFile(p, 'x');
+      kept.push(p);
+    }
+    const end = makeSessionEnd({ fs, reticleRoot: root, enabled: false });
+    await end(fakeSession('s1', {}));
+    expect(await fs.exists(stale)).toBe(false);
+    expect(await fs.exists(kept[kept.length - 1] ?? '')).toBe(true);
   });
 
   it('never throws at teardown even when the flush fails (the tab is already gone)', async () => {
@@ -250,5 +279,143 @@ describe('the run a drive leaves behind', () => {
     await end(fakeSession('s-plain', {}, () => (flushed = true)));
     expect(flushed).toBe(true);
     expect((await runsWritten()).filter((f) => f.endsWith('.json'))).toHaveLength(0);
+  });
+});
+
+/**
+ * Every tier the session wrote into is swept, at the root the SESSION used.
+ *
+ * `pruneSessions` was already scoped to `session.artifactRoot`, with the reason written beside it:
+ * "Pruning the daemon's tree instead meant a per-project workspace was never swept at all, so the
+ * one place journals really accumulate was the one place retention never ran." Visual diffs and
+ * feedback copies were left behind on that move — they are pruned only at daemon START, against the
+ * DAEMON's root, which for a globally-registered daemon is `$HOME` and not the project at all.
+ *
+ * So the two tiers that only ever grow in a project workspace were the two that never got swept
+ * there. Same defect as the one already fixed above, in the same file, one line apart.
+ *
+ * The byte budget rides along for the same reason: it was wired at daemon start in the same change
+ * that introduced it, which is the daemon's tree — not the per-project one where the bytes are.
+ */
+describe('teardown sweeps the tiers at the SESSION root, not the daemon root', () => {
+  let daemonRoot: string;
+  let projectRoot: string;
+  const fs = createNodeFileSystem();
+
+  beforeEach(async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'reticle-roots-'));
+    daemonRoot = join(dir, 'daemon', '.reticle');
+    projectRoot = join(dir, 'project', '.reticle');
+  });
+  afterEach(async () => {
+    await removeTempDir(join(daemonRoot, '..', '..'));
+  });
+
+  it(
+    'prunes visual diffs in the project workspace the session actually wrote to',
+    async () => {
+      const diffs = join(projectRoot, 'visual');
+      await fs.mkdir(diffs);
+      for (let i = 0; i < DEFAULT_DIFF_RETENTION + 4; i++) {
+        await fs.writeFile(join(diffs, `shot-${String(i)}.diff.png`), 'x');
+      }
+      const before = (await fs.readdir(diffs)).length;
+
+      const end = makeSessionEnd({ fs, reticleRoot: daemonRoot, enabled: true });
+      await end(fakeSession('s-last', {}, undefined, projectRoot));
+
+      const after = (await fs.readdir(diffs)).length;
+      expect(after).toBeLessThan(before);
+      expect(after).toBeLessThanOrEqual(DEFAULT_DIFF_RETENTION);
+    },
+    SESSION_RETENTION_TIMEOUT_MS,
+  );
+
+  it(
+    'leaves the daemon root alone when the session wrote elsewhere',
+    async () => {
+      const daemonDiffs = join(daemonRoot, 'visual');
+      await fs.mkdir(daemonDiffs);
+      for (let i = 0; i < DEFAULT_DIFF_RETENTION + 4; i++) {
+        await fs.writeFile(join(daemonDiffs, `shot-${String(i)}.diff.png`), 'x');
+      }
+      const before = (await fs.readdir(daemonDiffs)).length;
+
+      const end = makeSessionEnd({ fs, reticleRoot: daemonRoot, enabled: true });
+      await end(fakeSession('s-last', {}, undefined, projectRoot));
+
+      // Teardown is about the session's own workspace. The daemon's tree is swept at daemon start.
+      expect((await fs.readdir(daemonDiffs)).length).toBe(before);
+    },
+    SESSION_RETENTION_TIMEOUT_MS,
+  );
+});
+
+/**
+ * A session nobody ever drove keeps no journal.
+ *
+ * Retention keeps the twenty most recent session directories. A tab that connects and is never
+ * driven still gets one, and still gets a journal: the DOM and network observers run from the
+ * moment the SDK attaches, so an idle tab on a busy page accumulates megabytes without a single
+ * tool call. Measured in this repo's own workspace, half the session directories had served no tool
+ * call at all and held roughly as many bytes as the ones that had.
+ *
+ * The cost is not the disk. Those directories occupy retention SLOTS, so a journal that could
+ * answer a verdict question is evicted by one that was never asked one.
+ *
+ * The test is deliberately about the RETENTION decision and not about capture. Capture must keep
+ * running the whole time: whether a tool call happens is not knowable while the events that would
+ * answer it are being recorded, and gating capture on it would mean the first assertion of a
+ * session has nothing to read. The directory is removed at the END, once the answer is known.
+ */
+describe('a session that served no tool call', () => {
+  let root: string;
+  const fs = createNodeFileSystem();
+
+  beforeEach(async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'reticle-idle-'));
+    root = join(dir, '.reticle');
+  });
+  afterEach(async () => {
+    await removeTempDir(join(root, '..'));
+  });
+
+  async function seed(id: string, actions: string | undefined): Promise<string> {
+    const dir = sessionDirPath(root, asSessionId(id));
+    await fs.mkdir(dir);
+    await fs.writeFile(join(dir, 'events.jsonl'), '{"t":1}\n');
+    if (actions !== undefined) await fs.writeFile(join(dir, 'actions.jsonl'), actions);
+    return dir;
+  }
+
+  it('is removed at teardown, so it cannot evict a journal somebody can use', async () => {
+    await seed('s-idle', undefined);
+    const end = makeSessionEnd({ fs, reticleRoot: root, enabled: true });
+    await end(fakeSession('s-idle', {}));
+    expect(await fs.exists(sessionDirPath(root, asSessionId('s-idle')))).toBe(false);
+  });
+
+  it('treats an empty actions ledger the same as a missing one', async () => {
+    await seed('s-empty', '');
+    const end = makeSessionEnd({ fs, reticleRoot: root, enabled: true });
+    await end(fakeSession('s-empty', {}));
+    expect(await fs.exists(sessionDirPath(root, asSessionId('s-empty')))).toBe(false);
+  });
+
+  /** The load-bearing control: one tool call is enough to keep the whole journal. */
+  it('KEEPS the journal of a session that served even one tool call', async () => {
+    await seed('s-driven', '{"tool":"reticle_act"}\n');
+    const end = makeSessionEnd({ fs, reticleRoot: root, enabled: true });
+    await end(fakeSession('s-driven', {}));
+    expect(await fs.exists(sessionDirPath(root, asSessionId('s-driven')))).toBe(true);
+  });
+
+  /** And it must not reach into anyone else's directory. */
+  it('removes only its own session, never a sibling', async () => {
+    await seed('s-idle', undefined);
+    await seed('s-other', undefined);
+    const end = makeSessionEnd({ fs, reticleRoot: root, enabled: true });
+    await end(fakeSession('s-idle', {}));
+    expect(await fs.exists(sessionDirPath(root, asSessionId('s-other')))).toBe(true);
   });
 });

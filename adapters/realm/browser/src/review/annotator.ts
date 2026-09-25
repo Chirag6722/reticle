@@ -2,6 +2,7 @@ import { isSyntheticInput } from '@/actions/synthetic/synthetic-input.js';
 import { EventType } from '@reticlehq/core';
 import { isReticleUi, isReticleOverlay } from '@/dom/dom-ignore.js';
 import { resolveMarkAnchor, type MarkAnchor } from './mark-anchor.js';
+import { marksCountText, marksForAgent } from './marks-for-agent.js';
 import { nativeSetTimeout, nativeClearTimeout } from '@/timers/native/native-timers.js';
 import {
   ANNOTATOR_CSS,
@@ -51,7 +52,11 @@ export interface AnnotatorDeps {
 export interface AnnotatorChrome {
   markersBtn?: HTMLElement;
   clearBtn?: HTMLElement;
+  /** The row that offers copying every mark as a prompt; shown only while there is something to copy. */
+  copyRow?: HTMLElement;
   countEl?: HTMLElement;
+  /** Told the count whenever it changes, so the HUD can bring the copy row into view. */
+  onCount?: (count: number) => void;
 }
 
 interface StoredMark {
@@ -91,13 +96,11 @@ export class Annotator {
   #pendingTarget: Element | undefined;
   #markersBtn: HTMLElement | undefined;
   #clearBtn: HTMLElement | undefined;
+  #copyRow: HTMLElement | undefined;
+  #onChromeCount: ((count: number) => void) | undefined;
   #countEl: HTMLElement | undefined;
   #accent: string | undefined;
-  #onClick: ((ev: MouseEvent) => void) | undefined;
-  #onKeydown: ((ev: KeyboardEvent) => void) | undefined;
-  #onMove: ((ev: MouseEvent) => void) | undefined;
-  #onScroll: (() => void) | undefined;
-  #onResize: (() => void) | undefined;
+  #ac: AbortController | undefined;
   #mo: MutationObserver | undefined;
 
   constructor(deps: AnnotatorDeps) {
@@ -132,16 +135,23 @@ export class Annotator {
     this.#hiLabel = root.querySelector<HTMLElement>(sel('hilabel')) ?? undefined;
     this.#selBox = root.querySelector<HTMLElement>(sel('sel')) ?? undefined;
 
-    this.#onClick = (ev: MouseEvent): void => this.#handleClick(ev);
-    document.addEventListener('click', this.#onClick, { capture: true });
-    this.#onMove = (ev: MouseEvent): void => this.#scheduleMove(ev);
-    document.addEventListener('mousemove', this.#onMove, { passive: true, capture: true });
-    this.#onKeydown = (ev: KeyboardEvent): void => this.#handleKey(ev);
-    document.addEventListener('keydown', this.#onKeydown);
-    this.#onScroll = (): void => this.#reposition();
-    this.#onResize = (): void => this.#reposition();
-    window.addEventListener('scroll', this.#onScroll, true);
-    window.addEventListener('resize', this.#onResize);
+    const ac = new AbortController();
+    this.#ac = ac;
+    document.addEventListener('click', (ev) => this.#handleClick(ev), {
+      capture: true,
+      signal: ac.signal,
+    });
+    document.addEventListener('mousemove', (ev) => this.#scheduleMove(ev), {
+      passive: true,
+      capture: true,
+      signal: ac.signal,
+    });
+    document.addEventListener('keydown', (ev) => this.#handleKey(ev), { signal: ac.signal });
+    window.addEventListener('scroll', () => this.#reposition(), {
+      capture: true,
+      signal: ac.signal,
+    });
+    window.addEventListener('resize', () => this.#reposition(), { signal: ac.signal });
     this.#mo = new MutationObserver(() => this.syncAnchors());
     this.#mo.observe(document.documentElement, { childList: true, subtree: true });
     if (undefined !== this.#accent) this.setAccent(this.#accent);
@@ -161,6 +171,8 @@ export class Annotator {
   attachChrome(chrome: AnnotatorChrome): void {
     this.#markersBtn = chrome.markersBtn;
     this.#clearBtn = chrome.clearBtn;
+    this.#copyRow = chrome.copyRow;
+    this.#onChromeCount = chrome.onCount;
     this.#countEl = chrome.countEl;
     this.#markersBtn?.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -174,26 +186,8 @@ export class Annotator {
   }
 
   destroy(): void {
-    if (this.#onClick !== undefined) {
-      document.removeEventListener('click', this.#onClick, { capture: true });
-      this.#onClick = undefined;
-    }
-    if (this.#onKeydown !== undefined) {
-      document.removeEventListener('keydown', this.#onKeydown);
-      this.#onKeydown = undefined;
-    }
-    if (this.#onMove !== undefined) {
-      document.removeEventListener('mousemove', this.#onMove, { capture: true });
-      this.#onMove = undefined;
-    }
-    if (this.#onScroll !== undefined) {
-      window.removeEventListener('scroll', this.#onScroll, true);
-      this.#onScroll = undefined;
-    }
-    if (this.#onResize !== undefined) {
-      window.removeEventListener('resize', this.#onResize);
-      this.#onResize = undefined;
-    }
+    this.#ac?.abort();
+    this.#ac = undefined;
     this.#mo?.disconnect();
     this.#mo = undefined;
     if (this.#hiTimer !== undefined) nativeClearTimeout(this.#hiTimer);
@@ -216,6 +210,11 @@ export class Annotator {
       this.#closePopover();
     }
     this.#syncChrome();
+  }
+
+  /** Every mark on the page as one prompt, for an agent that was not connected to drain them. */
+  agentPrompt(pageUrl: string): string {
+    return marksForAgent(this.#marks, pageUrl);
   }
 
   clearAll(): void {
@@ -258,6 +257,12 @@ export class Annotator {
       this.#countEl.hidden = 0 === n;
     }
     this.#clearBtn?.toggleAttribute('disabled', 0 === n);
+    this.#onChromeCount?.(n);
+    if (this.#copyRow !== undefined) {
+      this.#copyRow.hidden = 0 === n;
+      const text = this.#copyRow.querySelector('[data-reticle-marks-text]');
+      if (text !== null) text.textContent = marksCountText(n);
+    }
     this.#markersBtn?.toggleAttribute('disabled', 0 === n);
   }
 
@@ -429,8 +434,8 @@ export class Annotator {
     pop.innerHTML = `<div class="reticle-mark-where"></div>
       <textarea rows="2" placeholder="${MARK_PLACEHOLDER}"></textarea>
       <div class="reticle-mark-row">
-        <button type="button" data-cancel>${MARK_CANCEL}</button>
-        <button type="button" data-send disabled>${MARK_SUBMIT}</button>
+        <button type="button" data-cancel data-reticle-mark-cancel>${MARK_CANCEL}</button>
+        <button type="button" data-send data-reticle-mark-send disabled>${MARK_SUBMIT}</button>
       </div>`;
     const whereEl = pop.querySelector('.reticle-mark-where');
     if (whereEl !== null) whereEl.textContent = where;

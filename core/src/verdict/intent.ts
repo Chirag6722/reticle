@@ -94,7 +94,12 @@ export function declareIntent(input: {
 
 /** Attach the predicate that would prove it. Pure — returns a new intent. */
 export function bindIntent(intent: Intent, binding: unknown): Intent {
-  return { ...intent, state: IntentState.BOUND, binding };
+  // The same check again — what re-saving a flow does — leaves a proved intent proved.
+  // ponytail: JSON equality, so key order matters; both bindings come from the same writers.
+  if (JSON.stringify(intent.binding) === JSON.stringify(binding)) return intent;
+  // A different check has proved nothing yet, whatever the old one did.
+  const { provenBy: _proof, ...unproved } = intent;
+  return { ...unproved, state: IntentState.BOUND, binding };
 }
 
 /**
@@ -114,6 +119,29 @@ export function dischargeIntent(
 }
 
 /**
+ * What declaring an intent that may already exist should leave stored.
+ *
+ * Declaring is what a re-run does — a flow re-saved, a feature's intents declared again in a later
+ * session — and it replaced the record outright, so a proved rule lost its check and its proof every
+ * time somebody said it again. Same words: nothing about the promise changed, so nothing is
+ * discarded. Different words: the check usually survives a rewording, the proof cannot, because it
+ * was evidence for words that are gone. The amendment itself is recorded by `upsertIntent`.
+ */
+export function redeclareIntent(existing: Intent | undefined, fresh: Intent): Intent {
+  if (existing === undefined) return fresh;
+  const surface = existing.surface ?? fresh.surface;
+  const withSurface = surface === undefined ? {} : { surface };
+  if (existing.statement === fresh.statement) return { ...existing, ...withSurface };
+  const { provenBy: _proof, ...unproved } = existing;
+  return {
+    ...unproved,
+    statement: fresh.statement,
+    state: existing.binding === undefined ? IntentState.DECLARED : IntentState.BOUND,
+    ...withSurface,
+  };
+}
+
+/**
  * Add or amend an intent, keeping the previous statement in its history.
  *
  * An amendment is recorded only when the statement actually changed — re-declaring the same intent
@@ -121,18 +149,49 @@ export function dischargeIntent(
  * amendment somebody needs to see.
  */
 export function upsertIntent(file: IntentFile, intent: Intent): IntentFile {
-  const previous = file.intents[intent.id];
-  const changed = previous !== undefined && previous.statement !== intent.statement;
+  return {
+    version: INTENT_FILE_VERSION,
+    intents: { ...file.intents, [intent.id]: amendIntent(file.intents[intent.id], intent) },
+  };
+}
+
+/**
+ * The next version of an intent, carrying the previous wording into its history when it changed.
+ *
+ * One rule for every store that keeps intents, so a flat ledger and a sharded one cannot keep two
+ * different histories of the same promise.
+ */
+export function amendIntent(previous: Intent | undefined, next: Intent): Intent {
+  const changed = previous !== undefined && previous.statement !== next.statement;
   const amended = changed
     ? [...(previous.amended ?? []), { statement: previous.statement, at: previous.declaredAt }]
     : previous?.amended;
-  return {
-    version: INTENT_FILE_VERSION,
-    intents: {
-      ...file.intents,
-      [intent.id]: { ...intent, ...(amended === undefined ? {} : { amended }) },
-    },
-  };
+  return { ...next, ...(amended === undefined ? {} : { amended }) };
+}
+
+/**
+ * A step verb directly followed by an element role: `click button "Save"`, `check switch "X"`.
+ *
+ * The shape an ACTION DESCRIPTION takes, which is what tools generate from a snapshot line. Narrow on
+ * purpose: "click the Save button and the order appears" names a consequence and is kept, as is any
+ * gerund ("clicking Send makes the badge read…"). Refusing a real intent costs more than admitting a
+ * label, so only the unmistakable shape is refused.
+ */
+const STEP_LABEL =
+  /^(click|dblclick|fill|type|clear|select|check|uncheck|press|hover|focus|tap|drag|scroll|submit|upload)\s+(button|link|textbox|searchbox|switch|checkbox|menuitem|menuitemcheckbox|tab|combobox|option|radio|slider|spinbutton|heading|img|row|cell|listitem|treeitem)\b/i;
+
+/** What an automated drive used to file as its "intent": a count of what it did. */
+const DRIVE_LOG = /^Autonomous coverage drive\b/i;
+
+/**
+ * Is this a description of what was DONE rather than a statement of what must be TRUE?
+ *
+ * An intent is the business rule a teammate reads in six months. A step label is a log line, and a
+ * ledger full of them buries the rules behind "click button \"Cancel\"" and inflates what is owed.
+ */
+export function isActionLabel(statement: string): boolean {
+  const text = statement.trim();
+  return STEP_LABEL.test(text) || DRIVE_LOG.test(text);
 }
 
 /** Everything not yet proved — what an agent asking "am I done?" still owes. */

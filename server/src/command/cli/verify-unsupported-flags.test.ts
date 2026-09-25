@@ -89,10 +89,21 @@ describe('what verify does without --expect', () => {
     ).toEqual({ route: VerifyRoute.FLOWS });
   });
 
-  it('answers the busy-port message when a daemon owns the port', () => {
+  it('replays the saved flows through the daemon that owns the port', () => {
     expect(routeVerify({ hasPredicate: false, presence: PortPresence.DAEMON, port: PORT })).toEqual(
-      { route: VerifyRoute.REFUSE, message: portBusyMessage(PORT) },
+      { route: VerifyRoute.ADHOC_SUITE },
     );
+  });
+
+  it('answers the busy-port message when the request needs a browser of its own', () => {
+    expect(
+      routeVerify({
+        hasPredicate: false,
+        wantsOwnBrowser: true,
+        presence: PortPresence.DAEMON,
+        port: PORT,
+      }),
+    ).toEqual({ route: VerifyRoute.REFUSE, message: portBusyMessage(PORT) });
   });
 });
 
@@ -170,9 +181,9 @@ describe('the flag combinations verify does support', () => {
 
   it('still names the quoting when --expect is handed something that is not JSON', () => {
     const parsed = parseCliArgs(['verify', URL_, '--expect', '{kind: text}'], PORT);
-    expect(parsed).toEqual({
-      kind: 'error',
-      message: '--expect needs a JSON predicate; could not parse: {kind: text}',
-    });
+    // `{kind: text}` is exactly JSON with its double quotes stripped, so it gets the answer that
+    // names the shell doing the stripping rather than a bare parse error.
+    expect(parsed).toMatchObject({ kind: 'error' });
+    expect(String((parsed as { message?: string }).message)).toContain('double quotes removed');
   });
 });

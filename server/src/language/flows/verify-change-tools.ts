@@ -240,6 +240,20 @@ export const VERIFY_CHANGE_TOOLS: ToolDef[] = [
         };
       }
 
+      // The mirror of `earnedNo`: a green from flows that ran only because their sources are unknown
+      // says nothing about these files either. At least one attributed flow has to have passed.
+      if (0 === attributedFailures(affected, unknownProvenance).length) {
+        return {
+          verified: Verified.UNKNOWN,
+          because: `the flows that ran passed, but Reticle cannot tell which sources any of them cover (${affected.join(', ')}), so this says nothing about the files you changed. Drive the change directly; the drive is saved as a flow with its sources stamped`,
+          changedFiles,
+          flowsRun: affected,
+          suite,
+          unknownProvenance,
+          measured: extra.measured,
+        };
+      }
+
       return {
         verified: Verified.YES,
         because: `all ${String(passed)} flows covering these files passed${provenanceNote}${extra.untouched === undefined ? '' : `, with ${String(extra.untouched.length)} controls left undriven`}`,
@@ -293,6 +307,7 @@ async function inspectAfterReplay(
       currentDocumentId: session.currentDocumentId,
       currentEditEpoch: session.currentEditEpoch,
       appOrigin: session.url,
+      background: session.background,
       // The replay is the action, and the cursor is where it started.
       actionSince: cursor,
     }) as { kind: string }[];

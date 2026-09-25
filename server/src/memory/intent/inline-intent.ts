@@ -11,7 +11,7 @@ import type { ToolDeps } from '@/surface/tools/tool-kit.js';
  * and it does. `reticle_act_and_wait` and `reticle_assert` are in every agent's tool list already,
  * so one optional argument there makes the declaration free and discoverable by construction.
  *
- * This is a shortcut into the EXISTING ledger, never a second one. It writes `.reticle/intent.json`
+ * This is a shortcut into the EXISTING ledger, never a second one. It writes `.reticle/intent/`
  * through `IntentStore` exactly as `reticle_intent { action: "declare" }` does, so a reviewer reads
  * one file in one vocabulary and cannot tell from the row which door the intent came in by. The
  * pattern is `flows/flow-intent.ts`, which does the same job for a saved flow.
@@ -158,7 +158,12 @@ export async function linkInlineIntent(
     // Declared WITHOUT a surface on purpose: see dischargeInlineIntent for why the route that
     // describes this record only exists after the action it is about.
     const declaredHere = existing === undefined;
-    if (declaredHere) await store.declare([{ id, statement: intent }]);
+    if (declaredHere) {
+      // Nothing stored (a step label is refused) means nothing to link: no verdict may then claim
+      // to have proved an intent that was never written.
+      const stored = await store.declare([{ id, statement: intent }]);
+      if (0 === stored.length) return undefined;
+    }
     /*
      * A binding may be INVENTED only for a row this call also declared.
      *

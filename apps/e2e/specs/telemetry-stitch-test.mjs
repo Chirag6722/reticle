@@ -22,7 +22,7 @@
 import path from 'node:path';
 import { createServer } from 'node:http';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { McpStdioClient } from '../../../bench/harness/mcp-client.mjs';
@@ -187,19 +187,30 @@ chk(
 
 const FLOW = 'stitch-probe';
 
-// This spec's own scratch flow, removed by PATH rather than by a tool call: `reticle_flow` has no
+// Everything the suite would run, removed by PATH rather than by a tool call: `reticle_flow` has no
 // delete action, and an unrecognised one is answered rather than refused, so a cleanup written that
-// way runs green and deletes nothing. `list` is what knows where the file actually went.
+// way runs green and deletes nothing. `list` is what knows where the files actually went.
 //
-// Run at BOTH ends on purpose. The session has no resolvable project, so the flow lands in the
-// machine-wide `~/.reticle/unmatched/unnamed` bucket and outlives the run. Cleaning up only at the
-// end still leaves the assertion below depending on a machine that has never run this spec before:
-// it passed on fresh CI and failed from the second run onwards on a developer's machine. An
-// assertion about an EMPTY suite has to make the suite empty.
+// Run at BOTH ends on purpose. The session has no resolvable project, so a flow lands in the
+// machine-wide `~/.reticle/unmatched/unnamed` bucket and outlives the run. An assertion about an
+// EMPTY suite has to make the suite empty.
+//
+// EVERY flow, not just this spec's own. It removed only `stitch-probe`, which made the assertion
+// true on fresh CI and false on any machine where ANOTHER spec had left one behind. Measured:
+// `verify-500.json`, saved by a sibling spec, sat in that bucket and was replayed by the empty-suite
+// check below -- and a replay hard-navigates, which resets bench-app's deliberately in-memory auth
+// to the Login screen. The next step then recorded a click on a nav item that no longer existed, so
+// the recording captured nothing and the four checks after it failed, naming annotation and flow
+// grading for a cause that was neither. The battery was green on CI and red on a developer machine,
+// from the second run onwards, for a reason no message mentioned.
+//
+// Safe to take the whole bucket: it is the machine-wide bin for sessions with no resolvable
+// project, every spec that needs a flow saves its own inside its own run, and this spec is the only
+// one asserting the bucket is empty.
 const removeSavedFlow = async () => {
   const listed = await call('reticle_flow', { ...S, action: 'list' });
   for (const entry of Array.isArray(listed?.flows) ? listed.flows : []) {
-    if (entry?.name === FLOW && typeof entry?.path === 'string') rmSync(entry.path, { force: true });
+    if (typeof entry?.path === 'string') rmSync(entry.path, { force: true });
   }
 };
 await removeSavedFlow();
@@ -235,12 +246,33 @@ chk(
   saved?.assertions?.grade === 'asserted',
   JSON.stringify(saved?.assertions ?? saved).slice(0, 300),
 );
-// Replay honours the FlowFile contract now: a tab that is not on the flow's startPath is
-// hard-navigated there before step 1. The recording above ended on /deployments, and a full-page
-// load resets bench-app's deliberately in-memory auth back to the Login screen — where step 1's
-// anchor cannot exist. This spec is about telemetry, not wrong-page recovery (the
-// flow-startpath-navigate unit tests own that), so return to the start route in-SPA before each
-// replay: arrival is then a no-op and the signed-in session survives.
+// Replay honours the FlowFile contract now: it puts the tab on the flow's startPath before step 1
+// and RELOADS it if it is already there, so every run starts from the same state. bench-app holds
+// its auth in memory on purpose, so that reload lands on the Login screen — where step 1's anchor
+// cannot exist. This flow genuinely continues from a signed-in session, which is precisely what
+// `requires` declares and the one thing that opts a flow out of the reset.
+//
+// Declared here by writing the file because the RECORDER does not write `requires` yet: a recording
+// cannot know what a page load would take away. That gap is the migration story for the reset, and
+// leaving this spec on the pre-reset contract would have hidden it. This spec is about telemetry,
+// not about wrong-page recovery (the flow-startpath-navigate unit tests own that), so it declares
+// the dependency and returns to the start route in-SPA before each replay.
+//
+// `reticle_flow list` is what knows where the file went, for the same reason `removeSavedFlow`
+// uses it: this session has no resolvable project, so the flow lands in the machine-wide
+// unmatched bucket and NOT under the temp project the daemon was started in.
+const flowFileOf = async (name) => {
+  const listed = await call('reticle_flow', { ...S, action: 'list' });
+  const found = (Array.isArray(listed?.flows) ? listed.flows : []).find((f) => f?.name === name);
+  if (typeof found?.path !== 'string') throw new Error(`no saved flow named ${name} to declare on`);
+  return found.path;
+};
+const FLOW_FILE = await flowFileOf(FLOW);
+const recorded = JSON.parse(readFileSync(FLOW_FILE, 'utf8'));
+writeFileSync(
+  FLOW_FILE,
+  JSON.stringify({ ...recorded, requires: [{ element: { testid: 'nav-deployments' } }] }, null, 2),
+);
 const backToStart = async () =>
   call('reticle_act_and_wait', {
     ...S,

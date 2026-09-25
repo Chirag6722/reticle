@@ -1,3 +1,4 @@
+import { appModalOpen } from '@/dom/dom-ignore.js';
 import type { HarnessConfig } from '@reticlehq/core';
 import { PresenterReport, reportPanelHtml } from './presenter-report.js';
 import type { AccountState } from '@reticlehq/core';
@@ -18,10 +19,13 @@ import {
   MIN_ATTR,
   SETTINGS_ATTR,
   SETTINGS_BTN_ATTR,
+  MINIMISED_STORAGE_KEY,
 } from './presenter-config.js';
-import { OFFER_SLOT_ATTR, paintOffer, type OfferState } from './presenter-offer.js';
+import { offerDismissed, type OfferState } from './carousel/offer-card.js';
+import { paintCarousel } from './carousel/carousel.js';
+import { panelSlides } from './carousel/panel-slides.js';
 import { BRAND_NAME, FAB_TOGGLE_HTML, MARK_SVG } from './chrome/presenter-brand.js';
-import { settleLogAtLatest } from './chrome/presenter-log.js';
+import { DATA_RETICLE_LOG, settleLogAtLatest } from './chrome/presenter-log.js';
 import { installHudDragHandles, installHudPositionGuards } from './presenter-drag.js';
 import { scheduleSyncDockLayout } from './presenter-dock-layout.js';
 import {
@@ -160,11 +164,31 @@ export class HudShell {
    */
   #pushedOffer: OfferState | undefined;
 
-  /** Paint the harness offer into the chat panel. Nothing to say is the common answer. */
+  /** Take the harness offer from a push, and repaint the carousel it is one slide of. */
   paintOffer(offer: OfferState | undefined): void {
     this.#pushedOffer = offer;
-    if (this.#root === undefined) return;
-    paintOffer(this.#root, offer, this.#storage());
+    this.#paintCarousel();
+  }
+
+  /**
+   * The chat panel's top carousel, as the log's first child: it takes no height from the panel, and
+   * new rows push it up. The harness offer when it applies, then the founder invitation.
+   */
+  #paintCarousel(): void {
+    const log = this.#root?.querySelector(`[${DATA_RETICLE_LOG}]`);
+    if (!(log instanceof HTMLElement)) return;
+    // A "not now" given to the harness offer before the carousel existed still answers it.
+    const declined = offerDismissed(this.#storage());
+    paintCarousel(log, panelSlides(this.#pushedOffer, declined), this.#sessionStorage());
+  }
+
+  /** Session storage: "not now" on the founder card lasts this tab, not forever. */
+  #sessionStorage(): Pick<Storage, 'getItem' | 'setItem'> | undefined {
+    try {
+      return globalThis.sessionStorage;
+    } catch {
+      return undefined;
+    }
   }
 
   /** Local storage, or nothing when the page refuses it. Read through a getter so a test can't race it. */
@@ -211,7 +235,6 @@ export class HudShell {
         ${actStripHtml}
         <span class="reticle-tally" data-reticle-tally hidden></span>
         ${bannerHtml}
-        <div ${OFFER_SLOT_ATTR}></div>
         <div class="${HUD_LOG_WELL_CLASS}"><div ${logAttr}></div></div>
         ${flowsHtml}
         ${footHtml}
@@ -403,7 +426,8 @@ export class HudShell {
       const pushed = this.#pushedAccount;
       this.paintAccount(pushed.account, pushed.dashboardUrl, pushed.details);
     }
-    if (this.#pushedOffer !== undefined) this.paintOffer(this.#pushedOffer);
+    // Painted on mount whether or not an offer has arrived: the founder slide needs no daemon state.
+    this.#paintCarousel();
   }
   teardown(): void {
     this.#accountTeardown?.();
@@ -440,6 +464,8 @@ export class HudShell {
     if (this.#transitionLock) return;
     this.#lockTransition();
     this.#root.setAttribute(MIN_ATTR, '0');
+    // Expanding is somebody changing their mind, so the reload memory goes with it.
+    rememberMinimised(false);
     if (this.#fab !== undefined) this.#fab.setAttribute('aria-expanded', 'true');
     this.#callbacks.onExpand?.();
     // The chat IS the HUD's content: expanding to a toolbar with nothing above it made the agent's
@@ -457,6 +483,9 @@ export class HudShell {
     this.closeChat();
     this.#settings.close();
     this.#root.setAttribute(MIN_ATTR, '1');
+    // Remembered for this TAB, so a reload does not put the panel back over the control somebody
+    // minimised it to reach. Field reports of exactly that, from drivers outside Reticle.
+    rememberMinimised(true);
     if (this.#fab !== undefined) this.#fab.setAttribute('aria-expanded', 'false');
     this.#callbacks.onCollapse?.();
   }
@@ -529,8 +558,25 @@ export class HudShell {
     if (this.#settings.contains(target)) return;
     this.#settings.close();
   };
+  /*
+   * Escape belongs to the app under test.
+   *
+   * This used to `preventDefault()` on every branch, which is what cancels the browser's own close
+   * request for a `<dialog>` opened with `showModal()` — so Escape stopped closing an app's modals
+   * the moment Reticle was installed, and the developer saw a bug in their own code that does not
+   * exist in production. The broadest branch did it for the broadest reason: with the HUD expanded,
+   * which is the default, EVERY Escape on the page was cancelled so our panel could collapse.
+   *
+   * An instrumentation layer observes; it does not participate, and taking an event away from the
+   * app is participating in the strongest way there is. So: never cancel it, and when the app has a
+   * modal open, do not act at all — Escape unambiguously belongs to that modal, and collapsing our
+   * panel in the same keystroke is a second surprise on top of the first.
+   */
   #onKeyDown = (e: KeyboardEvent): void => {
     if ('Escape' !== e.key || this.#root === undefined) return;
+    // The app already acted on it: it is the app's Escape, whatever else is open.
+    if (e.defaultPrevented) return;
+    if (appModalOpen(document)) return;
     const target = e.target;
     if (
       target instanceof HTMLElement &&
@@ -541,18 +587,59 @@ export class HudShell {
       return;
     }
     if (this.isChatOpen()) {
-      e.preventDefault();
       this.closeChat();
       return;
     }
     if (this.#settings.isOpen()) {
-      e.preventDefault();
       this.#settings.close();
       return;
     }
     if (!this.isCollapsed()) {
-      e.preventDefault();
       this.collapse();
     }
   };
+}
+
+/**
+ * Did somebody minimise the HUD in this tab?
+ *
+ * Read on mount so a reload does not undo it. Field reports, all from drivers outside Reticle:
+ * minimise our panel to reach the app, reload, and it is back over the control — so the next click
+ * lands on Reticle instead of the product and times out.
+ *
+ * Every access is guarded. A private window, a blocked-cookies profile and a sandboxed iframe throw
+ * on the property itself rather than returning null, and a dev overlay that cannot remember a
+ * preference is a far smaller problem than one that throws into the app's own load path.
+ */
+export function wasMinimised(): boolean {
+  try {
+    return '1' === globalThis.sessionStorage.getItem(MINIMISED_STORAGE_KEY);
+  } catch {
+    return false;
+  }
+}
+
+/** Record that the HUD was minimised by hand, or expanded again. */
+export function rememberMinimised(minimised: boolean): void {
+  try {
+    if (minimised) globalThis.sessionStorage.setItem(MINIMISED_STORAGE_KEY, '1');
+    else globalThis.sessionStorage.removeItem(MINIMISED_STORAGE_KEY);
+  } catch {
+    /* a page that refuses storage still gets a HUD */
+  }
+}
+
+/**
+ * Should session start open the chat by itself?
+ *
+ * Two different questions, and collapsing them is what the field reported. `autoOpenChat` is a
+ * PREFERENCE: should the chat appear with no click at all, at session start. Whether somebody has
+ * already minimised the panel IN THIS TAB is not that question — they answered it by hand, to reach
+ * a control underneath, and a reload is not them changing their mind.
+ *
+ * Named rather than left as an `&&` at two call sites, because the two halves read as the same
+ * question until you say why they are not.
+ */
+export function shouldAutoOpenChat(autoOpenChat: boolean): boolean {
+  return autoOpenChat && !wasMinimised();
 }

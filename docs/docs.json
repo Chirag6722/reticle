@@ -32,7 +32,7 @@
   "navigation": {
     "versions": [
       {
-        "version": "3.2.0",
+        "version": "3.3.0",
         "default": true,
         "tabs": [
           {
@@ -50,7 +50,13 @@
               },
               {
                 "group": "Install",
-                "pages": ["install-agentic", "install-manual", "skill-setup", "frameworks"]
+                "pages": [
+                  "install-agentic",
+                  "install-manual",
+                  "what-is-recorded",
+                  "skill-setup",
+                  "frameworks"
+                ]
               },
               {
                 "group": "Instrument",
@@ -121,6 +127,7 @@
                   "cli/verify",
                   "cli/affected",
                   "cli/gate",
+                  "cli/report",
                   "cli/watch",
                   "cli/capsules",
                   "cli/hunt",

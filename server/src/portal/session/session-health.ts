@@ -51,7 +51,7 @@ export interface SessionHealth {
    * the same rule `pendingNavigationMs` follows. A ledger below that is doing its job quietly.
    *
    * It is here because nothing reported it. A repeating uncaught error wrote one session's ledger
-   * at 13 MB/s for 14 hours and filled a 926 GB disk; neither the daemon nor `doctor` nor any
+   * until the disk was full; neither the daemon nor `doctor` nor any
    * health counter said a word, and the user found out when the disk was full (#986). A cap bounds
    * the damage but does not make the writing visible, and this block is the surface an agent
    * already reads on every act and assert.
@@ -133,6 +133,20 @@ export function bufferEnvelope(session: HealthSubject): BufferEnvelope {
   const { total, dropped } = session.bufferHealth();
   if (0 === dropped) return {};
   return { buffer: { held: total, dropped, note: BUFFER_EVICTION_WARNING } };
+}
+
+/**
+ * The session registered under `session.id` NOW, for describing a tab after a call that may have
+ * replaced its document. A reload or full navigation registers a new Session under the same id, and
+ * the object a handler resolved first is the page that unloaded; it reported itself hidden on the way
+ * out, so its health said "throttled" about a tab that was fine. Optional-called because test doubles
+ * are partial registries.
+ */
+export function currentOf<S extends { id: string }>(
+  registry: { get?: (id: string) => S | undefined },
+  session: S,
+): S {
+  return registry.get?.(session.id) ?? session;
 }
 
 /** The `session` (and optional throttled `warning`) block spliced onto act/assert results. */

@@ -6,15 +6,18 @@
  * point: the action window must open and close identically no matter which anchor found the element,
  * or a step's events land in the wrong window depending on how it was addressed.
  */
+import { expectedElementTestid } from '@reticlehq/core';
 import {
   AnchorKind,
   DEGRADED_ANCHOR_ROLE,
   DriftReason,
+  PredicateKind,
   QueryBy,
   ReticleCommand,
   type FlowAnchor,
   type FlowStep,
   type FlowStepResult,
+  type Predicate,
 } from '@reticlehq/core';
 import { ReticleTool } from '@reticlehq/core';
 import { replayActionArgs } from './replay.js';
@@ -162,7 +165,7 @@ function replayDestructiveActionHint(rawError: string): string {
  * Dispatch one already-resolved step. Shared so every anchor kind runs the action the same way —
  * including the action window, whose open/close must not depend on which anchor found the element.
  */
-async function actOnResolvedRef(
+export async function actOnResolvedRef(
   session: FlowReplaySession,
   step: FlowStep,
   index: number,
@@ -326,6 +329,22 @@ export function anchorQueryArgs(anchor: FlowAnchor): Record<string, unknown> | n
 }
 
 /**
+ * The anchor as a PRECONDITION a flow file can store: "this element is on the page".
+ *
+ * What `requires` means for a flow that starts from state a page load discards, in the shape the
+ * flow's own `requires` holds. No tool writes `requires`, so the reset's hint hands over this line.
+ */
+export function anchorPrecondition(anchor: FlowAnchor): Predicate | undefined {
+  if (anchor.kind === AnchorKind.TESTID) {
+    return { kind: PredicateKind.ELEMENT, query: { testid: anchor.value } };
+  }
+  if (anchor.kind === AnchorKind.ROLE && !isDegradedAnchor(anchor)) {
+    return { kind: PredicateKind.ELEMENT, query: { role: anchor.role, name: anchor.name } };
+  }
+  return undefined;
+}
+
+/**
  * Run an act_sequence step: resolve every sub-step's OWN anchor, then dispatch the whole thing as one
  * ACT_SEQUENCE — the same shape `replayProgram` already uses, so a recorded sequence and a saved one
  * execute identically.
@@ -401,7 +420,7 @@ export async function runSequenceStep(
 
   /** The sub-step's own expectation, unless its testid is deliberately unasserted. */
   const declaredBy = (sub: FlowStep): string | undefined => {
-    const testid = sub.expect?.element?.testid;
+    const testid = expectedElementTestid(sub.expect);
     return testid === undefined || dynamic.has(testid) ? undefined : testid;
   };
 

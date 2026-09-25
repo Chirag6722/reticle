@@ -189,7 +189,7 @@ export const intentArg = z
       'BAD: "P1 step 5", "drive 2 of 2", "same as before the fix", "the board renders cleanly" — these name a session, ' +
       'a step number or nothing checkable, and the person reading them later has none of that context. ' +
       'This is shared memory: it is pooled per project and later agents read it back to avoid re-deriving what you just established. ' +
-      'Recorded in .reticle/intent.json, the same ledger reticle_intent writes, and marked proved by this verdict if it passes.',
+      'Recorded in .reticle/intent/, the same ledger reticle_intent writes, and marked proved by this verdict if it passes.',
   );
 
 export const sessionIdShape = {
@@ -241,6 +241,11 @@ export const EnvelopeKey = {
   VERIFY_NEXT: 'verify_next',
   /** The contextual "tell us what just went wrong" invitation. Same story, same release. */
   FEEDBACK_INVITE: 'feedback_invite',
+  /**
+   * The same moment, for the HUMAN: a call with the founder, or an email through `identify`. The
+   * agent is told to offer it and never to book or submit anything itself.
+   */
+  TALK_TO_US: 'talk_to_us',
   /** SDK/daemon version skew — often the one fact that explains everything else in the session. */
   VERSION_SKEW: 'version_skew',
   /** A feedback report that was accepted and then failed to send. Only the reporter can act on it. */

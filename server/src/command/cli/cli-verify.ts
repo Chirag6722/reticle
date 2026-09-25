@@ -11,7 +11,9 @@
  */
 
 import { join, basename } from 'node:path';
+import { readFileSync } from 'node:fs';
 import { runAdhocVerdict } from './adhoc-verdict.js';
+import { runAdhocSuite } from './adhoc-suite.js';
 import {
   exploreApp,
   harnessAvailable,
@@ -518,6 +520,8 @@ export function expectNeedsDaemonMessage(port: number, presence: PortPresence): 
 export const VerifyRoute = {
   /** Ask the daemon that already owns the port for a one-shot verdict on the predicate. */
   ADHOC: 'adhoc',
+  /** Ask the daemon that already owns the port to replay the saved flows. See runAdhocSuite. */
+  ADHOC_SUITE: 'adhoc-suite',
   /** Boot our own daemon, drive the url, replay the flows saved on disk. */
   FLOWS: 'flows',
   /** Answer the caller, and run nothing. */
@@ -527,6 +531,7 @@ export type VerifyRoute = (typeof VerifyRoute)[keyof typeof VerifyRoute];
 
 export type VerifyPlan =
   | { route: typeof VerifyRoute.ADHOC }
+  | { route: typeof VerifyRoute.ADHOC_SUITE }
   | { route: typeof VerifyRoute.FLOWS }
   | { route: typeof VerifyRoute.REFUSE; message: string };
 
@@ -540,8 +545,14 @@ export type VerifyPlan =
  * browser — which is where an argument-level decision belongs.
  */
 export function routeVerify(args: {
-  /** True when the caller supplied `--expect`. */
+  /** True when the caller supplied a predicate, by `--expect` or `--expect-file`. */
   hasPredicate: boolean;
+  /**
+   * True when the caller asked for something only a browser of OUR OWN can do: `--explore` (a model
+   * driving a fresh page), `--headed`, or `--storage-state`. The running daemon's tab can honour
+   * none of them, so replaying there would silently ignore the request.
+   */
+  wantsOwnBrowser?: boolean;
   presence: PortPresence;
   port: number;
 }): VerifyPlan {
@@ -550,15 +561,20 @@ export function routeVerify(args: {
       ? { route: VerifyRoute.ADHOC }
       : { route: VerifyRoute.REFUSE, message: expectNeedsDaemonMessage(args.port, args.presence) };
   }
-  return args.presence === PortPresence.DAEMON
+  if (args.presence !== PortPresence.DAEMON) return { route: VerifyRoute.FLOWS };
+  // No predicate, but there may be SAVED FLOWS, and a daemon already owns the port: replay them
+  // there rather than refusing, unless the request needs a browser that path never opens.
+  return true === args.wantsOwnBrowser
     ? { route: VerifyRoute.REFUSE, message: portBusyMessage(args.port) }
-    : { route: VerifyRoute.FLOWS };
+    : { route: VerifyRoute.ADHOC_SUITE };
 }
 
 export function handleVerify(parsed: {
   url: string;
   /** A parsed predicate for a flow-free, one-shot verdict against the running daemon. */
   expect?: unknown;
+  /** The same predicate in a file, which is the form no shell can mangle. Resolved below. */
+  expectFile?: string;
   headless: boolean;
   timeoutMs?: number;
   storageState?: string;
@@ -573,6 +589,34 @@ export function handleVerify(parsed: {
   port: number;
 }): void {
   const now = (): number => Date.now();
+  /*
+   * `--expect-file` is `--expect` with the shell taken out of the loop.
+   *
+   * Resolved here rather than in the parser because the parser is pure and reads no disk, and
+   * because the two failures a reader can hit — the file is not there, and what is in it is not
+   * JSON — are worth saying apart. Either one ends the run before anything binds: a predicate that
+   * could not be read produces NO verdict, and exiting 1 with the reason is the only honest answer.
+   */
+  let expectation = parsed.expect;
+  if (parsed.expectFile !== undefined) {
+    let text: string;
+    try {
+      text = readFileSync(parsed.expectFile, 'utf8');
+    } catch {
+      process.stderr.write(`--expect-file: cannot read ${parsed.expectFile}\n`);
+      process.exit(1);
+      return;
+    }
+    try {
+      expectation = JSON.parse(text) as unknown;
+    } catch {
+      process.stderr.write(
+        `--expect-file: ${parsed.expectFile} is not valid JSON, so no predicate was read\n`,
+      );
+      process.exit(1);
+      return;
+    }
+  }
   const reticleRoot = join(process.cwd(), ReticleDir.ROOT);
   const projectName = basename(process.cwd()) || DEFAULT_PROJECT_NAME;
   const ports: VerifyPorts = {
@@ -597,7 +641,13 @@ export function handleVerify(parsed: {
   void (async () => {
     const port = parsed.port ?? RETICLE_DEFAULT_PORT;
     const presence = await probePresence(port, { tcpOpen: probeDaemon, status: fetchStatus });
-    const plan = routeVerify({ hasPredicate: parsed.expect !== undefined, presence, port });
+    const plan = routeVerify({
+      hasPredicate: expectation !== undefined,
+      wantsOwnBrowser:
+        true === parsed.explore || !parsed.headless || parsed.storageState !== undefined,
+      presence,
+      port,
+    });
     switch (plan.route) {
       // Either the busy port, or a predicate this state cannot answer. Both are refusals that name
       // what was asked for — never a report about a check nobody requested.
@@ -616,7 +666,7 @@ export function handleVerify(parsed: {
         const verdict = await runAdhocVerdict({
           port,
           ...(parsed.url !== undefined && '' !== parsed.url ? { url: parsed.url } : {}),
-          predicate: parsed.expect,
+          predicate: expectation,
           ...(parsed.sessionId === undefined ? {} : { sessionId: parsed.sessionId }),
           ...((t: string | undefined) => (t === undefined || 0 === t.length ? {} : { token: t }))(
             readOrCreatePairingTokenSync(defaultPairingTokenDir()),
@@ -624,6 +674,21 @@ export function handleVerify(parsed: {
         });
         for (const line of verdict.lines) ports.out(line);
         ports.exit(verdict.code);
+        return;
+      }
+      // No predicate, a daemon on the port, and saved flows to run: the other half of the same
+      // dead end. The whole promise of a saved suite is that it runs again without an agent.
+      case VerifyRoute.ADHOC_SUITE: {
+        const suite = await runAdhocSuite({
+          port,
+          ...(parsed.select === undefined ? {} : { select: parsed.select }),
+          ...(parsed.sessionId === undefined ? {} : { sessionId: parsed.sessionId }),
+          ...((t: string | undefined) => (t === undefined || 0 === t.length ? {} : { token: t }))(
+            readOrCreatePairingTokenSync(defaultPairingTokenDir()),
+          ),
+        });
+        for (const line of suite.lines) ports.out(line);
+        ports.exit(suite.code);
         return;
       }
       case VerifyRoute.FLOWS:

@@ -23,7 +23,7 @@ import { reportOnboardingStep } from '@/telemetry/onboarding-funnel.js';
 import { noteActed, noteFirstVerdict, noteOnboardingFirst } from '@/telemetry/onboarding-firsts.js';
 import { withHarnessDrive } from '@/telemetry/harness-drive.js';
 import { OnboardingPhase, OnboardingStepStatus } from '@reticlehq/core/telemetry';
-import { asString } from '@reticlehq/core';
+import { DiscoveryInvite, asString } from '@reticlehq/core';
 import { SESSION_ID_ARG, sessionIdFromArgs, spentRefFromArgs } from './tools-helpers.js';
 import { EnvelopeKey } from './tool-kit.js';
 import { ReticleTool } from '@reticlehq/core';
@@ -157,7 +157,7 @@ export const SESSION_EXEMPT_TOOLS: ReadonlySet<string> = new Set([
   // FLOW_HEAL is no longer a name runTool ever sees: it became `reticle_verify {action:"heal"}`,
   // and VERIFY is already listed here, so the exemption is inherited from the parent. Left as a
   // dangling name it would be a lie this file's own test 6 is written to catch.
-  ReticleTool.INTENT, // reads/writes .reticle/intent.json; sessionId only picks the project
+  ReticleTool.INTENT, // reads/writes .reticle/intent/; sessionId only picks the project
   ReticleTool.CONTEXT, // folds the journal + intent ledger; must still answer when nothing is connected
   ReticleTool.PROJECT, // reads .reticle/project.json
   // Reads the team's shared memory over HTTP; sessionId only resolves WHICH project's link file to
@@ -656,7 +656,13 @@ export async function runTool<Ext>(
       ? raw
       : {
           ...(raw as object),
-          ...(friction !== undefined ? { [EnvelopeKey.FEEDBACK_INVITE]: inviteFor(friction) } : {}),
+          ...(friction !== undefined
+            ? {
+                [EnvelopeKey.FEEDBACK_INVITE]: inviteFor(friction),
+                // The moment Reticle got in somebody's way is the moment to offer them the founder.
+                [EnvelopeKey.TALK_TO_US]: DiscoveryInvite.AGENT,
+              }
+            : {}),
           ...(prompt !== undefined ? { [EnvelopeKey.FEEDBACK_PROMPT]: prompt } : {}),
           ...(update !== undefined ? { [EnvelopeKey.UPDATE_AVAILABLE]: update } : {}),
           ...(skew !== undefined ? { [EnvelopeKey.VERSION_SKEW]: skew } : {}),
@@ -669,7 +675,14 @@ export async function runTool<Ext>(
   if (!bound || !isPlainObject(result)) return result;
   // Reuse the session resolved above so the health envelope describes the SAME session the handler
   // drove; only re-resolve if the up-front attempt failed but the handler somehow succeeded.
-  const resolved = session ?? deps.sessions.resolve(rawSessionId);
+  const driven = session ?? deps.sessions.resolve(rawSessionId);
+  // ...unless the call replaced that document. A full navigation or reload registers a NEW Session
+  // under the same id (or under the id the result reports it arrived at), and the object resolved
+  // before the call is the page that unloaded: it reported itself hidden on the way out, so every
+  // response after a navigation said "throttled" about a tab that was fine. Describe what is there
+  // now. Optional-called because a test double is a partial SessionManager.
+  const arrivedId = 'string' === typeof result['sessionId'] ? result['sessionId'] : driven.id;
+  const resolved = deps.sessions.get?.(arrivedId) ?? driven;
   const envelope: Record<string, unknown> = {};
   // The health block is idempotent: add it only when the handler didn't already include a `session`.
   if (!('session' in result)) Object.assign(envelope, healthEnvelope(resolved));

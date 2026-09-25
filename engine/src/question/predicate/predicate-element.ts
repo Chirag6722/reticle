@@ -26,6 +26,19 @@ import {
 import type { PredicateSession } from './predicate-session.js';
 import { describeTestidMiss } from './testid-near-miss.js';
 import { describeSplitTextMiss } from './split-text-miss.js';
+import { satisfiesProperty, type Baseline, type PropertyAssertion } from './property.js';
+
+/**
+ * The caveat for a present-testid list that was cut at its cap, or nothing when it was whole.
+ *
+ * Phrased as what the list IS — "the first N of M in document order" — rather than as an apology,
+ * because the agent's next move depends on knowing the shape: a region absent from a capped list is
+ * unexamined, not absent. Empty when nothing was cut, so an ordinary miss keeps the message it had.
+ */
+function describePresentTestidsCut(shown: number, total: number | undefined): string {
+  if (total === undefined || total <= shown) return '';
+  return ` (the present-testid list shows the first ${String(shown)} of ${String(total)} in document order — absence from it proves nothing)`;
+}
 
 async function matchOnce(
   session: PredicateSession,
@@ -241,12 +254,69 @@ export async function evalElement(
   const splitText = describeSplitTextMiss(match.hint?.splitText, query.text);
   const clause = splitText ?? (alsoHere === undefined || '' === alsoHere ? undefined : alsoHere);
   const suffix = clause === undefined ? '' : ` — ${clause}`;
+  // The evidence list is capped in document order, so a region low on the page is exactly what it
+  // drops. Handed back with no marker it reads as the whole page, and the field report this came
+  // from read a missing detail panel as proof the panel never rendered. Say the cut happened (#793).
+  const total = match.hint?.presentTestidsTotal;
+  const cut = describePresentTestidsCut(present.length, total);
   return {
     pass: false,
-    failureReason: `no element matched ${subject}${state === undefined ? '' : ` in state '${state}'`}${suffix}`,
+    failureReason: `no element matched ${subject}${state === undefined ? '' : ` in state '${state}'`}${suffix}${cut}`,
     observed: `no matching element on the page${suffix}`,
     expected: `an element matching ${subject}${state === undefined ? '' : ` in state '${state}'`}`,
     assertion: 'element.present',
-    ...(present.length > 0 ? { evidence: { presentTestids: present } } : {}),
+    ...(present.length > 0
+      ? {
+          evidence: {
+            presentTestids: present,
+            ...(total === undefined ? {} : { presentTestidsTotal: total }),
+          },
+        }
+      : {}),
+  };
+}
+
+/**
+ * Narrow a passing text match with a PROPERTY of the text it found.
+ *
+ * Sits here rather than in the evaluator because the descriptors it reads are this module's own
+ * output shape, and because it must run only over a match that already held: a property asserted
+ * against the text of an element that is not there is a statement about nothing.
+ *
+ * Several matches are JOINED before the property runs. `scope` + `self` reads one subtree and is
+ * the shape this is for; a locator broad enough to return several is asking about the text they
+ * make together, and testing only the first would pass on a page where the rest is the failure.
+ */
+/** The text an element descriptor reported, or ''. Never `String(unknown)` — see `show` in property.ts. */
+function textOf(element: unknown): string {
+  if ('object' !== typeof element || null === element) return '';
+  const value = (element as { text?: unknown }).text;
+  return 'string' === typeof value ? value : '';
+}
+
+export function withTextProperty(
+  base: EvalResult,
+  assertion: PropertyAssertion,
+  subject: string,
+  baseline?: Baseline,
+): EvalResult {
+  if (!base.pass) return base;
+  const described = Array.isArray(base.evidence) ? base.evidence : [];
+  const text = described.map(textOf).join(' ').trim();
+  const result = satisfiesProperty(text, assertion, baseline);
+  // Nothing was compared — a relative property with no before-reading. See the twin in `evalState`.
+  if (true === result.unevaluated) {
+    return { pass: false, failureReason: result.because, inconclusive: result.because };
+  }
+  if (result.ok) {
+    return { pass: true, evidence: { ...{ matched: described }, satisfied: result.because } };
+  }
+  return {
+    pass: false,
+    failureReason: `text of ${subject} ${result.because}`,
+    observed: `text of ${subject} = ${JSON.stringify(text)}`,
+    expected: `text of ${subject} to satisfy ${assertion.property}`,
+    assertion: `text.${assertion.property}`,
+    evidence: described,
   };
 }

@@ -110,6 +110,34 @@ const FIELD_NUMBER_PATTERNS: readonly { pattern: RegExp; why: string }[] = [
     pattern: /\b\d+\s+distinct\s+(brand-new\s+)?(users|installs|projects|machines)\b/i,
     why: 'a count of distinct users',
   },
+  {
+    /*
+     * ONE machine, measured. Every pattern above catches an AGGREGATE — a share, a count across
+     * installs — and this shape slipped past all of them for months: a possessive reference to a
+     * person followed by a size, in a file npm ships, in a comment that is otherwise careful. Rule
+     * 12 does not care whether the number is a mean or a single reading; it asks where the number
+     * came from, and that one came from somebody's disk.
+     *
+     * The example is DESCRIBED rather than quoted, deliberately: this file is scanned like every
+     * other, so a guard that spells out its own trigger fails on itself. That happened on the first
+     * run of this pattern.
+     *
+     * Deliberately narrow, for the reason the closed noun list above gives. It requires the
+     * POSSESSIVE — "a user's", "one user's" — so it cannot reach a bench figure, which says "the
+     * install gate" or "the bench" and never claims a person. The unit list is closed for the same
+     * reason: "8 GB" and "40 files" are measurements of a machine; a bare integer is not.
+     *
+     * The gap is the fiddly part and both halves were learned the hard way. It must allow a dot,
+     * because the real sentence had a PATH in it (`.reticle/sessions`) and a dot-excluding gap
+     * walked straight past the line this was written for. It must NOT allow a SENTENCE break, or
+     * it bridges two unrelated clauses -- "...the user's repository by design. They are 37 files"
+     * matched, joining a general statement about users to a count of our own files two sentences
+     * later. So a dot passes only when nothing follows it but more word: `\.(?!\s)`.
+     */
+    pattern:
+      /\b(a|one|this|that|the)\s+user'?s\b(?:[^.]|\.(?!\s)){0,90}?\b\d+(\.\d+)?\s*(gb|mb|kb|tb|bytes?|files?|sessions?|runs?|hours?|minutes?|seconds?)\b/i,
+    why: "a quantity measured from one user's machine",
+  },
 ];
 
 // Reads every shipped source file, every doc and every skill, so it is slow by nature and slower

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { SessionState, UNSCRIPTABLE_TAB_RECOMMENDATION, TRANSPORT_LIMITS } from '@reticlehq/core';
 import { TOOLS, MERGED_TOOLS, type ToolDef, type ToolDeps } from './tools.js';
-import { ReticleTool } from '@reticlehq/core';
+import { DiscoveryInvite, ReticleTool } from '@reticlehq/core';
 import { EnvelopeKey } from './tool-kit.js';
 import { getSessionMetrics, resetSessionMetrics } from '@/telemetry/session-metrics.js';
 import { buildDynamicTools } from './dynamic-tools.js';
@@ -87,6 +87,27 @@ describe('runTool — universal session-health invariant', () => {
       session: { throttled: boolean };
     };
     expect(r.session.throttled).toBe(false); // not overwritten
+  });
+
+  /**
+   * Driven: after a full navigation every response said `throttled: true`, "tab hidden", on a focused
+   * tab that `reticle_session list` called healthy a moment later. The block was read from the
+   * Session object resolved BEFORE the call, and a document that unloads reports itself hidden on the
+   * way out. The page the agent is now driving is the one registered under that id.
+   */
+  it('describes the session registered now, not the document that unloaded during the call', async () => {
+    const departed = throttledSession({ id: 'tab' });
+    const arrived = throttledSession({
+      id: 'tab',
+      health: () => ({ lastSeenMs: 40, throttled: false, focused: true }),
+    });
+    const deps = fakeDeps(departed);
+    (deps.sessions as Partial<SessionManager>).get = (id: string) =>
+      'tab' === id ? arrived : undefined;
+    const r = (await runTool(stubTool(ReticleTool.NAVIGATE, { ok: true }), deps, {})) as {
+      session?: unknown;
+    };
+    expect('session' in r).toBe(false);
   });
 
   it('4: never corrupts a non-object result (array / primitive pass through)', async () => {
@@ -332,6 +353,30 @@ describe('the feedback invitation is counted wherever friction actually happens'
     const result = await runTool(exempt, fakeDeps(), {});
     expect(result).toHaveProperty(EnvelopeKey.FEEDBACK_INVITE);
     expect(getSessionMetrics().summarize(true).feedbackPrompted).toBe(1);
+  });
+
+  // The same moment Reticle failed somebody is the moment to offer them the founder's calendar. For
+  // the HUMAN: the agent is told to pass it on, never to book or submit anything itself.
+  it('offers the person a call with the founder wherever it invites feedback', async () => {
+    const exempt: ToolDef = {
+      name: ReticleTool.FLOW_VERIFY,
+      description: '',
+      inputSchema: {},
+      handler: () => Promise.resolve({ error: 'no flows to verify' }),
+    };
+    const result = (await runTool(exempt, fakeDeps(), {})) as Record<string, unknown>;
+    expect(result[EnvelopeKey.TALK_TO_US]).toBe(DiscoveryInvite.AGENT);
+  });
+
+  it('does not offer it on a call that went fine', async () => {
+    const fine: ToolDef = {
+      name: ReticleTool.FLOW_VERIFY,
+      description: '',
+      inputSchema: {},
+      handler: () => Promise.resolve({ ok: true }),
+    };
+    const result = (await runTool(fine, fakeDeps(), {})) as Record<string, unknown>;
+    expect(result[EnvelopeKey.TALK_TO_US]).toBeUndefined();
   });
 
   it('counts the ask an unrecognised THROW earns, which is the commonest refusal there is', async () => {

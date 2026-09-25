@@ -28,7 +28,7 @@
  *     limit instead of an early exit.
  */
 
-import { EventType, NetInitiator, isDevToolingUrl } from '@reticlehq/core';
+import { EventType, NetInitiator, isDevToolingUrl, isForeignTraffic } from '@reticlehq/core';
 
 /**
  * The dev toolchain talking about ITSELF is not the app finishing its work.
@@ -40,6 +40,35 @@ import { EventType, NetInitiator, isDevToolingUrl } from '@reticlehq/core';
  */
 const isDevTooling = (data: Record<string, unknown>): boolean =>
   isDevToolingUrl('string' === typeof data['url'] ? data['url'] : undefined);
+
+/**
+ * Somebody else's host is not the app finishing its work.
+ *
+ * The comment above makes this argument for dev tooling and it holds identically here:
+ * `splitForeignTraffic` drops dev tooling AND third-party traffic, and this file dropped only the
+ * first — so the exclusion stayed cosmetic exactly where it decides a verdict, for the other half.
+ *
+ * Reported from the field repeatedly: an app embedding a wallet SDK that continuously POSTs
+ * telemetry to its vendor host never settles, so EVERY assertion on that app returns
+ * `unknown / outcome_pending` whatever the feature under test was. A third-party beacon cannot
+ * answer "has the app finished?", and nothing makes it stop, so waiting for it is waiting forever.
+ *
+ * Fails OPEN: with no known app origin nothing is foreign, because suppressing a request we cannot
+ * classify is how a verdict starts resting on evidence it discarded.
+ *
+ * SAME-ORIGIN background traffic is never guessed: nothing in a URL separates the app's telemetry
+ * from the app's work. It is excluded only when the project DECLARED it (`background`).
+ */
+const isForeign = (
+  data: Record<string, unknown>,
+  appOrigin: string | undefined,
+  background: readonly string[],
+): boolean =>
+  isForeignTraffic(
+    'string' === typeof data['url'] ? data['url'] : undefined,
+    appOrigin,
+    background,
+  );
 
 /**
  * A departure records where the browser was SENT, not a request whose result we will see — the
@@ -54,6 +83,10 @@ const isDeparture = (data: Record<string, unknown>): boolean =>
 export interface SettleSource {
   eventsSince(cursor: number): readonly { type: string; data: Record<string, unknown> }[];
   elapsed(): number;
+  /** The page under test — what makes a request third-party. Absent: nothing is foreign. */
+  url?: string;
+  /** Same-origin endpoints the project declared as background. Absent: nothing is excluded. */
+  background?: readonly string[];
 }
 
 interface WaitOpts {
@@ -76,6 +109,8 @@ const idOf = (data: Record<string, unknown>): string | undefined =>
  */
 export function inFlightRequestIds(
   events: readonly { type: string; data: Record<string, unknown> }[],
+  appOrigin?: string,
+  background: readonly string[] = [],
 ): string[] {
   const settled = new Set<string>();
   for (const e of events) {
@@ -86,6 +121,7 @@ export function inFlightRequestIds(
   const open: string[] = [];
   for (const e of events) {
     if (e.type !== EventType.NET_PENDING || isDevTooling(e.data) || isDeparture(e.data)) continue;
+    if (isForeign(e.data, appOrigin, background)) continue;
     const id = idOf(e.data);
     if (id !== undefined && !settled.has(id) && !open.includes(id)) open.push(id);
   }
@@ -102,8 +138,10 @@ export function inFlightRequestIds(
  */
 export function inFlightRequestLabels(
   events: readonly { type: string; data: Record<string, unknown> }[],
+  appOrigin?: string,
+  background: readonly string[] = [],
 ): string[] {
-  const open = new Set(inFlightRequestIds(events));
+  const open = new Set(inFlightRequestIds(events, appOrigin, background));
   const labels: string[] = [];
   for (const e of events) {
     if (e.type !== EventType.NET_PENDING) continue;
@@ -171,7 +209,10 @@ export async function waitForInFlight(
   budgetMs: number,
   opts: WaitOpts,
 ): Promise<SettleResult> {
-  let open = inFlightRequestIds(session.eventsSince(since));
+  // The verdict's own scope: waiting on a request the verdict will not count is latency for nothing.
+  const outstanding = (): string[] =>
+    inFlightRequestIds(session.eventsSince(since), session.url, session.background);
+  let open = outstanding();
   if (0 === open.length) return { settled: true, stillInFlight: [] };
   if (budgetMs <= 0) return { settled: false, stillInFlight: open };
 
@@ -179,7 +220,7 @@ export async function waitForInFlight(
   while (session.elapsed() < deadline) {
     // Never overshoot the budget: the last sleep is trimmed to whatever is actually left.
     await opts.sleep(Math.min(POLL_MS, deadline - session.elapsed()));
-    open = inFlightRequestIds(session.eventsSince(since));
+    open = outstanding();
     if (0 === open.length) return { settled: true, stillInFlight: [] };
   }
   return { settled: false, stillInFlight: open };

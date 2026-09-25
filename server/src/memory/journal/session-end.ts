@@ -1,4 +1,6 @@
 import { driveFlowsFrom, type DriveProgram, type TapeStep } from './drive-flow.js';
+import { journalActionsPath, sessionDirPath } from '@/memory/project/dir/reticle-dir.js';
+import { asSessionId, type SessionId } from '@reticlehq/core';
 import {
   OnboardingPhase,
   OnboardingStepStatus,
@@ -8,7 +10,7 @@ import { AmbientStore } from './ambient-store.js';
 import type { AmbientCounts } from '@reticlehq/engine/window/ambient.js';
 import { type ProjectId, subjectOf, type JournalAction } from '@reticlehq/core';
 import type { FileSystemPort } from '@/memory/project/fs/fs-port.js';
-import { pruneSessions } from './on-disk/retention.js';
+import { pruneWorkspace, type PruneWorkspaceOptions } from './on-disk/startup-maintenance.js';
 import { buildVerificationRun } from '@/judgement/runs/artifact/build-verification-run.js';
 import { driveRunFrom, driveRunId } from '@/judgement/runs/drive-run.js';
 import { RunStore } from '@/judgement/runs/artifact/run-store.js';
@@ -56,8 +58,10 @@ export interface SessionEndTarget {
 interface SessionEndDeps {
   fs: FileSystemPort;
   reticleRoot: string;
-  /** Journaling/persistence off (opt-out) → teardown is a no-op. */
+  /** Journaling/persistence off (opt-out) → teardown is a no-op. Retention still runs. */
   enabled: boolean;
+  /** What this project is willing to keep — the `retain` block of its `.reticle.json`. */
+  retain?: PruneWorkspaceOptions;
   /**
    * The one clock in this file, injected — the run artifact stamps `createdAt` from it.
    *
@@ -116,7 +120,32 @@ interface SessionEndDeps {
  */
 export function makeSessionEnd(deps: SessionEndDeps): (session: SessionEndTarget) => Promise<void> {
   return async (session) => {
-    if (!deps.enabled) return;
+    /*
+     * Retention is maintenance of a directory, not a part of journalling, so it runs either way.
+     *
+     * Teardown used to return here, and this is the one setting under which that mattered most:
+     * somebody switches journalling off BECAUSE `.reticle/` got too big, and switching it off was
+     * what stopped anything ever deleting what was already there. It also stopped the sweep of
+     * visual diffs, feedback copies and run artifacts, none of which need the journal to be written
+     * at all. The daemon's own start-path sweep was gated on the same flag, so there was no second
+     * site still running — both are ungated now.
+     */
+    const sweep = async (): Promise<void> => {
+      try {
+        await pruneWorkspace(
+          deps.fs,
+          session.artifactRoot ?? deps.reticleRoot,
+          deps.liveSessionIds?.() ?? new Set(),
+          deps.retain ?? {},
+        );
+      } catch {
+        // retention is best-effort maintenance; never surface at teardown
+      }
+    };
+    if (!deps.enabled) {
+      await sweep();
+      return;
+    }
     try {
       await session.flushJournal();
     } catch {
@@ -199,12 +228,34 @@ export function makeSessionEnd(deps: SessionEndDeps): (session: SessionEndTarget
       // The root this session actually journalled into. Pruning the daemon's tree instead meant a
       // per-project workspace was never swept at all, so the one place journals really accumulate
       // was the one place retention never ran.
-      await pruneSessions(deps.fs, session.artifactRoot ?? deps.reticleRoot, {
-        live: deps.liveSessionIds?.(),
-      });
+      /*
+       * A session nobody ever drove keeps no journal.
+       *
+       * The observers run from the moment the SDK attaches, so an idle tab on a busy page
+       * accumulates megabytes without a single tool call. The cost is not the disk: those
+       * directories occupy retention SLOTS, so a journal that could answer a verdict question is
+       * evicted by one that was never asked one.
+       *
+       * Decided at the END and never by gating CAPTURE. Whether a tool call will happen is not
+       * knowable while the events that would answer it are being recorded, and gating capture on it
+       * would leave the first assertion of a session with nothing to read.
+       */
+      await dropUndrivenJournal(
+        deps.fs,
+        session.artifactRoot ?? deps.reticleRoot,
+        asSessionId(session.id),
+      );
     } catch {
-      // retention is best-effort maintenance; never surface at teardown
+      // teardown must never throw: the tab is already gone
     }
+    // EVERY tier, not just sessions. Visual diffs and feedback copies were pruned only at daemon
+    // start, against the DAEMON's root — which for a globally registered daemon is `$HOME` and not
+    // the project at all, so the two tiers that only ever grow in a project workspace were the two
+    // never swept there. Same defect as the one this line already fixed for sessions, one move
+    // behind. The byte budget rides along for the same reason: it was wired at daemon start too.
+    //
+    // Outside the try above, so a failure anywhere in teardown still leaves the directory swept.
+    await sweep();
   };
 }
 
@@ -284,4 +335,25 @@ async function saveDrivenFlow(deps: SessionEndDeps, session: SessionEndTarget): 
     status: 0 === programs.length ? OnboardingStepStatus.SKIPPED : OnboardingStepStatus.COMPLETED,
     ...(outcome.unprovenSteps === undefined ? {} : { reason: 'no_declared_consequence' }),
   });
+}
+
+/**
+ * Remove this session's journal when it served no tool call.
+ *
+ * "Served no tool call" is read off the actions ledger, which is written one line per call: absent
+ * or empty means nothing was ever driven here. Best-effort like every other maintenance step —
+ * a session that cannot be tidied is not a session that failed.
+ */
+async function dropUndrivenJournal(
+  fs: SessionEndDeps['fs'],
+  root: string,
+  sessionId: SessionId,
+): Promise<void> {
+  try {
+    const actions = await fs.readFile(journalActionsPath(root, sessionId)).catch(() => '');
+    if (actions.trim().length > 0) return;
+    await fs.rm(sessionDirPath(root, sessionId));
+  } catch {
+    // tidying is never the reason a teardown fails
+  }
 }
