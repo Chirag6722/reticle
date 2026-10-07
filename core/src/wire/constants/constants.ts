@@ -987,5 +987,7 @@ export const LeaseNotReadyReason = {
   SDK_NEVER_DIALLED: 'sdk_never_dialled',
   /** One dialled in and stopped answering: the tab is attached but wedged. */
   SDK_STOPPED_ANSWERING: 'sdk_stopped_answering',
+  /** The SDK answers, but its tab is hidden: timers and rAF are throttled, so nothing on it verifies. */
+  TAB_HIDDEN: 'tab_hidden',
 } as const;
 export type LeaseNotReadyReason = (typeof LeaseNotReadyReason)[keyof typeof LeaseNotReadyReason];
