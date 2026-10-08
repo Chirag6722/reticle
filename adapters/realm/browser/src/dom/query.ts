@@ -112,10 +112,11 @@ function directText(el: Element): string {
  * leaves ours out, which pointing an agent at "Pause" or "Export" did not.
  */
 function visibleTextOf(el: Element, memo: Map<Element, boolean>): string {
-  if (isNonRendered(el) || isIgnored(el) || !isVisible(el, memo)) return '';
+  if (isNonRendered(el) || isIgnored(el)) return '';
+  const visible = isVisible(el, memo);
   let text = '';
   for (const node of Array.from(el.childNodes)) {
-    if (Node.TEXT_NODE === node.nodeType) text += node.textContent ?? '';
+    if (Node.TEXT_NODE === node.nodeType && visible) text += node.textContent ?? '';
     else if (isElement(node)) text += visibleTextOf(node, memo);
   }
   return text;
@@ -525,10 +526,9 @@ export function matchQuery(
   const found = findCandidates(query);
   const elements: HTMLElement[] = found.candidates;
   const scopeMissing = found.scopeMissing;
-  // One visibility cache for the whole (synchronous) query pass. isVisible is an O(depth) forced-style
-  // walk; the state filter runs it over EVERY candidate (the count must be exact) - on a match-heavy
-  // page (e.g. a 3k-row grid) that is tens of thousands of getComputedStyle calls on the host's main
-  // thread. The memo makes each element's ancestors resolve once, then short-circuit for every sibling.
+  // One visibility cache for the synchronous pass: styles and ancestor clipping metadata resolve
+  // once per unique node. Unclipped chains short-circuit; clipped candidates still intersect their
+  // own boxes, because a descendant can overflow back into view from a clipped container.
   const visMemo = new Map<Element, boolean>();
   const filtered =
     state === undefined ? elements : elements.filter((el) => inState(el, state, visMemo));

@@ -317,7 +317,19 @@ const DIST_ENTRY = join(PACKAGE_ROOT, 'dist', 'index.js');
  * Raised to 253,000 (252,035 measured) when the storage observer began skipping the SDK's own
  * keys: the list has to be on the page for the observer to read it, not only in the lazy HUD.
  */
-const MAX_FIRST_LOAD_BYTES = 253_000;
+/*
+ * Raised to 256,200 for target-specific overflow visibility. Rebuilding this tree with only the
+ * a11y and visible-text production changes removed measured 252,517 B; restoring them measured
+ * 256,176 B (+3,659 B). This buys composed ancestor clipping and positioned containing-block
+ * handling so an Expand click proves newly visible text instead of reporting `already_true`.
+ * The per-pass CSS/clipping cache adds 243 B versus the first PR revision and avoids repeat
+ * ancestor/style reads on unclipped lists. Only hidden/clip constrain visibility; auto/scroll
+ * keep their previous semantics. No dependency or protocol schema was added. Re-measured at
+ * 256,176 B after merging main. Main then gained the keypress key codes, the image-alt check and the
+ * unreachable-warning text, and the merge measured 256,653 B; the ceiling is that rounded up to the
+ * next hundred.
+ */
+const MAX_FIRST_LOAD_BYTES = 256_700;
 /*
  * Raised 248_300 -> 248_400 for rail slide impressions: `HudUseData` gained an optional `slide`
  * string, its shape checked in the daemon where it is counted, as control ids already are. The

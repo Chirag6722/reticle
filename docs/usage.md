@@ -381,6 +381,8 @@ A **predicate** declares what should be true. `reticle_assert` / `reticle_assert
 { "kind": "state", "store": "app", "path": "deployments.0.status", "equals": "live" }
 ```
 
+`visible` excludes elements whose boxes are fully clipped by an ancestor's `overflow:hidden` or `overflow:clip`; a partly clipped element stays visible. Expanding a clamped card can therefore prove that its previously hidden paragraph became visible. `overflow:auto` and `overflow:scroll` keep their existing visibility semantics, including content beyond the scrollport. Ordinary document content outside the window remains visible; `inViewport` checks the window intersection after any hidden/clip ancestor clipping, without introducing scrollport clipping.
+
 A `state` assertion is graded as a **consequence** (a wrong element or stale render cannot fake it), and is usable the same three ways anywhere predicates flow: ad-hoc (`reticle_assert` / `reticle_act_and_wait` `until`), as a flow step invariant (`reticle_annotate { kind: "assert-state", statePath, store?, equals? }`), and as a flow's golden end-condition (`reticle_annotate { kind: "success-state", statePath, … }`). On a miss it names the real store value and the keys that were available: legible, not a blind fail.
 
 ### Combinators
