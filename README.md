@@ -11,13 +11,13 @@
 
 It drives your real running app, reads what actually happened, and hands back **pass · fail · couldn't tell** with the `file:line` to fix.
 
-<a href="https://discord.gg/BwAbzv9ZRz"><img src="https://img.shields.io/badge/Join_the_Reticle_community_on_Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Join the Reticle community on Discord" height="36" /></a>
+<a href="https://discord.gg/BwAbzv9ZRz"><img src="https://dcbadge.limes.pink/api/server/BwAbzv9ZRz?style=for-the-badge" alt="Join the Reticle community on Discord" height="36" /></a>
 
 <sub>Ask anything, see what's being built, and help decide what ships next.</sub>
 
 <br/>
 
-[![npm](https://img.shields.io/npm/v/@reticlehq/server?color=8b7bff&labelColor=15131f&logo=npm)](https://www.npmjs.com/package/@reticlehq/server) [![downloads](https://img.shields.io/npm/dm/@reticlehq/react?color=5fd9f5&labelColor=15131f)](https://www.npmjs.com/package/@reticlehq/react) [![stars](https://img.shields.io/github/stars/reticlehq/reticle?color=ff9f87&labelColor=15131f&logo=github)](https://github.com/reticlehq/reticle/stargazers) [![license](https://img.shields.io/badge/license-Apache--2.0%20%2B%20FSL-46d6a0?labelColor=15131f)](LICENSE) [![OpenSSF](https://api.securityscorecards.dev/projects/github.com/reticlehq/reticle/badge)](https://securityscorecards.dev/viewer/?uri=github.com/reticlehq/reticle) <!-- Swap for the live online count once the server widget is enabled: https://img.shields.io/discord/1464865496796233760 --> [![Discord](https://img.shields.io/badge/Discord-join-8b7bff?labelColor=15131f&logo=discord&logoColor=white)](https://discord.gg/BwAbzv9ZRz)
+[![npm](https://img.shields.io/npm/v/@reticlehq/server?color=8b7bff&labelColor=15131f&logo=npm)](https://www.npmjs.com/package/@reticlehq/server) [![downloads](https://img.shields.io/npm/dm/@reticlehq/react?color=5fd9f5&labelColor=15131f)](https://www.npmjs.com/package/@reticlehq/react) [![stars](https://img.shields.io/github/stars/reticlehq/reticle?color=ff9f87&labelColor=15131f&logo=github)](https://github.com/reticlehq/reticle/stargazers) [![license](https://img.shields.io/badge/license-Apache--2.0%20%2B%20FSL-46d6a0?labelColor=15131f)](LICENSE) [![OpenSSF](https://api.securityscorecards.dev/projects/github.com/reticlehq/reticle/badge)](https://securityscorecards.dev/viewer/?uri=github.com/reticlehq/reticle) [![Discord members](https://dcbadge.limes.pink/api/server/BwAbzv9ZRz?style=flat)](https://discord.gg/BwAbzv9ZRz)
 
 [The problem](#the-problem) · [Demo](#demo) · [What Reticle does](#what-reticle-does) · [**Install**](#install) · [Use it](#use-it) · [Community](#community) · [vs Playwright](#why-not-playwright) · [Benchmarks](#benchmarks) · [Safe to install](#safe-to-install-what-you-or-your-agent-can-check) · [Docs](https://docs.reticle.sh)
 
@@ -558,7 +558,7 @@ You don't start Reticle yourself. Your agent starts it when it first calls a Ret
 
 <div align="center">
 
-<a href="https://discord.gg/BwAbzv9ZRz"><img src="https://img.shields.io/badge/Join_the_Reticle_community_on_Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Join the Reticle community on Discord" height="36" /></a>
+<a href="https://discord.gg/BwAbzv9ZRz"><img src="https://dcbadge.limes.pink/api/server/BwAbzv9ZRz?style=for-the-badge" alt="Join the Reticle community on Discord" height="36" /></a>
 
 </div>
 
