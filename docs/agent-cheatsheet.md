@@ -51,7 +51,7 @@ Two consequences worth knowing before you write your next predicate:
 - **You can now assert what a field contains.** That was not possible before; agents worked around it by reading the value out of band with `reticle_look { action: "find" }` and comparing in prose, which produces no verdict and therefore does not count as verification.
 - **`{ role, text }` now checks the text.** It used to match on role alone, so it matched every button on the page. If an assertion you have used for months starts failing, that is the likely reason, and the failure is the truth arriving late.
 
-Fields that nothing can check are refused rather than ignored: `by` without a `value`, and `label`, `placeholder`, `testid`, `alt` or `component` when a higher-precedence field already selected the element. An element query is a first-match dispatch, not a conjunction.
+Fields that nothing can check are refused rather than ignored: `by` without a `value`, and `label`, `placeholder`, `testid` or `component` when a higher-precedence field already selected the element. `alt` is the one that can still be checked beside another locator: on an image it is compared with the image's `alt` attribute (so `alt: ""` passes on a decorative image but not on one missing its alt), and on anything that is not an image it is refused, with a hint to use `name`. An element query is a first-match dispatch, not a conjunction.
 
 **Combinators take `predicates`, not a bare array.** This is the shape most often got wrong, and it is the one that produces no verdict at all:
 
