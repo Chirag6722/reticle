@@ -198,7 +198,7 @@ const NUXT = 'nuxt';
  * generic one that contradicts it.
  */
 export const SELF_RECOVERING_MARKER =
-  'Then call reticle_sessions again — it will appear within a second of the page loading.';
+  'Then call reticle_session { action: "list" } again — it will appear within a second of the page loading.';
 const RETRY = SELF_RECOVERING_MARKER;
 
 /**
