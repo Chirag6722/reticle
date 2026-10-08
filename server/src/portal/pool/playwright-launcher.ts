@@ -101,6 +101,7 @@ function wrapBrowser(browser: Browser): PooledBrowser {
             },
             installMocks: (rules) => installNetworkMocks(page, [...rules]),
             setViewport: (size) => page.setViewportSize(size),
+            bringToFront: () => page.bringToFront(),
             onCrash: (handler) => page.on('crash', handler),
             onConsole: (handler) => page.on('console', (msg) => handler(msg.text())),
             onDialog: (handler) =>
