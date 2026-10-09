@@ -31,6 +31,7 @@ import { sessionRoot, sessionTarget } from '@/memory/project/session-root.js';
 import { buildHarnessPlan, planAsText, withoutReplays, type HarnessPlan } from './harness-plan.js';
 import { allSessionIntents } from '@/memory/intent/open-intents.js';
 import { fetchPlatformConfig, type ConfigFetch } from '@/features/harness/platform-config.js';
+import type { JourneyResult } from '@/features/harness/platform/script.js';
 import {
   DEFAULT_MAX_STEPS,
   runHarness,
@@ -41,13 +42,15 @@ import {
   type ToolOutcome,
 } from '@/features/harness/harness.js';
 import { reticleToolset } from './harness-toolset.js';
-import { checkGoals, goalsIn, type GoalCheck } from '@/features/harness/goals.js';
+import { checkExpect, checkGoals, goalsIn, type GoalCheck } from '@/features/harness/goals.js';
 
 export interface ExploreOptions {
   /** Who to be, or what to accomplish. Appended to the standing instruction. */
   focus?: string;
   /** Texts the drive must leave on the page. Default: whatever `focus` quoted. See goals.ts. */
   goals?: readonly string[];
+  /** The outcome the journey must end in, as a reticle_assert predicate. See `checkExpect`. */
+  expect?: Record<string, unknown>;
   /** Pinned tab, when the app has more than one connected. */
   sessionId?: string;
   /** Hard ceiling on model turns. Bounds cost, not value — the drive is usable however it ends. */
@@ -116,6 +119,8 @@ export interface ExploreResult {
   driverName: string;
   /** The run this drive syncs as (`harness-<id>`), so a caller can find it on the platform. */
   runIds?: readonly string[];
+  /** How each journey of a platform plan ended, worst lane first. Absent for an unplanned drive. */
+  journeys?: readonly JourneyResult[];
 }
 
 /**
@@ -270,10 +275,12 @@ export async function exploreApp(
   // drove unsaved — work paid for and thrown away. Saving is not a decision any model gets to make
   // and not something a step budget gets to cut off, so it happens here, after the loop, always.
   await bankOpenRecording(toolset, drive, options.focus);
-  const goals = await checkGoals(
-    (name, args) => toolset.invoke(name, args),
-    options.goals ?? goalsIn(options.focus),
-  );
+  const invoke = (name: string, args: Record<string, unknown>): Promise<unknown> =>
+    toolset.invoke(name, args);
+  const goals = [
+    ...(await checkGoals(invoke, options.goals ?? goalsIn(options.focus))),
+    ...(options.expect === undefined ? [] : [await checkExpect(invoke, options.expect)]),
+  ];
 
   const after = await reads.flows.list();
   const reconciled = reconcileFlows(before, after, drive.toolCalls);

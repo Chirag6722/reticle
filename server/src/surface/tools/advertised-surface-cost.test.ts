@@ -143,7 +143,12 @@ const bytesOf = (json: string): number => Buffer.byteLength(json, 'utf8');
  * hide or move a HUD sitting over the control it has to test, which was otherwise untestable. The
  * two parameters it started as were merged into one, and its description dropped, to get here.
  */
-const DEFAULT_SURFACE_BYTE_BUDGET = 25_650;
+/*
+ * 25_700 for `driveId` on reticle_verify explore (25,676 B measured), with no description: the one
+ * free drive `reticle try` was granted has to reach the daemon that drives, and an argument on that
+ * call is the only channel to it.
+ */
+const DEFAULT_SURFACE_BYTE_BUDGET = 25_700;
 // Raised, each time deliberately, each time with the measurement that bought it.
 //
 // RAISE, 24_600 -> 24_700. `reticle_verify { action: "explore" }` gained a `driver`
@@ -297,7 +302,10 @@ describe('advertised surface cost', () => {
 // 149_500 -> 149_700 for `window` and `documentStatus` on reticle_sessions and `disconnected` on
 // session end (149,593 B): two windows of one desktop app share a url, and a validating client strips
 // an undeclared field, so the label that tells them apart has to be in the schema.
-const ALL_SURFACE_BYTE_BUDGET = 149_700;
+// 149_700 -> 149_800 for `expect` on reticle_verify explore (149,734 B): a drive graded only on
+// quoted text passed without using the app, so the outcome it must end in has to be declarable.
+// Typed as a plain record, not the predicate schema, which would have cost ~700 tokens.
+const ALL_SURFACE_BYTE_BUDGET = 149_800;
 
 describe('the output-schema surface is budgeted too', () => {
   it(`fits in ${String(ALL_SURFACE_BYTE_BUDGET)} bytes of tools/list`, async () => {
