@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { FEEDBACK_HINT } from './diagnose/closing-hint.js';
 import { SILENT_HOST } from './host.js';
 import { runInit, resolveLockfiles, type InitIo, type InitOptions } from './run.js';
+import { codexAvailableProbe } from './register/mcp.js';
 
 /**
  * The token the host hands over. Minting belongs to the bridge, which owns the file — this package
@@ -1573,7 +1574,9 @@ describe('the closing hint agrees with the registration rows above it', () => {
       { ...VITE_FILES, [`${HOME}/.codex`]: '', [CODEX_CONFIG]: 'model = "gpt-5"\n' },
       { mcpExists: true },
     );
-    runInit(OPTS, io);
+    // Codex is left to a hand edit only without its CLI: with `codex` on PATH it registers through
+    // `codex mcp add` instead (#1238). This fake's probe answers the same for every binary.
+    runInit(OPTS, { ...io, probe: (command) => codexAvailableProbe().command !== command });
     const printed = io.lines.join('\n');
     expect(printed).toContain('[⚠] MCP server (Codex CLI)');
     expect(printed).toContain('(MCP server (Codex CLI))');

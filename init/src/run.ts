@@ -73,10 +73,10 @@ import {
   type Plan,
   type PlanInput,
 } from './plan/plan.js';
-import { claudeAvailableProbe, claudeHasReticle } from './register/mcp.js';
+import { claudeAvailableProbe, claudeHasReticle, codexAvailableProbe } from './register/mcp.js';
 import { reticleDevLocation } from './patch/next-patch.js';
 import { scanTestids, storeHints, scanStores } from './detect/capabilities.js';
-import { CLAUDE_PROJECT_CONFIG, CURSOR_PROJECT_MARKER } from './register/mcp-clients.js';
+import { CLAUDE_PROJECT_CONFIG, CURSOR_PROJECT_MARKER, McpClient } from './register/mcp-clients.js';
 import { deriveProjectId, packageName } from './project/project-id.js';
 import {
   VITE_DEV_MODULE_PATH,
@@ -338,6 +338,12 @@ function gatherPlanInput(options: InitOptions, io: InitIo, pkg: unknown): PlanIn
   // into a config a client ALREADY has, and never create ~/.gemini or ~/.codeium for somebody who
   // does not use them.
   const detectedClients = options.mcp ? detectMcpClients(io) : [];
+  // Codex registers through its own CLI when there is one. Asked only after Codex was FOUND: the
+  // probe runs a binary, and a machine with no Codex has no business running one.
+  const codexProbe = codexAvailableProbe();
+  const codexCli = detectedClients.some((client) => McpClient.CODEX === client.id)
+    ? io.probe(codexProbe.command, codexProbe.args)
+    : false;
 
   const astroPath = firstPresent(rootFiles, ASTRO_CONFIG_CANDIDATES);
   const astroSource = null === astroPath ? null : io.readFile(astroPath);
@@ -395,6 +401,7 @@ function gatherPlanInput(options: InitOptions, io: InitIo, pkg: unknown): PlanIn
     claudeProjectConfig: options.mcp ? io.readFile(agentFile(CLAUDE_PROJECT_CONFIG)) : undefined,
     platform: process.platform,
     detectedClients,
+    codexCli,
     cursorProjectPresent: io.exists(CURSOR_PROJECT_MARKER),
     // Looked for beside the app AND one level up, because the app is routinely a subdirectory of the
     // repo that containerises it — `frontend/` under a root `docker-compose.yml` is the shape this

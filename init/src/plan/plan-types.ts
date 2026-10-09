@@ -138,6 +138,11 @@ export interface PlanInput {
    */
   detectedClients?:
     readonly { id: McpClient; configPath: string; existing: string | null }[] | undefined;
+  /**
+   * Whether the `codex` CLI is on PATH. Only probed when Codex was detected, and absent otherwise.
+   * With it, Codex registers through `codex mcp add` instead of a block to paste.
+   */
+  codexCli?: boolean | undefined;
   /** Discovered Vite config: its path + source, or null if none found. */
   viteConfig: { path: string; source: string } | null;
   /** Config paths found but not safely attributable to the selected dev command. */
