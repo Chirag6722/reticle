@@ -89,8 +89,8 @@ const bytesOf = (json: string): number => Buffer.byteLength(json, 'utf8');
  * than the bytes it costs (one bad call is a whole extra turn), and CLAUDE.md's rule stands: a token
  * optimisation ships with a correctness measurement beside it.
  *
- * The budget is today's value plus ~1.4%: room to fix a typo, none to add a paragraph. Going over is
- * not forbidden, it is a DECISION — move the number and write the reason here. Coming in well under,
+ * The budget is the last measurement plus 1,000 B (the convention is stated at the constant). Going
+ * over is not forbidden, it is a DECISION — move the number and write the reason here. Coming in well under,
  * move it down.
  */
 /*
@@ -154,7 +154,15 @@ const bytesOf = (json: string): number => Buffer.byteLength(json, 'utf8');
  * no run id and a retry paid for a second drive. Starting it and polling by id needs the id passed
  * back, and stop/say are the only way to steer a drive short of the project-wide switch.
  */
-const DEFAULT_SURFACE_BYTE_BUDGET = 25_850;
+/*
+ * THE CONVENTION FROM HERE ON, for both budgets in this file: the budget is the last measurement plus
+ * 1,000 B of headroom. When a change goes over, raise it BY the headroom (new measurement + 1,000),
+ * never TO the measurement. Budgets pinned a few bytes above the measurement made every PR that
+ * touched a schema bump the same constant, and two of them conflicted in the merge queue: #1487 and
+ * #1493 both raised the all-tools budget on 2026-10-09. The reason for a raise is still written here.
+ */
+// Measured 25,840 B on main at c02824992: 26_840.
+const DEFAULT_SURFACE_BYTE_BUDGET = 26_840;
 // Raised, each time deliberately, each time with the measurement that bought it.
 //
 // RAISE, 24_600 -> 24_700. `reticle_verify { action: "explore" }` gained a `driver`
@@ -322,7 +330,9 @@ describe('advertised surface cost', () => {
 // that carries a predicate, so a validating client would strip it otherwise.
 // 150_400 -> 151_400 when #1487 met today's other merges in the queue (150,407 B, 7 B over): the
 // ceiling now carries ~1KB of headroom, so two small PRs no longer both have to move it.
-const ALL_SURFACE_BYTE_BUDGET = 151_400;
+// From here on: measured plus the 1,000 B headroom described at DEFAULT_SURFACE_BYTE_BUDGET above.
+// 150,407 B on main after #1487 landed, so 151,407.
+const ALL_SURFACE_BYTE_BUDGET = 151_407;
 
 describe('the output-schema surface is budgeted too', () => {
   it(`fits in ${String(ALL_SURFACE_BYTE_BUDGET)} bytes of tools/list`, async () => {
