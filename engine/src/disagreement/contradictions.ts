@@ -26,7 +26,7 @@ import { findBodyFailures } from './body-failures.js';
 import { findEchoMismatches } from './echo-mismatch.js';
 import { findUnitMismatches } from './unit-mismatch.js';
 import { asString } from '@reticlehq/core';
-import { matchesDeclaredFailure } from '@/question/declared.js';
+import { isDeclaredRead, matchesDeclaredFailure } from '@/question/declared.js';
 import { runRegisteredFolds } from './contradiction-folds.js';
 import type {
   Contradiction,
@@ -733,6 +733,8 @@ function findWindowContradictions(
       if (navigatedAt !== undefined && event.t >= navigatedAt) continue;
       const call = netCall(event);
       if (!isMutating(call)) continue;
+      // Declared a read by the assertion itself (#1353): a repeat is the app reading twice.
+      if (isDeclaredRead(call, options.repeatableNetUrls)) continue;
       const label = `${call.method} ${call.url}`;
       const calls = writes.get(label) ?? [];
       // `landed` is tracked per call rather than counted here, because the claim is about what
