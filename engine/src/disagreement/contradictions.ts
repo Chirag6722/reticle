@@ -14,6 +14,7 @@ import {
   describe,
   isMutating,
   isSameDocumentHashAnchor,
+  isSamePathnameReplace,
   isSteadyCadence,
   netCall,
   recoveredByRetry,
@@ -431,7 +432,13 @@ function findWindowContradictions(
   // consequences are location.hash, focus, and scroll — not a DOM mutation. Treating it as a
   // blank destination made "did my skip link work" unanswerable. Hash-router paths (`#/invoices`)
   // still go through the rule: those ARE a new view.
-  const hashAnchorOnly = routed && routeEvents.every(isSameDocumentHashAnchor);
+  //
+  // A `replaceState` that keeps the pathname is the same kind of non-navigation: the URL recorded
+  // state (a zoom, a filter, a selected tab) and the view did not change. A replace onto a new
+  // pathname, or a push onto one, is still a navigation.
+  const notANavigation =
+    routed &&
+    routeEvents.every((event) => isSameDocumentHashAnchor(event) || isSamePathnameReplace(event));
   // `dom.text` counts as rendered, and it has to: React reconciles a destination IN PLACE far more
   // often than it adds nodes. Measured on three ordinary sidebar navigations of the bench app — every
   // one emitted { dom.attr:2, dom.text:2, render.commit, state.change } and ZERO dom.added/removed,
@@ -451,7 +458,7 @@ function findWindowContradictions(
   const fetched = events.some(
     (e) => e.type === EventType.NET_REQUEST || e.type === EventType.NET_PENDING,
   );
-  if (routed && !hashAnchorOnly && !rendered && !fetched && true !== options.renderProved) {
+  if (routed && !notANavigation && !rendered && !fetched && true !== options.renderProved) {
     // A console error in the SAME window turns "nothing rendered" from an absence into a positive
     // claim: the destination did not merely fail to produce content, it crashed while trying to.
     // Reported once as `unknown` when this held — a React hooks error and an empty destination were
