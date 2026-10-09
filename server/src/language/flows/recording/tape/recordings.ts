@@ -28,6 +28,12 @@ export interface RecordedStep {
    * `invoke` first and treats the step as a call.
    */
   invoke?: string;
+  /**
+   * Network mocks were active on this step's tab when it ran. RECORDER-INTERNAL, ambient tape only,
+   * like `route`: a journey that ran against mocked responses replays against the real backend,
+   * so it is not auto-saved (#1459).
+   */
+  mocked?: true;
   /** The page this step ran on. Written to the saved step (unlike `route`, which cuts journeys). */
   page?: string;
   /** The page it ended on once it settled — see `markEnded`. */
@@ -136,6 +142,8 @@ export class RecordingStore {
   readonly #compiled = new Map<string, CompiledProgram>();
   /** A navigation came after the last captured step — see markNavigated. */
   #navigatedSinceStep = false;
+  /** Tabs with network mocks installed now, keyed by session ('' for none named). See markMocked. */
+  readonly #mocked = new Set<string>();
 
   /** `byHarness`: whether the step being captured was driven by the Harness, which tapes its own. */
   constructor(private readonly byHarness: () => boolean = () => false) {}
@@ -192,8 +200,18 @@ export class RecordingStore {
    * Opened lazily on the first step rather than in the constructor: a store that never records
    * anything should not carry an empty tape, and "did anything happen at all" stays answerable.
    */
+  /**
+   * Whether a tab has network mocks installed from now on. Each ambient step on it is marked while
+   * they are, so the journey it belongs to is not auto-saved as a flow (#1459).
+   */
+  markMocked(session: string | undefined, active: boolean): void {
+    if (active) this.#mocked.add(session ?? '');
+    else this.#mocked.delete(session ?? '');
+  }
+
   capture(step: RecordedStep, route?: string, session?: string): void {
     this.#navigatedSinceStep = false;
+    const mocked = this.#mocked.has(session ?? '');
     if (!this.#active.has(AMBIENT_RECORDING)) {
       this.#active.set(AMBIENT_RECORDING, {
         cursor: 0,
@@ -220,7 +238,15 @@ export class RecordingStore {
       // The route rides on the AMBIENT tape only: a recording somebody opened deliberately is
       // already one journey by construction, and stamping a route on its steps would change what a
       // deliberate recording contains.
-      rec.steps.push(AMBIENT_RECORDING === name && route !== undefined ? { ...step, route } : step);
+      rec.steps.push(
+        AMBIENT_RECORDING === name && (route !== undefined || mocked)
+          ? {
+              ...step,
+              ...(route === undefined ? {} : { route }),
+              ...(mocked ? { mocked: true as const } : {}),
+            }
+          : step,
+      );
     }
   }
 
@@ -233,9 +259,13 @@ export class RecordingStore {
    */
   attachExpect(expect: Predicate, session?: string): void {
     if (this.#navigatedSinceStep) return;
-    for (const [, rec] of this.#targets(session)) {
+    const mocked = this.#mocked.has(session ?? '');
+    for (const [name, rec] of this.#targets(session)) {
       const last = rec.steps.at(-1);
       if (last === undefined) continue;
+      // A proof read while mocks are active rests on mocked responses even when the act before it
+      // ran unmocked, so the ambient step it joins is marked too (#1459).
+      if (mocked && AMBIENT_RECORDING === name) last.mocked = true;
       const held = last.expect;
       last.expect =
         held === undefined
