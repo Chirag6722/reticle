@@ -1,6 +1,7 @@
 import {
   ComponentStateReason,
   ElementQuerySchema,
+  INSPECT_IN_VIEWPORT_FIELD,
   INSPECT_REVEAL_ARG,
   ReticleCommand,
   SnapshotMode,
@@ -173,6 +174,8 @@ function inspect(ref: string, reveal = false): unknown {
     formText: isButton(el) || isInput(el) ? (el.form?.textContent ?? undefined) : undefined,
     box: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
     ...(scrolledIntoView ? { scrolledIntoView: true } : {}),
+    // Measured after the scroll, and only when asked: the real-input path reads it (#1711).
+    ...(reveal ? { [INSPECT_IN_VIEWPORT_FIELD]: !isOffViewport(el, rect) } : {}),
     // True when another element sits over this one's center point — the click would hit the overlay,
     // not this control (a z-index/overlay bug the DOM tree cannot show).
     occluded: isOccluded(el, rect),

@@ -259,7 +259,17 @@ export const DANGEROUS_ACTION_CONFIRM_ARG = 'confirmDangerous';
  * through the SDK instead.
  */
 export const NATIVE_INPUT_ARG = 'native';
-export const INSPECT_REVEAL_ARG = 'reveal'; // INSPECT arg: scroll an off-viewport element in first
+/**
+ * INSPECT argument: scroll an off-viewport element to the center before it is measured. The real-input
+ * path sends it, because a real pointer aimed at an off-viewport box lands on nothing (#1711).
+ */
+export const INSPECT_REVEAL_ARG = 'reveal';
+/**
+ * INSPECT result field, present only when `INSPECT_REVEAL_ARG` was sent: whether the element's center
+ * is inside the viewport, measured after the scroll. An SDK that predates it omits it, and a caller
+ * must read that absence as unknown, never as out of view.
+ */
+export const INSPECT_IN_VIEWPORT_FIELD = 'inViewport';
 
 /** Schema version stamped onto compiled replay programs. */
 export const REPLAY_PROGRAM_VERSION = 1;

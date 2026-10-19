@@ -2,7 +2,7 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import { createCommandRegistry } from './commands.js';
 import { refs } from '@/dom/addressing/refs.js';
-import { INSPECT_REVEAL_ARG, ReticleCommand } from '@reticlehq/core';
+import { INSPECT_IN_VIEWPORT_FIELD, INSPECT_REVEAL_ARG, ReticleCommand } from '@reticlehq/core';
 
 /**
  * `inspect` with `reveal` scrolls an off-viewport element into view before it measures (#1711).
@@ -54,6 +54,38 @@ describe('inspect reveal', () => {
     expect(scrolls()).toBe(1);
     expect(out['scrolledIntoView']).toBe(true);
     expect((out['box'] as { y: number }).y).toBe(100);
+    expect(out[INSPECT_IN_VIEWPORT_FIELD]).toBe(true);
+  });
+
+  it('reports an element already on screen as in view, without scrolling', () => {
+    // The real INSPECT's states never carry `inViewport`, so the page must say it in this field.
+    const el = document.createElement('button');
+    document.body.append(el);
+    el.getBoundingClientRect = (): DOMRect => ({
+      x: 10,
+      y: 100,
+      left: 10,
+      top: 100,
+      right: 110,
+      bottom: 140,
+      width: 100,
+      height: 40,
+      toJSON: () => ({}),
+    });
+
+    const out = inspect(el, { [INSPECT_REVEAL_ARG]: true });
+
+    expect(out[INSPECT_IN_VIEWPORT_FIELD]).toBe(true);
+    expect(out['scrolledIntoView']).toBeUndefined();
+  });
+
+  it('reports an element the scroll could not bring in as out of view', () => {
+    const { el } = belowTheFold();
+    el.scrollIntoView = (): void => {};
+
+    const out = inspect(el, { [INSPECT_REVEAL_ARG]: true });
+
+    expect(out[INSPECT_IN_VIEWPORT_FIELD]).toBe(false);
   });
 
   it('does not move the page when the caller did not ask to reveal', () => {
@@ -63,5 +95,6 @@ describe('inspect reveal', () => {
 
     expect(scrolls()).toBe(0);
     expect(out['scrolledIntoView']).toBeUndefined();
+    expect(out[INSPECT_IN_VIEWPORT_FIELD]).toBeUndefined();
   });
 });

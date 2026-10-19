@@ -23,6 +23,7 @@ import {
   ActionType,
   DriveErrorCode,
   ElementState,
+  INSPECT_IN_VIEWPORT_FIELD,
   INSPECT_REVEAL_ARG,
   InputMode,
   InputModeReason,
@@ -411,7 +412,7 @@ export const HOVER_OFF_VIEWPORT_MSG =
 /** What a real gesture knows about its element after the page was asked to show it. */
 interface RevealedTarget {
   inspected: unknown;
-  /** False only when the page reported states without `inViewport`. No states is unknown, not out. */
+  /** False only when the page said so. An SDK that does not report the field is unknown, not out. */
   inView: boolean;
   scrolled: boolean;
 }
@@ -427,16 +428,15 @@ async function inspectRevealed(
   deps: ToolDeps,
   session: Session,
   ref: string,
-  /** False only to re-measure without scrolling again. */
-  reveal = true,
 ): Promise<RevealedTarget> {
   const inspected = await commandOrThrow(deps, session.id, ReticleCommand.INSPECT, {
     ref,
-    ...(reveal ? { [INSPECT_REVEAL_ARG]: true } : {}),
+    [INSPECT_REVEAL_ARG]: true,
   });
   const record = asRecord(inspected);
-  const states = record['states'];
-  const inView = !Array.isArray(states) || states.includes(ElementState.IN_VIEWPORT);
+  // Read the page's own measurement, taken after the scroll. `states` is no substitute: INSPECT
+  // builds it with `describe()`, which never adds `inViewport`, so every element read as out.
+  const inView = false !== record[INSPECT_IN_VIEWPORT_FIELD];
   return { inspected, inView, scrolled: true === record['scrolledIntoView'] };
 }
 
@@ -633,14 +633,16 @@ export async function tryRealInput(
     if (toBox === undefined || !target.inView) {
       return synthetic(InputModeReason.DRAG_TARGET_UNRESOLVED);
     }
-    // Scrolling the drop target in can carry the source out, so read the source again, without a
-    // second reveal that would undo this one. Only when the page actually moved.
+    // Scrolling the drop target in can carry the source out, so read the source again. Only when
+    // the page moved. If the page has to scroll AGAIN to show the source, the two ends do not fit on
+    // one screen, and a real drag between them cannot land.
     if (target.scrolled) {
       scrolled = true;
-      const again = await inspectRevealed(deps, session, ref, false);
+      const again = await inspectRevealed(deps, session, ref);
       box = asBox(again.inspected);
-      if (box === undefined || !again.inView)
+      if (box === undefined || !again.inView || again.scrolled) {
         return synthetic(InputModeReason.ELEMENT_NOT_LOCATABLE);
+      }
     }
   }
 
