@@ -211,6 +211,8 @@ describe('click: a target that is not a control (#1356)', () => {
 
     const r = await executeAction(refOf('#wrap'), 'click');
 
+    // Defined first: if the constant were ever removed, `toBe(undefined)` would pass on no warning.
+    expect(r.warning).toBeDefined();
     expect(r.warning).toBe(ActionWarning.CLICK_NOT_A_CONTROL);
   });
 
@@ -228,6 +230,10 @@ describe('click: a target that is not a control (#1356)', () => {
       '<div style="cursor: pointer"><span id="t">Open</span></div>',
     ],
     ['an element with an interactive role', '<div id="t" role="menuitem">Open</div>'],
+    // A rich-text editor (ProseMirror, TipTap) has role `generic` and a text cursor, so it fails
+    // every other test. A click into it places the caret, which is what the agent meant.
+    ['a contenteditable editor', '<div id="t" contenteditable="true">Write here</div>'],
+    ['a paragraph inside an editor', '<div contenteditable><p id="t">Write here</p></div>'],
   ])('does not warn on %s', async (_label, html) => {
     document.body.innerHTML = html;
 

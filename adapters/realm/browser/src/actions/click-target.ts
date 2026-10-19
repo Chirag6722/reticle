@@ -7,10 +7,10 @@
  * would be a guess, and an action must not guess, so this only names the case.
  *
  * Not a control means: no interactive role on the element or any ancestor, no `label`/`summary`
- * ancestor (a click there forwards to its control), no `onclick` or `tabindex` on the way up, and
- * no pointer cursor. `cursor` inherits, so one read covers every ancestor. It is also what keeps a
- * framework `<div onClick>` quiet: its handler is invisible here, but it is nearly always styled as
- * clickable.
+ * ancestor (a click there forwards to its control), no editable ancestor, no `onclick` or
+ * `tabindex` on the way up, and no pointer cursor. `cursor` inherits, so one read covers every
+ * ancestor. It is also what keeps a framework `<div onClick>` quiet: its handler is invisible here,
+ * but it is nearly always styled as clickable.
  *
  * The walk follows the COMPOSED tree, through slots and shadow hosts, the same way visibility does.
  * A bare `parentElement` walk stops at the top of a shadow tree and skips a slot's ancestors, which
@@ -23,7 +23,13 @@ import { ActionType } from '@reticlehq/core';
 import { getRole, parentAcrossShadowBoundary } from '@/dom/a11y.js';
 import { INTERACTIVE } from '@/dom/snapshot.js';
 
-const CLICK_FORWARDING = 'label, summary, [onclick], [tabindex]';
+/*
+ * A click into an editable element places the caret, so the editor is the control. ProseMirror and
+ * TipTap roots have role `generic` and a text cursor, so they failed every test above.
+ * This is a selector, not `isContentEditable`, because jsdom does not implement that property.
+ */
+const CLICK_FORWARDING =
+  'label, summary, [onclick], [tabindex], [contenteditable]:not([contenteditable="false"])';
 
 export function clickHitsNoControl(el: Element, action: string): boolean {
   if (ActionType.CLICK !== action && ActionType.DBLCLICK !== action) return false;
